@@ -1,0 +1,13 @@
+{
+	"ttpa": [1, 1, 14],
+	"relato": "Deixou de recolher o ICMS no montante de @CRI, referente a<periodo>, por guia de recolhimentos especiais, na qualidade de substituto tributário nos casos em que a responsabilidade pelo recolhimento seja do contribuinte paulista na entrada da mercadoria no território do Estado, por se tratar de mercadorias sujeitas ao regime de substituição tributária, que recebeu sem que haja comprovação de que houve retenção do imposto e sem escrituração em livro próprio (Livro Registro de Entradas), conforme se demonstra pelos documentos juntados no Anexo do item.",
+	"capitulacao": {
+		"limpa": true,
+		"artigos": [
+			{"artigo": "426A", "inciso":  "2"},
+			{"artigo": "277"},
+			{"especial": "Decisão Normativa CAT 2/2019"},
+			{"especial": "Portaria CAT 68/2019"}
+		]
+	}
+}

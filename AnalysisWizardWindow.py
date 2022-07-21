@@ -1,0 +1,75 @@
+import PySimpleGUI as sg
+
+class AnalysisWizardWindow(sg.Window):
+    def __init__(self):
+        layout = [
+            [[sg.Text('Nome da nova análise:'), sg.InputText(key='-NEW-ANALYSIS-NAME-', expand_x=True)],
+             
+             sg.Multiline(default_text='Após pressionar o botão Iniciar, NÃO MEXA NO SEU COMPUTADOR,' +
+                                       ' exceto para preencher a senha do certificado digital.\n' +
+                                       'Caso deseje parar o processo, clique no botão Parar.\n\n',
+                          size=(300, 15),
+                          expand_x=True, expand_y=True,
+                          key='-LOG-', auto_size_text=True,
+                          autoscroll=True, write_only=True),
+             sg.Push()],
+            [sg.Push(),
+             sg.Button('Iniciar', bind_return_key=True, key='-START-'),
+             sg.Button('Fechar', key='-STOP-'),
+             sg.Push()],
+        ]
+        super().__init__('Detalhes do processamento', layout,
+                         size=(850, 350),
+                         auto_size_text=True, auto_size_buttons=True,
+                         resizable=True, finalize=True,
+                         default_element_size=(15, 1),
+                         enable_close_attempted_event=True,
+                         modal=True)
+        # Setup logging
+        self._msg_handler = WindowEventHandler(self)
+        self._msg_handler.setFormatter(QueueFormatter("%(asctime)s - %(message)s", datefmt="%H:%M:%S"))
+        logger.addHandler(self._msg_handler)
+        self._funcao = funcao_batch
+        self._funcao_nome = nome_funcao_batch
+        self._funcao_parametros = parametros_funcao_batch
+        self._threadedApp = None
+
+    def close(self):
+        logger.removeHandler(self._msg_handler)
+        super().close()
+
+    def handle_event(self, event, values):
+        if event == '-START-':
+            if self._threadedApp is None:
+                self._threadedApp = ThreadedApp(self._funcao, self._funcao_nome, self._funcao_parametros)
+                self._threadedApp.start()
+                logger.debug('Iniciando processo...')
+                self['-START-'].update(disabled=True)
+                self['-STOP-'].update('Parar')
+        elif event in ('-STOP-', sg.WINDOW_CLOSE_ATTEMPTED_EVENT) \
+                and self._threadedApp and self._threadedApp.is_alive() \
+                and sg.popup_yes_no("Deseja realmente parar o processo?") == 'Yes':
+            self._threadedApp.stop()
+            logger.warning('PARANDO EXECUÇÃO DO PROCESSO. AGUARDE...')
+            self['-STOP-'].update(disabled=True)
+        elif event in ('-STOP-', sg.WINDOW_CLOSE_ATTEMPTED_EVENT, sg.WINDOW_CLOSED) \
+                and self._threadedApp is None:
+            self.close()
+        elif event == '-LOG-WINDOW-EVENT-':
+            msg = values[event]
+            if msg.upper() == msg:
+                self['-LOG-'].update(msg + '\n', background_color_for_value='yellow', append=True)
+            elif 'erro' in msg.lower() or 'falha' in msg.lower() or 'problema' in msg.lower():
+                self['-LOG-'].update(msg + '\n', background_color_for_value='red', append=True)
+            elif '!' in msg:
+                self['-LOG-'].update(msg + '\n', background_color_for_value='green', append=True)
+            else:
+                self['-LOG-'].update(msg + '\n', append=True)
+        if event == sg.TIMEOUT_EVENT:
+            if self._threadedApp is not None and not self._threadedApp.is_alive():
+                self['-LOG-'].update('PROCESSO ENCERRADO.\n', append=True)
+                self._threadedApp = None
+                self['-START-'].update(disabled=False)
+                self['-STOP-'].update("Fechar", disabled=False)
+                self['-STOP-'].ButtonText = 'Fechar'
+

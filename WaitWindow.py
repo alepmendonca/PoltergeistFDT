@@ -1,0 +1,78 @@
+import PySimpleGUI as sg
+import queue
+import threading
+
+from collections import Callable
+from GeneralFunctions import logger
+from LogWindow import QueueHandler, QueueFormatter
+
+
+class ThreadWithReturnValue(threading.Thread):
+    def __init__(self, target, args=()):
+        threading.Thread.__init__(self, group=None, target=target, name=None, args=args, kwargs=None, daemon=True)
+        self._return = None
+        self._exception = None
+
+    def run(self):
+        if self._target is not None:
+            try:
+                self._return = self._target(*self._args, **self._kwargs)
+            except Exception as e:
+                self._exception = e
+
+    def join(self, *args):
+        threading.Thread.join(self, *args)
+        if self._exception:
+            raise self._exception
+        return self._return
+
+
+def open_wait_window(funcao_batch: Callable, funcao_desc: str, *parametros_funcao_batch):
+    # Setup logging
+    log_queue = queue.Queue()
+    queue_handler = QueueHandler(log_queue)
+    queue_handler.setFormatter(QueueFormatter("%(message)s"))
+    logger.addHandler(queue_handler)
+
+    message = ''
+    layout = [
+        [sg.Image(data=sg.DEFAULT_BASE64_LOADING_GIF, background_color='white', key='-IMAGE-')],
+        [sg.Text(message, background_color='white', text_color='black', key='-TEXT-')]
+    ]
+    animated_window = sg.Window('', layout, no_titlebar=True, grab_anywhere=True,
+                                keep_on_top=True, element_padding=(0, 0), margins=(0, 0),
+                                finalize=True, element_justification='c', modal=True)
+    thread = ThreadWithReturnValue(target=funcao_batch, args=parametros_funcao_batch)
+    thread.start()
+
+    result = None
+    while True:
+        event, values = animated_window.read(100)
+        if not thread.is_alive():
+            animated_window.close()
+            try:
+                result = thread.join()
+            except Exception as e:
+                logger.exception(f'Erro ocorrido em WaitWindow da função {funcao_batch.__name__}')
+                sg.popup_error(f'Ocorreu um erro: {str(e)}')
+            else:
+                if funcao_desc:
+                    sg.popup_ok(f'Tarefa "{funcao_desc}" finalizada com sucesso!')
+            finally:
+                logger.removeHandler(queue_handler)
+                break
+
+        # Poll queue
+        try:
+            record = log_queue.get(block=False)
+        except queue.Empty:
+            pass
+        else:
+            message = queue_handler.format(record)
+            animated_window['-TEXT-'].update(message)
+            if message == message.upper():
+                animated_window.bring_to_front()
+
+        animated_window['-IMAGE-'].update_animation(sg.DEFAULT_BASE64_LOADING_GIF, time_between_frames=100)
+
+    return result

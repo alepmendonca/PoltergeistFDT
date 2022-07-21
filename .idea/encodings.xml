@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="Encoding">
+    <file url="file://$PROJECT_DIR$/resources/infracoes/IIb-sem_documento.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/IIj-destaque_maior_df.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/IIj.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Ia.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Ib.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Ic-aliq_errada.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Ic-bc_errada.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Ic-nao_tributado.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Ie-426A_escriturado.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Il-426A_n_escriturado.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Il.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/VIIa-atraso_entrega.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/VIIa-falta_entrega.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Va-nao_tributado.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Va-tributado.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vc-n_sujeita_imposto.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vj-LRAICMS.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vj-LRE.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vj-LRI.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vj-LRS.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vm-LRAICMS.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vm-LRE.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vm-LRI.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vm-LRS.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/credito_ativo_imobilizado.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/devolucoes_proprias_consumidor_final.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/difal_entrada_interestadual.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/divergencias_rba_pgdas.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/efd_atrasada.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/entradas_426A_escrituradas.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/entradas_426A_n_escrituradas.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/entradas_LRE_docs_inexistentes.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/entradas_credito_maior_que_DF.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/entradas_n_tributadas_fora_LRE.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/entradas_tributadas_fora_LRE.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/falta_livros.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/gia_atrasada.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/gia_nao_entregue.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/nao_exibicao_LRI.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/nao_exibicao_livros.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/outros_creditos.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/saidas_RPA_indicacao_SN.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/saidas_aliq_errada.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/saidas_n_tributadas_falso_ST.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/saidas_n_tributadas_fora_LRS.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/saidas_nao_declaradas_adm_cartao.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/saidas_tributadas_fora_LRS.json" charset="windows-1252" />
+  </component>
+</project>

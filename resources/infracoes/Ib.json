@@ -1,0 +1,9 @@
+{
+	"ttpa": [1, 1, [1, 1]],
+	"relato": "Deixou de pagar o ICMS no montante de @CRI, referente a<periodo>, por não haver escriturado regularmente no livro fiscal próprio - Livro Registro de Saídas (LRS) em EFD, documentos fiscais <modelos>, de sua emissão, relativos a operações tributadas, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas.",
+	"capitulacao": {
+		"artigos": [
+			{"artigo": "250A", "inciso":  "2"}
+		]
+	}
+}

@@ -1,0 +1,16 @@
+{
+	"operacao": "Tributada",
+	"ttpa": [1, 1, 1],
+	"relato": "Deixou de escriturar, n<periodo>, no livro fiscal próprio - Livro Registro de Entradas (LRE) em EFD, documentos fiscais <modelos> relativos a entradas de mercadorias no estabelecimento ou tomada de serviços de transporte interestadual e intermunicipal, referentes a operações tributadas, sendo que já se encontram escrituradas as operações do período, conforme demonstrativo do Anexo do item.\nValor das operações: @CRO",
+	"capitulacao": {
+		"artigos": [
+			{"artigo": "250A", "inciso": "1"}
+		]
+	},
+	"relatorio_circunstanciado": "o contribuinte foi autuado por deixar de registrar no LRE em EFD documentos fiscais <modelos> em que consta como destinatário ou tomador do serviço, todos com destaque de imposto, constatado pela simples comparação entre os documentos presentes nas bases de dados desta Receita Estadual e os documentos fiscais efetivamente escriturados. O contribuinte foi notificado através da notificação DEC <notificacao>, não tendo apresentado justificativas regulamentares para a não escrituração destes documentos.",
+	"provas": [
+		{"tipo": "listagem", "descricao": "Listagem de documentos fiscais tributados não escriturados, cujo destinatário ou tomador de serviço declarado é o contribuinte"},
+		{"tipo": "DFe", "descricao":  "Documentos fiscais eletrônicos não escriturados"}
+	]
+}
+			

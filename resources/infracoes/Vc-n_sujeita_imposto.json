@@ -1,0 +1,10 @@
+{
+	"ordem": "Não Sujeito a pg. 5%",
+	"ttpa": [1, 1, 1],
+	"relato": "Deixou de escriturar, n<periodo>, no livro fiscal próprio - Livro Registro de Saídas (LRS) em EFD, documentos fiscais <modelos> relativos a saídas de mercadorias não sujeitas ao pagamento do imposto, sendo que já se encontram escrituradas as operações do período, conforme demonstrativo do Anexo do item.\nAs mercadorias não estão sujeitas ao pagamento do imposto em operação posterior.\nValor das operações: @CRO",
+	"capitulacao": {
+		"artigos": [
+			{"artigo": "250A", "inciso": "2"}
+		]
+	}
+}		

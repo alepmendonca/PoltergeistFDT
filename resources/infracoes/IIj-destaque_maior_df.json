@@ -1,0 +1,10 @@
+{
+	"ttpa": [1, 1, 7],
+	"relato": "Creditou-se indevidamente de ICMS no montante de @CRI, referente a<periodo>, no livro fiscal próprio - Livro Registro de Entradas (LRE) em EFD, em valor superior ao valor do imposto destacado em documentos fiscais <modelos>, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas.",
+	"capitulacao": {
+		"limpa": true,
+		"artigos": [
+			{"artigo": "61", "paragrafo":  "2"}
+		]
+	}
+}
