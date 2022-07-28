@@ -1,30 +1,9 @@
 import PySimpleGUI as sg
 import queue
-import threading
 
-from collections import Callable
-from GeneralFunctions import logger
+from collections.abc import Callable
+from GeneralFunctions import logger, ThreadWithReturnValue
 from LogWindow import QueueHandler, QueueFormatter
-
-
-class ThreadWithReturnValue(threading.Thread):
-    def __init__(self, target, args=()):
-        threading.Thread.__init__(self, group=None, target=target, name=None, args=args, kwargs=None, daemon=True)
-        self._return = None
-        self._exception = None
-
-    def run(self):
-        if self._target is not None:
-            try:
-                self._return = self._target(*self._args, **self._kwargs)
-            except Exception as e:
-                self._exception = e
-
-    def join(self, *args):
-        threading.Thread.join(self, *args)
-        if self._exception:
-            raise self._exception
-        return self._return
 
 
 def open_wait_window(funcao_batch: Callable, funcao_desc: str, *parametros_funcao_batch):

@@ -8,7 +8,7 @@ import Audit
 from ConfigFiles import ConfigFileDecoderException
 
 
-class AuditTest(TestCase):
+class AuditTestSetup(TestCase):
     _main_path = None
 
     @classmethod
@@ -16,13 +16,14 @@ class AuditTest(TestCase):
         cls._main_path = Path(__file__).parent.resolve()
         (cls._main_path / 'Dados').mkdir(exist_ok=True)
         (cls._main_path / 'Achados').mkdir(exist_ok=True)
-
+        (cls._main_path / 'AIIM').mkdir(exist_ok=True)
 
     def setUp(self) -> None:
         shutil.copyfile(os.path.join(self._main_path, 'template', 'dados_auditoria.json'),
                         os.path.join(self._main_path, 'Dados', 'dados_auditoria.json'))
         shutil.copyfile(os.path.join(self._main_path, 'template', 'Arrazoado - Teste.xlsm'),
                         os.path.join(self._main_path, 'Achados', 'Arrazoado - Teste.xlsm'))
+        Audit.set_audit(self._main_path)
 
     def tearDown(self) -> None:
         (self._main_path / 'Dados' / 'dados_auditoria.json').unlink(missing_ok=True)
@@ -33,12 +34,15 @@ class AuditTest(TestCase):
         try:
             shutil.rmtree(cls._main_path / 'Dados')
             shutil.rmtree(cls._main_path / 'Achados')
+            shutil.rmtree(cls._main_path / 'AIIM')
             shutil.rmtree(cls._main_path / 'Notificações')
         except:
             pass
 
+
+class AuditTest(AuditTestSetup):
+
     def test_audit_contents(self):
-        Audit.set_audit(self._main_path)
         audit = Audit.get_current_audit()
         self.assertIsNotNone(audit)
         self.assertEqual(audit.empresa, 'TESTE COMERCIAL LTDA')
@@ -65,33 +69,28 @@ class AuditTest(TestCase):
         self.assertEqual(1111111, audit.aiim_number_no_digit())
 
     def test_audit_rpa_timerange_unlimited(self):
-        Audit.set_audit(self._main_path)
         audit = Audit.get_current_audit()
         audit.fim_auditoria = datetime.date.today()
         self.assertEqual([[datetime.date(2018, 1, 1), datetime.date.today()]],
                          audit.get_periodos_da_fiscalizacao(rpa=True))
 
     def test_audit_rpa_timerange_limited_audit_ending(self):
-        Audit.set_audit(self._main_path)
         audit = Audit.get_current_audit()
         self.assertEqual([[datetime.date(2018, 1, 1), audit.fim_auditoria]],
                          audit.get_periodos_da_fiscalizacao(rpa=True))
 
     def test_audit_sn_timerange_limited_audit_beginning(self):
-        Audit.set_audit(self._main_path)
         audit = Audit.get_current_audit()
         self.assertEqual([[audit.inicio_auditoria, datetime.date(2017, 12, 31)]],
                          audit.get_periodos_da_fiscalizacao(rpa=False))
 
     def test_audit_sn_timerange_unlimited(self):
-        Audit.set_audit(self._main_path)
         audit = Audit.get_current_audit()
         audit.inicio_auditoria = datetime.date(2000, 1, 1)
         self.assertEqual([[datetime.date(2009, 5, 13), datetime.date(2017, 12, 31)]],
                          audit.get_periodos_da_fiscalizacao(rpa=False))
 
     def test_audit_notifications(self):
-        Audit.set_audit(self._main_path)
         audit = Audit.get_current_audit()
         self.assertEqual(1, len(audit.notificacoes))
         self.assertEqual('Divergências RBA x PGDAS-D', audit.notificacoes[0].verificacao.name)
@@ -99,7 +98,6 @@ class AuditTest(TestCase):
         self.assertIsNone(audit.notificacoes[0].df)
 
     def test_audit_aiim_itens(self):
-        Audit.set_audit(self._main_path)
         audit = Audit.get_current_audit()
         self.assertEqual(2, len(audit.aiim_itens))
 
@@ -137,7 +135,6 @@ class AuditTest(TestCase):
         self.assertEqual('Não Tributada', item.infracao.operation_type)
 
     def test_audit_aiim_item_notification_errors(self):
-        Audit.set_audit(self._main_path)
         audit = Audit.get_current_audit()
         item = list(filter(
             lambda i: i.verificacao.name == 'Documentos de entrada tributados (NF-e e CT-e) não escriturados no LRE',
@@ -151,7 +148,6 @@ class AuditTest(TestCase):
                               context.exception)
 
     def test_setter_errors(self):
-        Audit.set_audit(self._main_path)
         audit = Audit.get_current_audit()
         with self.assertRaises(ValueError) as context:
             audit.inicio_auditoria = '1651'
@@ -185,7 +181,6 @@ class AuditTest(TestCase):
             self.assertEqual('Início da situação em formato errado (dd/mm/aaaa): 01/1999', context.exception)
 
     def test_save_audit(self):
-        Audit.set_audit(self._main_path)
         audit = Audit.get_current_audit()
         with (self._main_path / 'Dados' / 'dados_auditoria.json').open(mode='r') as outfile:
             texto_original = outfile.read()
@@ -203,8 +198,7 @@ class AuditTest(TestCase):
         Audit.create_new_audit(self._main_path)
         self.assertIsNotNone(Audit.get_current_audit())
 
-    def test_create_audit_with_json_file_just_opensit(self):
-        Audit.create_new_audit(self._main_path)
+    def test_create_audit_with_json_file_just_opens_it(self):
         Audit.get_current_audit().save()
         with (self._main_path / 'template' / 'dados_auditoria.json').open(mode='r') as outfile:
             template = outfile.read()
@@ -225,20 +219,23 @@ class AuditTest(TestCase):
                              'Altere manualmente o arquivo de configurações da auditoria.', context.exception)
 
     def test_notification_subs(self):
-        Audit.set_audit(self._main_path)
         audit = Audit.get_current_audit()
         item = audit.aiim_itens[0]
         self.assertEqual('OSF 01.1.68489/17-6 - Teste',
                          item.notificacao_titulo('OSF <osf> - Teste'))
+        item.clear_cache()
         self.assertEqual('OSF 01.1.68489/17-6, documentos modelos 55 e 57 dos períodos de abril de 2019 e julho de 2020',
                          item.notificacao_corpo('OSF <osf>, documentos <modelos> d<periodo>'))
+        item.clear_cache()
         self.assertEqual('documentos do período de 2019 a 2020',
                          item.notificacao_corpo('documentos d<periodoAAAA>'))
+        item.clear_cache()
         item.infracao.report = 'Deixou de pagar imposto nos documentos <modelos> d<periodoAAAA>, foi notificado na ' \
                                'notificação DEC <notificacao>'
         self.assertEqual('Deixou de pagar imposto nos documentos modelos 55 e 57 do período de 2019 a 2020, foi'
                          ' notificado na notificação DEC IC/N/FIS/000002375/2022',
                          item.relato())
+        item.clear_cache()
         item.notificacao_resposta = 'SFP-EXP-2022/45646'
         self.assertEqual('Deixou de pagar imposto nos documentos modelos 55 e 57 do período de 2019 a 2020, foi'
                          ' notificado na notificação DEC IC/N/FIS/000002375/2022, '

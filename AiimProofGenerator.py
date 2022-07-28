@@ -20,13 +20,14 @@ from WebScraper import SeleniumWebScraper
 
 SAMPLING = 5
 MIN_SAMPLE = 5
-SUPPORTED_DFE_MODELS = [55, 57]
+MAX_SAMPLE = 30
+SUPPORTED_DFE_MODELS = [55, 57, 59]
 
 
 def generate_general_proofs_file() -> list[str]:
     GeneralFunctions.clean_tmp_folder()
-    arquivo_path = get_current_audit().path() / 'AIIM' / 'Provas Gerais.pdf'
-    capa = Path('tmp') / 'capa.pdf'
+    arquivo_path = get_current_audit().aiim_path() / 'Provas Gerais.pdf'
+    capa = GeneralFunctions.get_tmp_path() / 'capa.pdf'
     WordReport.cria_capa_para_anexo('PROVAS GERAIS', capa)
     arquivos = [capa]
     descricao_arquivos = ['Ordem de Serviço Fiscal assinada']
@@ -35,21 +36,22 @@ def generate_general_proofs_file() -> list[str]:
     else:
         descricao_arquivos[0] += ' (ARQUIVO NÃO LOCALIZADO, JUNTAR MANUALMENTE)'
     if get_current_audit().get_periodos_da_fiscalizacao(rpa=True):
-        efds = Path('tmp') / 'efds.pdf'
+        efds = GeneralFunctions.get_tmp_path() / 'efds.pdf'
         descricao_arquivos.append('Lista de arquivos digitais de Escrituração Fiscal Digital - EFD - '
                                   'entregues pelo contribuinte e considerados na instrução do '
                                   'presente auto de infração')
         get_current_audit().get_sheet().generate_dados_efds_e_imprime(efds)
         arquivos.append(efds)
-    vencimentos = get_current_audit().get_sheet().get_vencimentos_GIA()
-    ultima_referencia_cf = pd.Timestamp(vencimentos.iloc[-1, 0]).date()
-    texto = 'Conta Fiscal do ICMS do contribuinte contendo as referências do período de fiscalização'
-    if ultima_referencia_cf > get_current_audit().fim_auditoria:
-        texto += f' e estendendo-se o extrato até a referência {ultima_referencia_cf.strftime("%m/%Y")}, ' \
-                 f'devido à utilização destas referências para cálculo de DDF que considere o mês em que ' \
-                 f'o saldo do contribuinte torna-se devedor, nos termos do art. 96, I, b da Lei 6.374/89'
-    arquivos.append(get_current_audit().get_sheet().conta_fiscal_path())
-    descricao_arquivos.append(texto)
+    if get_current_audit().get_periodos_da_fiscalizacao(rpa=True):
+        vencimentos = get_current_audit().get_sheet().get_vencimentos_GIA()
+        ultima_referencia_cf = pd.Timestamp(vencimentos.iloc[-1, 0]).date()
+        texto = 'Conta Fiscal do ICMS do contribuinte contendo as referências do período de fiscalização'
+        if ultima_referencia_cf > get_current_audit().fim_auditoria:
+            texto += f' e estendendo-se o extrato até a referência {ultima_referencia_cf.strftime("%m/%Y")}, ' \
+                     f'devido à utilização destas referências para cálculo de DDF que considere o mês em que ' \
+                     f'o saldo do contribuinte torna-se devedor, nos termos do art. 96, I, b da Lei 6.374/89'
+        arquivos.append(get_current_audit().get_sheet().conta_fiscal_path())
+        descricao_arquivos.append(texto)
     if get_current_audit().receipt_digital_files:
         if not (get_current_audit().notification_path() / 'notif_recibo.pdf').is_file() or \
                 not (get_current_audit().notification_path() / 'Recibo de Entrega de Arquivos Digitais.pdf').is_file():
@@ -123,6 +125,8 @@ def _get_sample_size(total: int) -> int:
     if MIN_SAMPLE / total > 0.3:
         return total
     sample = int(total * SAMPLING / 100)
+    if sample > MAX_SAMPLE:
+        return MAX_SAMPLE
     return sample if sample > MIN_SAMPLE else MIN_SAMPLE
 
 
@@ -134,12 +138,12 @@ def has_sample(item: AiimItem) -> bool:
 def _get_sample(item: AiimItem) -> pd.DataFrame:
     if item.df:
         return pd.DataFrame({'Referência': item.df}, dtype='datetime64[ns]')
-
+    logger.info('Levantando informações da planilha para verificar o tamanho da amostra de DF-e')
     df = get_current_audit().get_sheet().get_sheet_as_df(item.planilha)
 
     if 'Chave' in df.keys():
         if 'Modelo' not in df.keys():
-            df['Modelo'] = pd.to_numeric(df[df['Chave'].str[20:22]])
+            df['Modelo'] = pd.to_numeric(df['Chave'].str[20:22])
         df = df[df['Modelo'].isin(SUPPORTED_DFE_MODELS)]
     return df
 
@@ -147,7 +151,7 @@ def _get_sample(item: AiimItem) -> pd.DataFrame:
 def get_df_list(item: AiimItem) -> pd.DataFrame:
     df = _get_sample(item)
     amostragem = _get_sample_size(len(df))
-
+    logger.info(f'Tentará buscar {amostragem} amostras de DF-e!')
     if 'Chave' not in df.keys():
         return df
 
@@ -173,12 +177,15 @@ def get_dfe(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list
     for model in SUPPORTED_DFE_MODELS:
         dfe = df[df['Modelo'] == model]['Chave']
         if not dfe.empty:
-            dfe = ';'.join(dfe.tolist())
-            report = [k for k, v in WebScraper.launchpad_report_options.items()
-                      if v['Grupo'] == 'Prova' and v.get('Modelo', 0) == model][0]
             logger.info(f'Baixando transcrições de documentos fiscais modelo {model}...')
-            pdf_file = ws.get_launchpad_report(report, f'dfe{model}.pdf', threading.Event(), None, [dfe])
-            paths.append(pdf_file)
+            if model == 59:
+                paths.extend(ws.print_sat_cupom(dfe.tolist()))
+            else:
+                dfe = ';'.join(dfe.tolist())
+                report = [k for k, v in WebScraper.launchpad_report_options.items()
+                          if v['Grupo'] == 'Prova' and v.get('Modelo', 0) == model][0]
+                pdf_file = ws.get_launchpad_report(report, f'dfe{model}.pdf', threading.Event(), None, [dfe])
+                paths.append(pdf_file)
     return paths
 
 

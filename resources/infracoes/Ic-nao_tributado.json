@@ -1,4 +1,5 @@
 {
+	"nome": "Tributado declarado como não ou isento",
 	"ttpa": [1, 1, 1, 1, [1, 1]],
 	"relato": "Deixou de pagar o ICMS no montante de @CRI, referente a<periodo>, por emissão de documentos fiscais <modelos> relativos a operações tributadas como não tributadas ou isentas, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas."
 }

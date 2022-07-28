@@ -25,7 +25,6 @@ class ControllerTest(TestCase):
                         os.path.join(self._main_path, 'Dados', 'dados_auditoria.json'))
         shutil.copyfile(os.path.join(self._main_path, 'template', 'Arrazoado - Teste.xlsm'),
                         os.path.join(self._main_path, 'Achados', 'Arrazoado - Teste.xlsm'))
-        Controller.set_main_path(self._main_path)
 
     def tearDown(self) -> None:
         os.remove(os.path.join(self._main_path, 'Dados', 'dados_auditoria.json'))
@@ -41,7 +40,7 @@ class ControllerTest(TestCase):
             pass
 
     def test_move_analysis_from_notification_to_infraction_happyday(self):
-        analysis_name = Analysis.get_default_analysis()[0].name
+        analysis_name = Analysis.get_all_analysis(self._main_path)[0].name
         dados = {
             'empresa': 'bagaca',
             'notificacoes': [{'verificacao': analysis_name, 'planilha': 'template'}]
@@ -60,7 +59,7 @@ class ControllerTest(TestCase):
         self.assertTrue(item.notification_response_path().is_dir())
 
     def test_move_analysis_from_notification_to_infraction_no_sheet(self):
-        analysis_name = Analysis.get_default_analysis()[0].name
+        analysis_name = Analysis.get_all_analysis(self._main_path)[0].name
         dados = {
             'empresa': 'bagaca',
             'notificacoes': [{'verificacao': analysis_name, 'planilha': 'planilha123'}]

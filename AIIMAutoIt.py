@@ -13,7 +13,6 @@ import GeneralFunctions
 
 from autoit import AutoItError
 from Audit import Audit, AiimItem
-from ConfigFiles import Infraction
 from GeneralFunctions import logger
 from MDBReader import MDBReader
 
@@ -395,6 +394,9 @@ class AIIMAutoIt:
             for index, row in dicionario['ddf'].iterrows():
                 self.preenche_ddf_glosa(row['valor'], row['dci'], row['dij'],
                                         row['dcm'], row['valor_basico'], row['referencia'])
+        elif inciso == 'IV' and alinea == 'b':
+            for index, row in dicionario['ddf'].iterrows():
+                self.preenche_ddf_valor_basico(row['referencia'], row['valor'], row['referencia'])
         elif inciso == 'V' and alinea in ['a', 'c', 'm']:
             for index, row in dicionario['ddf'].iterrows():
                 if len(row) == 1:
@@ -413,16 +415,19 @@ class AIIMAutoIt:
         self.__save_and_exit()
 
     def _get_item_number(self):
-        try:
-            return int(autoit.control_get_text(
-                self.titulo_janela, "[CLASS:ThunderRT6ComboBox; INSTANCE:6]"))
-        except (ValueError, AutoItError):
             try:
                 return int(autoit.control_get_text(
-                    self.titulo_janela, "[CLASS:ThunderRT6ComboBox; INSTANCE:7]"))
+                    self.titulo_janela, "[CLASS:ThunderRT6ComboBox; INSTANCE:6]"))
             except (ValueError, AutoItError):
-                return int(autoit.control_get_text(
-                    self.titulo_janela, "[CLASS:ThunderRT6ComboBox; INSTANCE:8]"))
+                try:
+                    return int(autoit.control_get_text(
+                        self.titulo_janela, "[CLASS:ThunderRT6ComboBox; INSTANCE:7]"))
+                except (ValueError, AutoItError):
+                    try:
+                        return int(autoit.control_get_text(
+                            self.titulo_janela, "[CLASS:ThunderRT6ComboBox; INSTANCE:8]"))
+                    except (ValueError, AutoItError):
+                        return 0
 
     def cadastra_ufesp(self, ano: int, valor: float):
         self.__open_menu('UFESP')

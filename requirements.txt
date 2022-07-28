@@ -1,4 +1,4 @@
-autoit
+pyautoit
 tika
 pandas
 pyodbc
@@ -15,6 +15,7 @@ python-dateutil
 numpy
 psycopg2
 py4j
+pillow
 tkhtmlview
 mysql-connector-python
 python-docx

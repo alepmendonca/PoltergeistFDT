@@ -1,4 +1,4 @@
-from collections import Callable
+from collections.abc import Callable
 
 import PySimpleGUI as sg
 import logging

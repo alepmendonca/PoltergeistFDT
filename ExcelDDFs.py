@@ -19,6 +19,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 from pandas._libs.missing import NAType
 
 import Audit
+import GeneralConfiguration
 import GeneralFunctions
 import MDBReader
 import PDFExtractor
@@ -107,7 +108,7 @@ def _exporta_relatorio_para_planilha(sheet_name: str, analysis: Analysis, df: pd
 
         cabecalhos = [c for c in df.keys().tolist() if c not in columns_to_drop]
 
-        ws['A7'] = analysis.name if infraction is None else infraction.analysis_name
+        ws['A7'] = analysis.name if infraction is None else infraction.planilha_titulo
         # faz merge das primeiras linhas, até a última linha antes do cabeçalho
         coluna_A = [row[0] for row in ws[f'A{ws.min_row}:A{ws.max_row}']]
         coluna_A.reverse()
@@ -194,7 +195,10 @@ def _exporta_relatorio_para_planilha(sheet_name: str, analysis: Analysis, df: pd
         ws.page_margins.right = 0.5
         ws.page_margins.header = 0.5
         ws.page_margins.footer = 0.5
-        ws.page_setup.orientation = 'landscape'
+        if len(cabecalhos) >= 10:
+            ws.page_setup.orientation = 'landscape'
+        else:
+            ws.page_setup.orientation = 'portrait'
         ws.page_setup.fitToWidth = True
         ws.evenFooter.center.text = "Página &[Page] de &N"
         ws.oddFooter.center.text = "Página &[Page] de &N"
@@ -244,8 +248,11 @@ def print_workbook_as_pdf(wb_path: Path, pdf: Path, sheet_number: int = None, he
             ws = wb.Worksheets[idx - 1]
             if header:
                 ws.PageSetup.CenterHeader = f'Arquivo {wb_path.name} - Planilha {ws.Name}'
-                # Landscape
-                ws.PageSetup.Orientation = 2
+                # Landscape se mais de 10 colunas
+                if len(ws.Columns) > 10:
+                    ws.PageSetup.Orientation = 2
+                else:
+                    ws.PageSetup.Orientation = 1
             for name in ws.Names:
                 if name.Name.endswith('!Print_Area'):
                     ws.PageSetup.PrintArea = name.RefersTo
@@ -270,18 +277,18 @@ def print_workbook_as_pdf(wb_path: Path, pdf: Path, sheet_number: int = None, he
 class ExcelDDFs:
     def __init__(self):
         self.main_path = Audit.get_current_audit().path()
-        dadosAFR = GeneralFunctions.get_local_dados_afr()
         empresa = GeneralFunctions.get_default_name_for_business(Audit.get_current_audit().empresa)
 
-        (self.main_path / 'Achados').mkdir(exist_ok=True)
-        self.planilha_path = self.main_path / 'Achados' / f'Arrazoado - {empresa}.xlsm'
+        Audit.get_current_audit().findings_path().mkdir(exist_ok=True)
+        self.planilha_path = Audit.get_current_audit().findings_path() / f'Arrazoado - {empresa}.xlsm'
         if not self.planilha_path.is_file():
             try:
                 shutil.copyfile(os.path.join('resources', 'template.xlsm'), self.planilha_path)
                 wb = openpyxl.load_workbook(self.planilha_path, keep_vba=True)
                 ws = wb['EFDs']
-                ws['A4'].value = f"{dadosAFR['drt_nome']} - {dadosAFR['drt']}"
-                ws['A5'].value = f"NÚCLEO DE FISCALIZAÇÃO - NF {dadosAFR['nf']} - EQUIPE FISCAL {dadosAFR['equipe']}"
+                ws['A4'].value = f"{GeneralConfiguration.get().drt_nome()} - {GeneralConfiguration.get().drt_sigla}"
+                ws['A5'].value = f"NÚCLEO DE FISCALIZAÇÃO - NF {GeneralConfiguration.get().nucleo_fiscal} - " \
+                                 f"EQUIPE FISCAL {GeneralConfiguration.get().equipe_fiscal}"
                 ws['A8'].value = f'{Audit.get_current_audit().empresa} - IE {Audit.get_current_audit().ie}'
                 self.salva_planilha(wb)
             except Exception as e:
@@ -291,11 +298,23 @@ class ExcelDDFs:
                 except Exception:
                     pass
                 raise e
-        self.planilha = pd.read_excel(self.planilha_path, sheet_name=None)
-        self.creditos_path = self.main_path / 'Achados' / 'Glosa de Créditos.xlsx'
+        self._planilha: dict[str, pd.DataFrame] = {}
+        self.creditos_path = Audit.get_current_audit().findings_path() / 'Glosa de Créditos.xlsx'
+        self.glosas_item_path = Audit.get_current_audit().findings_path() / 'Glosa - Item.xlsx'
+        self.quadro3_path = Audit.get_current_audit().aiim_path() / 'Quadro 3.xlsm'
+        self.operacoes_csv = Audit.get_current_audit().reports_path() / 'valor_operacoes.csv'
+
+    def planilha(self, sheet_name: str) -> pd.DataFrame:
+        if self._planilha.get(sheet_name) is None:
+            self._planilha[sheet_name] = pd.read_excel(self.planilha_path, sheet_name=sheet_name, header=9)
+            # remove colunas que não sejam com título em string
+            for key in self._planilha[sheet_name].keys():
+                if not isinstance(key, str):
+                    self._planilha[sheet_name].drop(key, inplace=True, axis=1)
+        return self._planilha[sheet_name]
 
     def get_sheet_as_df(self, sheet_name) -> pd.DataFrame:
-        df = pd.read_excel(self.planilha_path, sheet_name=sheet_name, header=9)
+        df = self.planilha(sheet_name)
         if 'Chave' in df.keys():
             df = df[df['Chave'] >= '1']
         aggregator = [i for i, x in enumerate(df.keys()) if isinstance(x, str) and x.lower() in ('mês', 'dia')]
@@ -341,11 +360,10 @@ class ExcelDDFs:
 
     def generate_creditos_ddf(self, ddf: pd.DataFrame) -> pd.DataFrame:
         wb = None
-        glosas_item_path = self.main_path / 'Achados' / 'Glosa - Item.xlsx'
         try:
             logger.info('Preenchendo planilha de glosa de créditos com valores a glosar')
-            shutil.copyfile(self.creditos_path, glosas_item_path)
-            wb = openpyxl.load_workbook(glosas_item_path)
+            shutil.copyfile(self.creditos_path, self.glosas_item_path)
+            wb = openpyxl.load_workbook(self.glosas_item_path)
             ws = wb['Dados']
             mes_inicial = ws['A2'].value
             linha_inicial = 2
@@ -355,9 +373,9 @@ class ExcelDDFs:
                     diferenca_referencias = relativedelta(mes, mes_inicial)
                     meses = diferenca_referencias.years * 12 + diferenca_referencias.months
                     ws.cell(meses + linha_inicial, 6).value = linha['valor']
-            self.salva_planilha(wb, glosas_item_path)
+            self.salva_planilha(wb, self.glosas_item_path)
 
-            glosas = pd.read_excel(glosas_item_path, sheet_name='Subitens')
+            glosas = pd.read_excel(self.glosas_item_path, sheet_name='Subitens')
             glosas = glosas[glosas['subitem'] > 0]
             glosas = glosas.iloc[:, [1, 11, 17, 18, 19]]
             glosas['referencia'] = glosas.iloc[:, 0].map(lambda dt: GeneralFunctions.last_day_of_month(dt))
@@ -392,11 +410,14 @@ class ExcelDDFs:
             if wb is not None:
                 wb.close()
 
-    def refresh_sheet(self):
-        self.planilha = pd.read_excel(self.planilha_path, sheet_name=None)
-
     def get_sheet_names(self) -> list:
-        return list(self.planilha.keys())
+        wb = None
+        try:
+            wb = openpyxl.load_workbook(self.planilha_path, read_only=True)
+            return wb.sheetnames
+        finally:
+            if wb:
+                wb.close()
 
     def conta_fiscal_path(self) -> Path:
         return self.main_path / 'Conta Fiscal.pdf'
@@ -411,13 +432,9 @@ class ExcelDDFs:
                                                       audit.get_periodos_da_fiscalizacao(rpa=True))
 
     def get_ddf_from_sheet(self, sheet_name: str, inciso: str, alinea: str):
-        self.refresh_sheet()
-
-        vencimentos = self.get_vencimentos_GIA()
-        sheet = self.planilha[sheet_name]
-        is_monthly_grouped = list(filter(lambda x: isinstance(x, str), sheet.iloc[:, -2]))[0] \
-                                 .upper() == 'MÊS'
-        titulos_planilha = sheet.select_dtypes(include='object').dropna(axis=0).iloc[0, :].tolist()
+        sheet = self.planilha(sheet_name)
+        is_monthly_grouped = len(list(filter(lambda k: k.upper() == 'MÊS', sheet.keys()))) > 0
+        titulos_planilha = sheet.keys().tolist()
         if not is_monthly_grouped and any([titulo in titulos_planilha for titulo in ['Referência', 'Período']]):
             # se a planilha não é agrupada, vou supor que última coluna tem os valores
             titulo_index = int(sheet[sheet[sheet.keys()[0]].isin(titulos_planilha)].index[0])
@@ -440,15 +457,18 @@ class ExcelDDFs:
                                                         f'da mesma referência, mas está sem totalizadores!\n'
                                                         f'No segundo caso, execute a macro com CTRL+SHIFT+E, '
                                                         f'salve, feche a planilha e tente novamente!')
-            if len(aba.columns) > 4:
-                aba.columns = ['item', 'valor_basico', 'valor', 'referencia', 'numero']
+            if len(aba.columns) == 4:
+                aba.columns = ['item', 'valor_basico', 'valor', 'referencia']
+            elif len(aba.columns) == 3:
+                aba.columns = ['item', 'valor', 'referencia']
             else:
-                aba.columns = ['item', 'valor', 'referencia', 'numero']
+                raise Exception(f'Dataframe da planilha {sheet_name} tem colunas diferente do esperado!')
 
         aba['referencia'] = aba['referencia'].astype('datetime64[ns]')
 
         if inciso == 'I' and alinea in ['b', 'c', 'd', 'i', 'j', 'l', 'm']:
             if is_monthly_grouped:
+                vencimentos = self.get_vencimentos_GIA()
                 aba['valor'] = aba['valor'].apply(lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
                 ddf = aba.merge(vencimentos, how='left', on='referencia')
                 if len(ddf.dropna(axis=0)) < len(ddf):
@@ -474,14 +494,18 @@ class ExcelDDFs:
                 lambda d: f'{(d + datetime.timedelta(days=1)).strftime("%d/%m/%y")}'
             )
         elif inciso == 'II':
-            if alinea != 'j' and len(aba.columns) == 4:
+            if alinea != 'j' and len(aba.columns) < 4:
                 raise ExcelArrazoadoIncompletoException(
                     'Planilha precisa ter 2 subtotais: valor básico e imposto, nesta ordem. '
                     'Refaça a totalização da planilha selecionando as 2 colunas simultaneamente, '
                     'antes de rodar a macro com CTRL+SHIFT+E')
+            vencimentos = self.get_vencimentos_GIA()
             self.create_creditos_sheet(vencimentos)
             ddf = aba.merge(vencimentos, on='referencia', how='right')
             ddf = self.generate_creditos_ddf(ddf)
+        elif inciso == 'IV' and alinea == 'b':
+            aba['valor'] = aba['valor'].apply(lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
+            ddf = aba[['referencia', 'valor']]
         elif inciso == 'V' and alinea in ['a', 'c', 'm']:
             aba['valor'] = aba['valor'].apply(lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
             ddf = aba[['referencia', 'valor']]
@@ -540,36 +564,46 @@ class ExcelDDFs:
 
     def periodos_de_referencia(self, sheet_name, freq='M'):
         try:
-            aba = self.planilha[sheet_name]
+            aba = self.planilha(sheet_name)
         except KeyError:
             raise ExcelArrazoadoAbaInexistenteException(f'Aba {sheet_name} não existe mais na planilha!')
-        if type(aba.iloc[-2, -2]) == datetime.datetime:
-            aba = aba.iloc[:, [-2]]
+        if type(aba.iloc[-2, -1]) == datetime.datetime:
+            aba = aba.iloc[:, [-1]]
         else:
             # considera que a última coluna de data (não timestamp preenchido) encontrada é a referência
-            colunas_data = [x for x in aba.iloc[-1, :].tolist()
-                            if type(x) == datetime.datetime and x.time() == datetime.time()]
-            if len(colunas_data) == 0:
-                raise ExcelArrazoadoIncompletoException(f'Planilha {sheet_name} não tem uma coluna de data! '
-                                                        f'Deixe a penúltima coluna com a referência!')
-            else:
-                aba = aba.iloc[:, [aba.iloc[-1, :].tolist().index(colunas_data[-1])]]
-        aba.columns = ['referencia']
-        aba = aba[aba['referencia'].map(lambda referencia: type(referencia) == datetime.datetime)]
+            colunas_data = [idx for idx, vlw in enumerate(aba.dtypes.tolist()) if vlw == 'datetime64[ns]']
+            colunas_data.reverse()
+            achou = False
+            for c in colunas_data:
+                datas = aba.iloc[:, c].map(lambda x: x.time())
+                if len(datas[datas != datetime.time()]) == 0:
+                    aba = aba.iloc[:, c]
+                    achou = True
+                    break
+            if not achou:
+                raise ExcelArrazoadoIncompletoException(f'Planilha {sheet_name} não tem uma coluna de data sem horário!')
         if freq == 'M':
-            aba['referencia'] = aba['referencia'].apply(lambda r: GeneralFunctions.last_day_of_month(r))
-        elif freq == 'Y':
-            aba['referencia'] = aba['referencia'].apply(lambda r: datetime.datetime(r.year, 1, 1))
-        return [pd.Timestamp(npdt).date() for npdt in aba.sort_values(by='referencia')['referencia'].unique()]
+            retorno = [GeneralFunctions.last_day_of_month(r) for r in aba]
+        else:
+            retorno = [datetime.date(r.year, 1, 1) for r in aba]
+        retorno = list(set(retorno))
+        retorno.sort()
+        return retorno
 
     def modelos_documento_fiscal(self, sheet_name):
         try:
-            aba = self.planilha[sheet_name]
+            aba = self.planilha(sheet_name)
         except KeyError:
             raise ExcelArrazoadoAbaInexistenteException(f'Aba {sheet_name} não existe mais na planilha!')
         colunas = aba.loc[:, (aba == 'Modelo').any()].columns
-        assert len(colunas) == 1, f'Não achei 1 coluna com um campo escrito "Modelo", achei {len(colunas)}'
-        modelos = aba[colunas[0]][aba[colunas[0]].map(lambda v: type(v) == int)]
+        if len(colunas) == 0:
+            if 'Chave' in aba.keys():
+                aba = aba[aba['Chave'].str.get(0) <= '9']
+                modelos = pd.to_numeric(aba['Chave'].str[20:22])
+            else:
+                raise Exception(f'Não achei 1 coluna com um campo escrito "Modelo", achei {len(colunas)}')
+        else:
+            modelos = aba[colunas[0]][aba[colunas[0]].map(lambda v: type(v) == int)]
         return modelos.sort_values().unique()
 
     def imprime_planilha(self, sheet, report_full_path: Path, path: Path = None, item: int = None) -> Path:
@@ -605,9 +639,10 @@ class ExcelDDFs:
                     f'Arquivo Excel {caminho} está aberto, feche-o e tente novamente.')
             finally:
                 wb.close()
-        if not path:
-            self.refresh_sheet()
-        else:
+        # if not path:
+            # self.refresh_sheet()
+        # else:
+        if path:
             # refresh via com, para salvar os valores calculados
             refresh_planilha_creditos(caminho)
 
@@ -619,16 +654,14 @@ class ExcelDDFs:
                 _exporta_relatorio_para_planilha(sheet_name, analysis, df, wb, infraction=infraction)
         self.salva_planilha(wb)
 
-    # TODO PDFExtractor precisa trazer mais dados pra dar certo - ver DDF da Vigor
     def gera_quadro_3(self, quadro_1: Path):
         logger.info('Extraindo informações do Quadro 1 do AIIM para gerar Quadro 3...')
         df = PDFExtractor.get_quadro_1_data(quadro_1)
         wb = None
-        quadro3_path = self.main_path / 'AIIM' / 'Quadro 3.xlsm'
         logger.info('Gerando arquivo Quadro 3.xlsm...')
         try:
-            shutil.copyfile(Path('resources') / 'Quadro 3.xlsm', quadro3_path)
-            wb = openpyxl.load_workbook(quadro3_path, keep_vba=True)
+            shutil.copyfile(Path('resources') / 'Quadro 3.xlsm', self.quadro3_path)
+            wb = openpyxl.load_workbook(self.quadro3_path, keep_vba=True)
             ws = wb['DDF Original']
             ws['C2'].value = Audit.get_current_audit().cnpj
             ws['G2'].value = Audit.get_current_audit().empresa
@@ -641,23 +674,22 @@ class ExcelDDFs:
                     # é necessário pular uma coluna a partir da 13, pelo formato da planilha
                     ws.cell(row=ws_row, column=(col + 1 if col >= 13 else col), value=val)
                 ws_row += 1
-            self.salva_planilha(wb, quadro3_path)
+            self.salva_planilha(wb, self.quadro3_path)
             logger.info('Gerando Quadro 3.pdf...')
-            self.imprime_planilha(4, self.main_path / 'AIIM' / 'Quadro 3.pdf', path=quadro3_path)
+            self.imprime_planilha(4, self.main_path / 'AIIM' / 'Quadro 3.pdf', path=self.quadro3_path)
         except Exception as e:
             logger.exception('Falha no preenchimento do Quadro 3')
-            if quadro3_path:
-                quadro3_path.unlink(missing_ok=True)
+            self.quadro3_path.unlink(missing_ok=True)
             raise ExcelArrazoadoCriticalException(f'Falha no preenchimento do Quadro 3: {str(e)}')
         finally:
             if wb:
                 wb.close()
 
     def get_operations_for_aiim(self, operacoes_xls: Path):
-        operacoes_csv = self.main_path / 'Dados' / 'valor_operacoes.csv'
         csv_df = None
-        if operacoes_csv.is_file():
-            csv_df = pd.read_csv(str(operacoes_csv), index_col=0, parse_dates=True)
+        wb = None
+        if self.operacoes_csv.is_file():
+            csv_df = pd.read_csv(str(self.operacoes_csv), index_col=0, parse_dates=True)
         if not operacoes_xls.is_file():
             if csv_df is not None:
                 return csv_df
@@ -678,14 +710,22 @@ class ExcelDDFs:
             if type(ws.cell(row=row, column=8).value) == float:
                 total_docs = ws.cell(row=row, column=8).value
             else:
-                total_docs = float(str(ws.cell(row=row, column=8).value).replace('.', '').replace(',', '.'))
+                valor = ws.cell(row=row, column=8).value
+                if valor:
+                    total_docs = float(str(valor).replace('.', '').replace(',', '.'))
+                else:
+                    total_docs = 0
             row = 5
             while type(ws.cell(row=row, column=10).value) == int:
                 row += 1
             if type(ws.cell(row=row, column=11).value) == float:
                 total_gias = ws.cell(row=row, column=11).value
             else:
-                total_gias = float(str(ws.cell(row=row, column=11).value).replace('.', '').replace(',', '.'))
+                valor = ws.cell(row=row, column=11).value
+                if valor:
+                    total_gias = float(str().replace('.', '').replace(',', '.'))
+                else:
+                    total_gias = 0
             if total_docs > total_gias:
                 logger.info('Decidido usar tabela de documentos fiscais por ter valores maiores, para cadastro de VTO')
                 coluna_ref = 1
@@ -705,15 +745,19 @@ class ExcelDDFs:
                 row += 1
             refs.sort()
             new_df = pd.DataFrame(data, columns=['Mes', 'Ano', 'Valor Contabil - CFOP'], index=pd.to_datetime(refs))
-            if operacoes_csv.is_file() and refs[0] < GeneralFunctions.first_day_of_month_before(datetime.date.today()):
+            if self.operacoes_csv.is_file() and refs[0] < GeneralFunctions.first_day_of_month_before(datetime.date.today()):
                 ops_df = pd.concat([csv_df, new_df])
             else:
                 ops_df = new_df
             ops_df = ops_df.drop_duplicates(subset=['Ano', 'Mes'], keep='last').sort_index(ascending=False)
-            ops_df.to_csv(operacoes_csv)
+            ops_df.to_csv(self.operacoes_csv)
             if operacoes_xls.is_file():
                 operacoes_xls.unlink()
             return ops_df
         finally:
             if wb:
                 wb.close()
+
+    def clear_cache(self):
+        self._planilha = {}
+

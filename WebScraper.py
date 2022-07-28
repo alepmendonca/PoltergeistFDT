@@ -33,6 +33,7 @@ from selenium.webdriver.support.ui import Select
 from selenium.webdriver.support.wait import WebDriverWait
 from win32com.client import Dispatch
 
+import GeneralConfiguration
 import GeneralFunctions
 import PDFExtractor
 from GeneralFunctions import logger, wait_downloaded_file, move_downloaded_file
@@ -48,6 +49,7 @@ arquivos_digitais_url = "https://www10.fazenda.sp.gov.br/ArquivosDigitais/Accoun
 dec_url = "https://sefaznet11.intra.fazenda.sp.gov.br/DEC/UCLogin/login.aspx"
 pgsf_produtividade_url = "https://sefaznet11.intra.fazenda.sp.gov.br/pgsf.net/Account/Login.aspx"
 sem_papel_url = "https://www.documentos.spsempapel.sp.gov.br/siga/public/app/login"
+sat_consulta_url = "https://satsp.fazenda.sp.gov.br/COMSAT/Public/ConsultaPublica/ConsultaPublicaCfe.aspx"
 
 launchpad_report_options = {
     "CFOP_por_IE": {'Parametros': ['inicioAAAAMM', 'fimAAAAMM', 'ie'],
@@ -215,7 +217,51 @@ def get_cnpj_data(cnpj: str):
     return resposta.json()
 
 
-def set_password_for_certificate_in_browser():
+def choose_right_client_certificate(parte_titulo: str, nome_procurado: str):
+    window_cert = '[CLASS:#32770;TITLE:Certificado]'
+    window_browser = f"[CLASS:Chrome_WidgetWin_1; REGEXPTITLE:(?i)(.*{parte_titulo}.*)]"
+    ultimo_nome_encontrado = ''
+    achou = False
+    while not achou:
+        autoit.win_activate(window_browser)
+        if ultimo_nome_encontrado == '':
+            autoit.send('{TAB}{SPACE}')
+        else:
+            for i in range(0, 4):
+                autoit.send('{TAB}')
+            autoit.send('{DOWN}{TAB}{SPACE}')
+        try:
+            autoit.win_wait(window_cert, 1)
+            autoit.win_activate(window_cert)
+        except AutoItError:
+            logger.debug('Não encontrou janela de certificado, já deve ter o certificado na sessão')
+            return
+
+        nome_encontrado = autoit.control_get_text(window_cert, '[CLASS:RICHEDIT50W;INSTANCE:1]')
+        if ultimo_nome_encontrado == nome_encontrado:
+            autoit.control_click(window_cert, '[CLASS:Button;INSTANCE:5]')
+            raise Exception(f'Não encontrei o certificado de {nome_procurado}!')
+        if nome_procurado == nome_encontrado:
+            ultimo_texto = ''
+            texto_encontrado = '1'
+            autoit.send('{TAB}{RIGHT}{TAB}{TAB}')
+            while ultimo_texto != texto_encontrado or not achou:
+                texto_encontrado = autoit.control_get_text(window_cert, '[CLASS:RICHEDIT50W;INSTANCE:1]')
+                if texto_encontrado.find('O = ICP-Brasil') > 0:
+                    achou = True
+                autoit.control_send(window_cert, '[CLASS:SysListView32;INSTANCE:1]', '{DOWN}')
+                ultimo_texto = texto_encontrado
+            autoit.control_click(window_cert, '[CLASS:Button;INSTANCE:3]')
+        else:
+            autoit.control_click(window_cert, '[CLASS:Button;INSTANCE:5]')
+        ultimo_nome_encontrado = nome_encontrado
+        autoit.win_activate(window_browser)
+        if achou:
+            autoit.send('{TAB}{SPACE}')
+            break
+
+
+def set_password_for_certificate_in_browser(password: str):
     popup_senha = "[CLASS:#32770; TITLE:Introduzir PIN]"
     try:
         autoit.win_wait(popup_senha, 5)
@@ -229,7 +275,7 @@ def set_password_for_certificate_in_browser():
         logger.debug('Achou pop-up de certificado digital')
         autoit.control_focus(popup_senha, "[CLASS:RICHEDIT50W; INSTANCE:1]")
         logger.debug('Tenta colocar senha ')
-        autoit.control_send(popup_senha, "[CLASS:RICHEDIT50W; INSTANCE:1]", GeneralFunctions.certificado_senha)
+        autoit.control_send(popup_senha, "[CLASS:RICHEDIT50W; INSTANCE:1]", password)
         autoit.control_click(popup_senha, "[CLASS:Button; INSTANCE:1]")
     except Exception:
         logger.exception('Falha no preenchimento de senha no pop-up de certificado digital')
@@ -238,19 +284,26 @@ def set_password_for_certificate_in_browser():
     # verifica se não reapareceu a janela - se apareceu, melhor desistir pra não bloquear smartcard
     try:
         time.sleep(1)
-        autoit.win_wait(popup_senha, 1)
+        autoit.win_wait(popup_senha, 2)
+    except AutoItError as e:
+        logger.debug(
+            'Não achei de novo o pop-up de certificado digital, acredita que deu certo a senha passada antes')
+        return
+
+    texto = autoit.control_get_text(popup_senha, '[CLASS:Static; INSTANCE:2]')
+    autoit.control_click(popup_senha, '[CLASS:Button; INSTANCE:2]')
+    if texto == 'PIN incorreto':
+        raise Exception('Senha incorreta para certificado!')
+    else:
         raise Exception("O pop-up de senha do smartcard não foi fechado! Verificar manualmente!")
-    except AutoItError:
-        logger.debug('Não achei de novo o pop-up de certificado digital, acredita que deu certo a senha passada antes')
-        pass
 
 
-def set_password_in_browser(parte_titulo: str):
+def set_password_in_browser(parte_titulo: str, username: str, password: str):
     navegador = f"[CLASS:Chrome_WidgetWin_1; REGEXPTITLE:(?i)(.*{parte_titulo}.*)]"
     autoit.win_wait(navegador, 5)
     autoit.win_activate(navegador)
-    autoit.send(GeneralFunctions.login_rede + "{TAB}")
-    senha_corrigida = re.sub(r"([!#+^{}])", r"{\1}", GeneralFunctions.senha_rede)
+    autoit.send(username + "{TAB}")
+    senha_corrigida = re.sub(r"([!#+^{}])", r"{\1}", password)
     autoit.send(senha_corrigida + "{ENTER}")
 
     try:
@@ -259,7 +312,7 @@ def set_password_in_browser(parte_titulo: str):
         autoit.win_wait(navegador, 1)
         time.sleep(2)
         autoit.win_wait(navegador, 1)
-        raise Exception("O pop-up de login/senha do Chrome não foi fechado! Verificar manualmente!")
+        raise Exception("O pop-up de login/senha do Chrome não foi fechado! Talvez usuário e senha estejam incorretos!")
     except AutoItError:
         pass
 
@@ -439,6 +492,10 @@ class SeleniumWebScraper:
         )
         self.driver.implicitly_wait(1)
 
+    def __login_certificado_digital(self, parte_titulo: str, config=GeneralConfiguration.get()):
+        choose_right_client_certificate(parte_titulo, config.certificado)
+        set_password_for_certificate_in_browser(config.certificado_pass)
+
     def __pgsf_login(self):
         try:
             self.__get_driver().get(pgsf_url)
@@ -449,10 +506,10 @@ class SeleniumWebScraper:
 
         input_username = self.__get_driver().find_element(By.ID, "userID2")
         input_username.clear()
-        input_username.send_keys(GeneralFunctions.login_rede)
+        input_username.send_keys(GeneralConfiguration.get().intranet_login)
         input_password = self.__get_driver().find_element(By.ID, "password")
         input_password.clear()
-        input_password.send_keys(GeneralFunctions.senha_rede + Keys.RETURN)
+        input_password.send_keys(GeneralConfiguration.get().intranet_pass + Keys.RETURN)
 
         try:
             WebDriverWait(self.__get_driver(), 2).until_not(EC.visibility_of_element_located((By.ID, "userID2")))
@@ -490,6 +547,25 @@ class SeleniumWebScraper:
                 pass
             else:
                 raise ex
+
+    def __sigadoc_login(self, config=GeneralConfiguration.get()):
+        self.__get_driver().get(sem_papel_url)
+
+        input_username = self.__get_driver().find_element(By.ID, "username")
+        input_username.clear()
+        input_username.send_keys(config.sigadoc_login)
+        input_password = self.__get_driver().find_element(By.ID, "password")
+        input_password.clear()
+        input_password.send_keys(config.sigadoc_pass + Keys.RETURN)
+
+        try:
+            WebDriverWait(self.__get_driver(), 2).until_not(EC.visibility_of_element_located((By.ID, "username")))
+        except TimeoutException:
+            try:
+                msg = self.__get_driver().find_element(By.CLASS_NAME, 'alert-danger').text
+                raise Exception(f'Falha no acesso ao Sem Papel: {msg}')
+            except NoSuchElementException:
+                pass
 
     def get_full_OSF(self, osf: str, filename: str):
         logger.info('Acessando PGSF para pegar OSF completa...')
@@ -590,6 +666,50 @@ class SeleniumWebScraper:
             logger.exception("Erro ao consultar AIIMs da OSF " + osf + " no PGSF")
             raise e
 
+    def print_sat_cupom(self, cupons: list) -> list[Path]:
+        logger.info("Consultando cupons SAT")
+        try:
+            self.__get_driver().get(sat_consulta_url)
+
+            paths = []
+            for cupom in cupons:
+                self.__get_driver().find_element(By.ID, "conteudo_txtChaveAcesso").click()
+                self.__get_driver().find_element(By.ID, "conteudo_txtChaveAcesso").clear()
+                self.__get_driver().find_element(By.ID, "conteudo_txtChaveAcesso").send_keys(cupom)
+                time.sleep(1)
+                try:
+                    recaptcha_frame = self.driver.find_element(By.XPATH,
+                                                               '//*[@id="ReCaptchContainer"]/div/div/iframe')
+                    self.__get_driver().switch_to.frame(recaptcha_frame)
+                    self.__get_driver().find_element(By.CLASS_NAME, 'recaptcha-checkbox-unchecked').click()
+                    try:
+                        self.__get_driver().find_element(By.ID, 'lblMensagemCaptcha')
+                    except NoSuchElementException:
+                        logger.warning("MOSTRE QUE VOCÊ NÃO É UM ROBÔ NO SITE DE CONSULTA SAT!!!")
+                        WebDriverWait(self.__get_driver(), 60).until(
+                            EC.visibility_of_element_located((By.CLASS_NAME, "recaptcha-checkbox-checked")))
+                    self.__get_driver().switch_to.parent_frame()
+                except TimeoutException:
+                    raise Exception('Você não clicou no captcha do site do SAT, '
+                                    'não consigo fazer tudo sozinho...')
+                try:
+                    element = self.__get_driver().find_element(By.ID, 'dialog-modal')
+                    if element.text.startswith('As consultas a partir de sua faixa de IP estão bloqueadas'):
+                        logger.warning(f'Site de consulta SAT bloqueou acessos. Apenas consegui baixar {len(paths)} amostras')
+                        break
+                except NoSuchElementException:
+                    pass
+                self.__get_driver().find_element(By.ID, "conteudo_btnConsultar").click()
+                pdf_file = self.tmp_path / f'{cupom}.pdf'
+                cupom_element = self.__get_driver().find_element(By.ID, "divTelaImpressao")
+                self.__save_html_as_pdf(cupom_element.get_attribute('innerHTML'), pdf_file)
+                paths.append(pdf_file)
+                self.__get_driver().find_element(By.ID, 'conteudo_btnSair').click()
+            return paths
+        except Exception as e:
+            logger.exception("Erro ao consultar cupons SAT na consulta pública")
+            raise e
+
     def get_nfe_inutilizacoes(self, cnpj: str, ano_inicial: int, ano_final: int) -> list[dict]:
         logger.info("Consultando NF-e Inutilizações")
         self.__get_driver().get(nfe_consulta_url)
@@ -659,6 +779,8 @@ class SeleniumWebScraper:
             select_tipo_usuario.select_by_visible_text("Fazendário")
 
             # Click on "Certificado Digital"
+            t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
+                                                       args=[self.__get_driver().title])
             try:
                 input_certificado = self.__get_driver().find_element(
                     By.NAME,
@@ -671,7 +793,8 @@ class SeleniumWebScraper:
                     "ctl00$conteudoPaginaPlaceHolder$loginControl$FederatedPassiveSignInCertificado$ctl04"
                 )
                 input_certificado.click()
-            set_password_for_certificate_in_browser()
+            t.start()
+            t.join()
 
             # Access "Consulta Cadastral" page by getting URL from page source code
             cadastro_link = self.__get_driver().find_element(By.XPATH,
@@ -707,32 +830,32 @@ class SeleniumWebScraper:
             dados_atuais.update({
                 'empresa': self.__get_driver().find_element(
                     By.XPATH, "//td[contains(text(), 'Nome Empresarial:')]")
-                    .find_element(By.XPATH, "following-sibling::*").text,
+                .find_element(By.XPATH, "following-sibling::*").text,
                 'situacao': self.__get_driver().find_element(
                     By.XPATH, '//span[contains(text(), "Situa")]//parent::td').text[11:],
                 'inicio_inscricao': self.__get_driver().find_element(
                     By.XPATH, '//span[contains(text(), "no Estado")]//parent::td').text[-10:],
                 'logradouro': self.__get_driver().find_element(By.XPATH,
                                                                "//td[contains(text(), 'Logradouro:')]")
-                    .find_element(By.XPATH, "following-sibling::*").text,
+                .find_element(By.XPATH, "following-sibling::*").text,
                 'numero': self.__get_driver().find_element(By.XPATH,
                                                            "//td[contains(text(), 'N°:')]")
-                    .find_element(By.XPATH, "following-sibling::*").text,
+                .find_element(By.XPATH, "following-sibling::*").text,
                 'complemento': self.__get_driver().find_element(By.XPATH,
                                                                 "//td[contains(text(), 'Complemento:')]")
-                    .find_element(By.XPATH, "following-sibling::*").text,
+                .find_element(By.XPATH, "following-sibling::*").text,
                 'bairro': self.__get_driver().find_element(By.XPATH,
                                                            "//td[contains(text(), 'Bairro:')]")
-                    .find_element(By.XPATH, "following-sibling::*").text,
+                .find_element(By.XPATH, "following-sibling::*").text,
                 'cidade': self.__get_driver().find_element(By.XPATH,
                                                            "//td[contains(text(), 'Município:')]")
-                    .find_element(By.XPATH, "following-sibling::*").text,
+                .find_element(By.XPATH, "following-sibling::*").text,
                 'uf': self.__get_driver().find_element(By.XPATH,
                                                        "//td[contains(text(), 'UF:')]")
-                    .find_element(By.XPATH, "following-sibling::*").text,
+                .find_element(By.XPATH, "following-sibling::*").text,
                 'cep': self.__get_driver().find_element(By.XPATH,
                                                         "//td[contains(text(), 'CEP:')]")
-                    .find_element(By.XPATH, "following-sibling::*").text
+                .find_element(By.XPATH, "following-sibling::*").text
             })
 
             # Click on Empresa/Geral tab
@@ -814,6 +937,8 @@ class SeleniumWebScraper:
             radio_fazendario.click()
 
             # Click on "Certificado Digital"
+            t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
+                                                       args=[self.__get_driver().title])
             try:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ConteudoPagina_btn_Login_Certificado_WebForms")
@@ -822,7 +947,8 @@ class SeleniumWebScraper:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ConteudoPagina_btn_Login_Certificado_WebForms")
                 input_certificado.click()
-            set_password_for_certificate_in_browser()
+            t.start()
+            t.join()
 
             self.__get_driver().find_element(By.LINK_TEXT, "Conta Fiscal do ICMS e Parcelamento").click()
 
@@ -833,8 +959,16 @@ class SeleniumWebScraper:
                     str(ano))
                 self.__get_driver().find_element(By.ID, "MainContent_chkrecolhimento").click()
                 self.__get_driver().find_element(By.ID, "MainContent_btnConsultar").click()
-                time.sleep(1)
-                self.__get_driver().find_element(By.ID, "plus").click()
+                try:
+                    time.sleep(1)
+                    self.__get_driver().find_element(By.ID, "plus").click()
+                except NoSuchElementException:
+                    # pode ser que o período não tenha informações. A confirmar
+                    erro = self.__get_driver().find_element(By.ID, "MainContent_lblMensagemDeErro").text
+                    if not erro.startswith("Contribuinte sem informações"):
+                        raise Exception(erro)
+                    else:
+                        continue
                 time.sleep(1)
                 self.__get_driver().find_element(By.ID, "MainContent_lnkImprimeContaFiscal").click()
 
@@ -859,16 +993,20 @@ class SeleniumWebScraper:
             radio_fazendario.click()
 
             # Click on "Certificado Digital"
+            t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
+                                                       args=[self.__get_driver().title])
             try:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ConteudoPagina_btn_Login_Certificado_WebForms")
-                threading.Thread(target=set_password_for_certificate_in_browser).start()
+                t.start()
                 input_certificado.click()
             except StaleElementReferenceException:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ConteudoPagina_btn_Login_Certificado_WebForms")
-                threading.Thread(target=set_password_for_certificate_in_browser).start()
+                t.start()
                 input_certificado.click()
+            t.start()
+            t.join()
 
             WebDriverWait(self.__get_driver(), 10).until(EC.visibility_of_element_located((By.LINK_TEXT, "Nova GIA")))
             self.__get_driver().find_element(By.LINK_TEXT, "Nova GIA").click()
@@ -940,16 +1078,19 @@ class SeleniumWebScraper:
             radio_fazendario.click()
 
             # Click on "Certificado Digital"
+            t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
+                                                       args=[self.__get_driver().title])
             try:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ConteudoPagina_btn_Login_Certificado_WebForms")
-                threading.Thread(target=set_password_for_certificate_in_browser).start()
+                t.start()
                 input_certificado.click()
             except StaleElementReferenceException:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ConteudoPagina_btn_Login_Certificado_WebForms")
-                threading.Thread(target=set_password_for_certificate_in_browser).start()
+                t.start()
                 input_certificado.click()
+            t.join()
 
             WebDriverWait(self.__get_driver(), 10).until(
                 EC.visibility_of_element_located((By.LINK_TEXT, "Nova GIA")))
@@ -989,7 +1130,7 @@ class SeleniumWebScraper:
                 self.__get_driver().find_element(By.LINK_TEXT, "10 - Apuração do ICMS - Operações Próprias").click()
                 time.sleep(1)
                 paths[gia[0]] = [self.tmp_path / f'giaapuracao{gia[0]}.pdf']
-                self.__save_html_as_pdf(self.__get_driver().page_source, pdf_file)
+                self.__save_html_as_pdf(self.__get_driver().page_source, paths[gia[0]][0])
                 for code in codes:
                     self.__get_driver().find_element(By.LINK_TEXT, code).click()
                     try:
@@ -1018,62 +1159,59 @@ class SeleniumWebScraper:
         return self.__print_gia_apuracao_subpage(ie, apuracoes, 'Outros Créditos', ['057', '058'])
 
     # levanta dados pessoais do AFR via PGSF Produtividade
-    def get_dados_afr(self) -> dict:
+    def get_dados_afr(self, config):
+        logger.info("Acessando DEC para ver dados AFR")
         try:
-            self.__get_driver().get(pgsf_produtividade_url)
+            self.__get_driver().get(dec_url)
         except WebDriverException as we:
             if we.msg.find('ERR_NAME_NOT_RESOLVED') >= 0:
                 raise Exception('Não foi possível acessar o site do PGSF Produtividade! '
                                 'Verifique se o computador está conectado na rede da Sefaz.')
 
+
+        # Click on "Certificado Digital"
+        # Cria thread para preencher popup de senha, pois essa página trava thread do Selenium
+        t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
+                                                   args=[self.__get_driver().title, config])
         try:
-            logger.info('Acessando PGSF Produtividade')
+            input_certificado = self.__get_driver().find_element(By.ID,
+                                                                 "ConteudoPagina_btnCertificacao"
+                                                                 )
+            t.start()
+            input_certificado.click()
+        except StaleElementReferenceException:
+            input_certificado = self.__get_driver().find_element(By.ID,
+                                                                 "ConteudoPagina_btnCertificacao"
+                                                                 )
+            t.start()
+            input_certificado.click()
+        t.join()
 
-            # Acessa via login/senha porque por algum motivo a thread não continua após clicar no botão de certificado,
-            # como ocorre em outros sites
-            self.__get_driver().find_element(By.ID, "ctl00_MainContent_btnSTSPassivoWindows").click()
-            set_password_in_browser("identityprd")
+        config.intranet_login = self.__get_driver().find_element(By.ID, "ConteudoPagina_lblLogin").text
+        config.nome = self.__get_driver().find_element(By.ID, "ConteudoPagina_lblNome").text
+        config.email = self.__get_driver().find_element(By.ID, "ConteudoPagina_lblEmail").text
+        funcional = self.__get_driver().find_element(By.ID, "ConteudoPagina_lblIdentidadeFuncional").text
+        config.funcional = f"{funcional[:2]}.{funcional[2:5]}-{funcional[-1]}"
 
-            self.__get_driver().get("https://sefaznet11.intra.fazenda.sp.gov.br/pgsf.net/Telas/Relatorios.aspx")
-            Select(self.__get_driver().find_element(By.ID, "ctl00_MainContent_ddlRelatorios")).select_by_index(1)
-            WebDriverWait(self.__get_driver(), 10).until(
-                EC.visibility_of_element_located((By.ID, "ctl00_MainContent_filtroCombos_ddlDrt")))
+        logger.info('Acessando PGSF Produtividade para dados de FDT')
+        self.__get_driver().get(pgsf_produtividade_url)
 
-            dados = {
-                "drt": self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlDrt").text,
-                "nf": self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlInspetor").text,
-                "equipe": self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlTeamLeader").text
-            }
+        # Acessa via login/senha porque por algum motivo a thread não continua após clicar no botão de certificado,
+        # como ocorre em outros sites
+        self.__get_driver().find_element(By.ID, "ctl00_MainContent_btnSTSPassivoWindows").click()
+        set_password_in_browser("identityprd", config.intranet_login, config.intranet_pass)
 
-            logger.info("Acessando DEC para ver dados AFR")
-            self.__get_driver().get(dec_url)
+        self.__get_driver().get("https://sefaznet11.intra.fazenda.sp.gov.br/pgsf.net/Telas/Relatorios.aspx")
+        Select(self.__get_driver().find_element(By.ID, "ctl00_MainContent_ddlRelatorios")).select_by_index(1)
+        WebDriverWait(self.__get_driver(), 10).until(
+            EC.visibility_of_element_located((By.ID, "ctl00_MainContent_filtroCombos_ddlDrt")))
 
-            # Click on "Certificado Digital"
-            # Cria thread para preencher popup de senha, pois essa página trava thread do Selenium
-            try:
-                input_certificado = self.__get_driver().find_element(By.ID,
-                                                                     "ConteudoPagina_btnCertificacao"
-                                                                     )
-                thread = threading.Thread(target=set_password_for_certificate_in_browser)
-                thread.start()
-                input_certificado.click()
-            except StaleElementReferenceException:
-                input_certificado = self.__get_driver().find_element(By.ID,
-                                                                     "ConteudoPagina_btnCertificacao"
-                                                                     )
-                threading.Thread(target=set_password_for_certificate_in_browser).start()
-                input_certificado.click()
+        config.drt_sigla = self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlDrt").text
+        config.nucleo_fiscal = self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlInspetor").text
+        config.equipe_fiscal = self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlTeamLeader").text
 
-            dados.update({
-                "login": self.__get_driver().find_element(By.ID, "ConteudoPagina_lblLogin").text,
-                "nome": self.__get_driver().find_element(By.ID, "ConteudoPagina_lblNome").text,
-                "email": self.__get_driver().find_element(By.ID, "ConteudoPagina_lblEmail").text,
-                "funcional": self.__get_driver().find_element(By.ID, "ConteudoPagina_lblIdentidadeFuncional").text
-            })
-            return dados
-        except Exception as e:
-            logger.error("Erro ao levantar dados do AFR no PGSF Produtividade e DEC", e)
-            raise e
+        logger.info("Acessando Sem Papel para confirmar login/senha")
+        self.__sigadoc_login(config)
 
     def is_dec_enabled(self, cnpj: str) -> bool:
         logger.info("Acessando consulta pública do DEC")
@@ -1103,18 +1241,22 @@ class SeleniumWebScraper:
             janela_principal = self.__get_driver().current_window_handle
             # Click on "Certificado Digital"
             # Cria thread para preencher popup de senha, pois essa página trava thread do Selenium
+            t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
+                                                       args=[self.__get_driver().title])
             try:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ConteudoPagina_btnCertificacao"
                                                                      )
-                threading.Thread(target=set_password_for_certificate_in_browser).start()
+                t.start()
                 input_certificado.click()
             except StaleElementReferenceException:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ConteudoPagina_btnCertificacao"
                                                                      )
-                threading.Thread(target=set_password_for_certificate_in_browser).start()
+                t.start()
                 input_certificado.click()
+            t.start()
+            t.join()
 
             if len(self.__get_driver().window_handles) > 1:
                 for handle in self.__get_driver().window_handles:
@@ -1238,18 +1380,22 @@ class SeleniumWebScraper:
             janela_principal = self.__get_driver().current_window_handle
             # Click on "Certificado Digital"
             # Cria thread para preencher popup de senha, pois essa página trava thread do Selenium
+            t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
+                                                       args=[self.__get_driver().title])
             try:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ConteudoPagina_btnCertificacao"
                                                                      )
-                threading.Thread(target=set_password_for_certificate_in_browser).start()
+                t.start()
                 input_certificado.click()
             except StaleElementReferenceException:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ConteudoPagina_btnCertificacao"
                                                                      )
-                threading.Thread(target=set_password_for_certificate_in_browser).start()
+                t.start()
                 input_certificado.click()
+            t.start()
+            t.join()
 
             if len(self.__get_driver().window_handles) > 1:
                 for handle in self.__get_driver().window_handles:
@@ -1314,8 +1460,11 @@ class SeleniumWebScraper:
         self.__get_driver().get('https://satsp.fazenda.sp.gov.br/COMSAT/Account/LoginSSL.aspx?ReturnUrl=%2fCOMSAT%2f')
         self.__get_driver().find_element(By.ID, 'conteudo_rbtFazendarioGeral').click()
         # Click on Certificado Digital
-        threading.Thread(target=set_password_for_certificate_in_browser).start()
+        t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
+                                                   args=[self.__get_driver().title])
+        t.start()
         self.__get_driver().find_element(By.ID, 'conteudo_imgCertificado').click()
+        t.join()
 
         self.__get_driver().get('https://satsp.fazenda.sp.gov.br/COMSAT/Private/PesquisarVinculacaoDeEquipamento/'
                                 'PesquisarVinculacaoDeEquipamento.aspx')
@@ -1334,8 +1483,11 @@ class SeleniumWebScraper:
         logger.info(f"Acessando Portal do Simples para consultar opção")
         self.__get_driver().get('https://www10.receita.fazenda.gov.br/login/publico/bemvindo/')
         # Click on Certificado Digital
-        threading.Thread(target=set_password_for_certificate_in_browser).start()
+        t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
+                                                   args=[self.__get_driver().title])
+        t.start()
         self.__get_driver().find_element(By.ID, "linkFormSubmit").click()
+        t.join()
         self.__get_driver().get('https://www10.receita.fazenda.gov.br/entessn/aplicacoes.aspx?id=7')
         opcoes = []
         for cnpj in cnpjs:
@@ -1376,6 +1528,8 @@ class SeleniumWebScraper:
             self.__get_driver().get(arquivos_digitais_url)
 
             # Click on "Certificado Digital"
+            t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
+                                                       args=[self.__get_driver().title])
             try:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ctl00_ConteudoPagina_btn_Login_Certificado_WebForms")
@@ -1384,7 +1538,8 @@ class SeleniumWebScraper:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ctl00_ConteudoPagina_btn_Login_Certificado_WebForms")
                 input_certificado.click()
-            set_password_for_certificate_in_browser()
+            t.start()
+            t.join()
 
             self.__get_driver().get(
                 'https://www10.fazenda.sp.gov.br/ArquivosDigitais/Pages/DownloadArquivoDigital.aspx')
@@ -1534,9 +1689,9 @@ class SeleniumWebScraper:
                                             'Verifique se o computador está conectado na rede da Sefaz.')
                     self.__get_driver().switch_to.frame("servletBridgeIframe")
                     self.__get_driver().find_element(By.ID, "_id0:logon:USERNAME").send_keys(
-                        GeneralFunctions.login_rede)
+                        GeneralConfiguration.get().intranet_login)
                     self.__get_driver().find_element(By.ID, "_id0:logon:PASSWORD").send_keys(
-                        GeneralFunctions.senha_rede)
+                        GeneralConfiguration.get().intranet_pass)
                     self.__get_driver().find_element(By.ID, "_id0:logon:logonButton").click()
                     self.__get_driver().find_element(By.ID, "yui-gen1-button").click()
                     self.running_launchpad = True
@@ -1583,7 +1738,8 @@ class SeleniumWebScraper:
                                 elemento_buscado.click()
                                 elemento_buscado.send_keys(Keys.ENTER)
                                 aba_atual = \
-                                    [tab.text for tab in self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
+                                    [tab.text for tab in
+                                     self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
                                      if 'Active' in tab.get_attribute('class').split()][0]
                                 if aba_atual == 'Documentos':
                                     logger.debug('Insiste em não sair da página de busca, vamos retentar depois')
@@ -1593,7 +1749,6 @@ class SeleniumWebScraper:
                         except NoSuchElementException:
                             tentativas = tentativas + 1
                             time.sleep(3)
-
 
                     # subframe é o frame da aba selecionada
                     self.__get_driver().switch_to.default_content()
@@ -1762,23 +1917,7 @@ class SeleniumWebScraper:
     def get_expediente_sem_papel(self, expediente: str):
         try:
             logger.info(f'Acessando Sem Papel para baixar expediente {expediente}...')
-            self.__get_driver().get(sem_papel_url)
-
-            input_username = self.__get_driver().find_element(By.ID, "username")
-            input_username.clear()
-            input_username.send_keys(GeneralFunctions.login_sempapel)
-            input_password = self.__get_driver().find_element(By.ID, "password")
-            input_password.clear()
-            input_password.send_keys(GeneralFunctions.senha_sempapel + Keys.RETURN)
-
-            try:
-                WebDriverWait(self.__get_driver(), 2).until_not(EC.visibility_of_element_located((By.ID, "username")))
-            except TimeoutException:
-                try:
-                    msg = self.__get_driver().find_element(By.CLASS_NAME, 'alert-danger').text
-                    raise Exception(f'Falha no acesso ao Sem Papel: {msg}')
-                except NoSuchElementException:
-                    pass
+            self.__sigadoc_login()
 
             expediente_limpo = re.sub(r'[^A-Z0-9]', '', expediente)
             self.__get_driver().get(f"https://www.documentos.spsempapel.sp.gov.br/sigaex/app/arquivo/exibir?"
@@ -1808,6 +1947,8 @@ class SeleniumWebScraper:
             self.__get_driver().get(arquivos_digitais_url)
 
             # Click on "Certificado Digital"
+            t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
+                                                       args=[self.__get_driver().title])
             try:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ctl00_ConteudoPagina_btn_Login_Certificado_WebForms")
@@ -1816,7 +1957,8 @@ class SeleniumWebScraper:
                 input_certificado = self.__get_driver().find_element(By.ID,
                                                                      "ctl00_ConteudoPagina_btn_Login_Certificado_WebForms")
                 input_certificado.click()
-            set_password_for_certificate_in_browser()
+            t.start()
+            t.join()
 
             self.__get_driver().get(
                 'https://www10.fazenda.sp.gov.br/ArquivosDigitais/Pages/ConsultaEntregaArquivos.aspx')

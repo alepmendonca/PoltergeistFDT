@@ -8,7 +8,7 @@ from docx.text.paragraph import Paragraph
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.shared import Pt, Cm
 
-import GeneralFunctions
+import GeneralConfiguration
 from GeneralFunctions import logger
 
 
@@ -117,10 +117,9 @@ def cria_recibo_entrega_arquivos_digitais(cnpj: str, ie: str, razao_social: str,
                 table.rows[i].cells[3].paragraphs[0].runs[0].font.size = Pt(8)
 
         doc.add_paragraph('')
-        dadosAFR = GeneralFunctions.get_local_dados_afr()
-        paragraph = doc.add_paragraph(dadosAFR['nome'])
+        paragraph = doc.add_paragraph(GeneralConfiguration.get().nome)
         paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-        paragraph = doc.add_paragraph(f'IF {dadosAFR["funcional"]}')
+        paragraph = doc.add_paragraph(f'IF {GeneralConfiguration.get().funcional}')
         paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
         doc.save(str(docx_path.absolute()))
         _save_docx_as_pdf(docx_path, path)
@@ -166,12 +165,11 @@ class WordReport:
         PROVAS: "DA CONCLUSÃO DO TRABALHO FISCAL"
     }
 
-    def __init__(self, pasta_base: Path, audit):
-        self.main_path = pasta_base
+    def __init__(self, audit):
         self._audit = audit
         self.report: Document = None
-        (pasta_base / 'AIIM').mkdir(exist_ok=True)
-        self.report_path = pasta_base / 'AIIM' / 'Relatório Circunstanciado.docx'
+        audit.aiim_path().mkdir(exist_ok=True)
+        self.report_path = audit.aiim_path() / 'Relatório Circunstanciado.docx'
         if not self.report_path.is_file():
             try:
                 self.report = Document(Path('resources/Relatório Circunstanciado.docx'))
@@ -188,19 +186,17 @@ class WordReport:
             self.report = Document(self.report_path)
 
     def _initialize_report(self):
-        dadosAFR = GeneralFunctions.get_local_dados_afr()
         self.report.sections[0].header.tables[0].rows[0].cells[0].paragraphs[2].add_run(
-            f'{dadosAFR["drt_nome"]} - {dadosAFR["drt"]}\n'
-            f'NÚCLEO DE FISCALIZAÇÃO {dadosAFR["nf"]} - EQUIPE {dadosAFR["equipe"]}',
-            style='TituloHeader'
-        )
+            f'{GeneralConfiguration.get().drt_nome()} - {GeneralConfiguration.get().drt_sigla}\n'
+            f'NÚCLEO DE FISCALIZAÇÃO {GeneralConfiguration.get().nucleo_fiscal} '
+            f'- EQUIPE {GeneralConfiguration.get().equipe_fiscal}')
         for paragraph in self.report.paragraphs:
             paragraph.text = paragraph.text.replace('<osf>', self._audit.osf)
             paragraph.text = paragraph.text.replace('<aiim>', self._audit.aiim_number)
-            paragraph.text = paragraph.text.replace('<afre>', dadosAFR['nome'])
-            paragraph.text = paragraph.text.replace('<if>', dadosAFR['funcional'])
-            paragraph.text = paragraph.text.replace('<delegacia-sigla>', dadosAFR['drt'])
-            paragraph.text = paragraph.text.replace('<nf>', f'NF-{dadosAFR["nf"]}')
+            paragraph.text = paragraph.text.replace('<afre>', GeneralConfiguration.get().nome)
+            paragraph.text = paragraph.text.replace('<if>', GeneralConfiguration.get().funcional)
+            paragraph.text = paragraph.text.replace('<delegacia-sigla>', GeneralConfiguration.get().drt_sigla)
+            paragraph.text = paragraph.text.replace('<nf>', f'NF-{GeneralConfiguration.get().nucleo_fiscal}')
             if paragraph.text.startswith('RELATÓRIO'):
                 for run in paragraph.runs:
                     run.bold = True
@@ -251,7 +247,7 @@ class WordReport:
         retorno = {}
         for i in range(len(self.report.paragraphs)):
             if self.report.paragraphs[i].style.name == 'Heading 1':
-                if self.report.paragraphs[i].text[2:] in self.titulos.values():
+                if self.report.paragraphs[i].text[2:].strip() in self.titulos.values():
                     retorno[list(self.titulos.keys())[
                         list(self.titulos.values()).index(self.report.paragraphs[i].text[2:])]] = i
         return retorno

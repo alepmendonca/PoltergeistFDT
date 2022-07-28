@@ -4,7 +4,6 @@ import re
 import subprocess
 import sys
 import threading
-from subprocess import Popen
 
 import PySimpleGUI
 import mysql.connector

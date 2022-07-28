@@ -12,7 +12,7 @@
     "Il": {
       "filtro_coluna": "ICMS Devido",
       "filtro": "positivo",
-      "verificacao": "Falta de débitos na declaração de diferencial de alíquotas para entradas interestaduais",
+      "planilha_titulo": "Falta de débitos na declaração de diferencial de alíquotas para entradas interestaduais",
       "relato": "Deixou de pagar o ICMS devido no valor total de @CRI, n<periodo>, conforme indicado no demonstrativo Anexo do item, relativo à diferença entre a alíquota interna e a alíquota interestadual devida na entrada de mercadorias destinadas a uso, consumo ou integração no ativo imobilizado, conforme se demonstra pelos documentos juntados.",
       "relatorio_circunstanciado": "o contribuinte foi autuado por ter declarado a menor, em Livro Registro de Apuração do ICMS, o valor devido de imposto, a este Estado, sobre o diferencial de alíquota interestadual, conforme art. 117, I do RICMS/00.",
       "provas": [
@@ -33,7 +33,7 @@
     "IIj": {
       "filtro_coluna": "Crédito Indevido",
       "filtro": "positivo",
-      "verificacao": "Créditos indevidos na declaração de diferencial de alíquotas para entradas interestaduais",
+      "planilha_titulo": "Créditos indevidos na declaração de diferencial de alíquotas para entradas interestaduais",
       "relato": "Creditou-se a maior indevidamente do imposto decorrente da aquisição de mercadorias com diferencial de alíquota, n<periodo>, no valor total de @CRO, conforme relação juntada no Anexo do item.",
       "capitulacao": {
         "limpa": true,

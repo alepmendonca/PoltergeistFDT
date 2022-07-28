@@ -4,6 +4,7 @@ import pandas as pd
 import PySimpleGUI as sg
 
 import Controller
+import Audit
 from ConfigFiles import Analysis
 
 
@@ -56,19 +57,19 @@ def open_query_result_window(total: int, resultado: pd.DataFrame, query: str, an
             window[event].update(nome_corrigido)
             window['-EXPORT-RESULTS-'].update(disabled=len(nome_corrigido) == 0)
         elif event == '-EXPORT-RESULTS-':
-            excel = Controller.get_analysis_sheet()
-            if window['-NEW-SHEET-NAME-'] in excel.get_sheet_names():
-                sg.popup_ok('Já existe uma aba na planilha da empresa fiscalizada com este nome!'
-                            ' Escolha outro nome e tente novamente.')
-            else:
+            excel = Audit.get_current_audit().get_sheet()
+            if values['-NEW-SHEET-NAME-'] not in excel.get_sheet_names() or \
+                    'Não' == sg.popup('Já existe uma aba na planilha da empresa fiscalizada com este nome!\n'
+                                      'Deseja manter o conteúdo da aba?', custom_text=('Sim', 'Não'),
+                                      title='Aba existente na planilha'):
                 try:
                     if query and len(resultado) != total:
                         _, resultado = Controller.executa_consulta_BD(query)
                     excel.exporta_relatorio_para_planilha(values['-NEW-SHEET-NAME-'], analysis, resultado)
-                    retorno['planilha'] = values['-NEW-SHEET-NAME-']
-                    break
                 except Exception as e:
                     sg.popup_error(f'Erro na exportação da tabela para Excel: {str(e)}', title='Erro')
+            retorno['planilha'] = values['-NEW-SHEET-NAME-']
+            break
         elif event == '-BUILD-NOTIFICATION-':
             retorno['df'] = resultado
             break

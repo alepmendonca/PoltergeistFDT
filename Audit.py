@@ -7,35 +7,28 @@ from pathlib import Path
 
 import pandas as pd
 
+import GeneralConfiguration
 import GeneralFunctions
 from ConfigFiles import Analysis, Infraction, ConfigFileDecoderException, AiimProof
 from ExcelDDFs import ExcelDDFs, ExcelArrazoadoAbaInexistenteException
 from WordReport import WordReport
 
 
-class Singleton(type):
-    _instances = {}
-
-    def __call__(cls, *args, **kwargs):
-        if cls not in cls._instances or cls._instances[cls]:
-            instance = super().__call__(*args, **kwargs)
-            cls._instances[cls] = instance
-        return cls._instances[cls]
-
-
 class PossibleInfraction:
     def __init__(self, analysis_name: str, planilha: str, df: list):
-        self.verificacao: Analysis = Analysis.get_analysis_for_name(analysis_name)
+        self.verificacao: Analysis = Analysis.get_analysis_by_name(analysis_name)
         if not self.verificacao:
             raise ConfigFileDecoderException(f'Não existe verificação chamada {analysis_name}. '
                                              f'Altere manualmente o arquivo de configurações da auditoria.')
         self.planilha = planilha
         self.df = df
+        self._notificacao_titulo = ''
+        self._notificacao_corpo = ''
 
     def toJson(self) -> dict:
         dic = self.__dict__.copy()
         dic['verificacao'] = self.verificacao.name
-        for k in [k for k in dic.keys() if dic[k] is None]:
+        for k in [k for k in dic.keys() if dic[k] is None or k.startswith('_')]:
             dic.pop(k)
         return dic
 
@@ -52,7 +45,7 @@ class PossibleInfraction:
         try:
             planilha = get_current_audit().get_sheet()
             relato = relato.replace('<osf>', get_current_audit().osf)
-            relato = relato.replace('<email>', GeneralFunctions.get_local_dados_afr()['email'])
+            relato = relato.replace('<email>', GeneralConfiguration.get().email)
             if relato.find('<periodo>') > 0:
                 # levanta os períodos indicados em "referencia"
                 referencias = planilha.periodos_de_referencia(nome_aba) \
@@ -83,10 +76,18 @@ class PossibleInfraction:
         return relato
 
     def notificacao_titulo(self, texto: str) -> str:
-        return self._personalize_text(texto)
+        if not self._notificacao_titulo:
+            self._notificacao_titulo = self._personalize_text(texto)
+        return self._notificacao_titulo
 
     def notificacao_corpo(self, texto: str) -> str:
-        return self._personalize_text(texto)
+        if not self._notificacao_corpo:
+            self._notificacao_corpo = self._personalize_text(texto)
+        return self._notificacao_corpo
+
+    def clear_cache(self):
+        self._notificacao_titulo = ''
+        self._notificacao_corpo = ''
 
 
 class AiimItem(PossibleInfraction):
@@ -96,7 +97,7 @@ class AiimItem(PossibleInfraction):
         super().__init__(analysis_name, planilha, df)
         self._proofs_dfs_list = None
         self.infracao: Infraction
-        infracao = list(filter(lambda i: i.name == infraction_name, self.verificacao.infractions))
+        infracao = list(filter(lambda i: i.filename == infraction_name, self.verificacao.infractions))
         if not len(infracao):
             raise ConfigFileDecoderException(f'Não existe infração {infraction_name} vinculada '
                                              f'à verificação {analysis_name}. '
@@ -105,6 +106,8 @@ class AiimItem(PossibleInfraction):
         self._notificacao = None
         self._notificacao_resposta = None
         self.item: int = 0
+        self._relato = ''
+        self._relatorio_circunstanciado = ''
         if item is not None:
             self.item = item
         if notificacao is not None:
@@ -149,15 +152,13 @@ class AiimItem(PossibleInfraction):
 
     def toJson(self) -> dict:
         dic = super().toJson()
-        dic['infracao'] = self.infracao.name
+        dic['infracao'] = self.infracao.filename
         if dic['item'] <= 0 or dic['item'] is None:
             dic.pop('item')
-        if '_notificacao' in dic:
-            dic['notificacao'] = dic['_notificacao']
-            dic.pop('_notificacao')
-        if '_notificacao_resposta' in dic:
-            dic['notificacao_resposta'] = dic['_notificacao_resposta']
-            dic.pop('_notificacao_resposta')
+        if self.notificacao:
+            dic['notificacao'] = self.notificacao
+        if self.notificacao_resposta:
+            dic['notificacao_resposta'] = self.notificacao_resposta
         for k in [k for k in dic.keys() if k.startswith('_') or dic[k] is None]:
             dic.pop(k)
         return dic
@@ -166,15 +167,17 @@ class AiimItem(PossibleInfraction):
         return self.infracao < other.infracao
 
     def __str__(self):
-        return str(self.infracao)
+        return f'{self.infracao}'
 
     def notification_path(self) -> Path:
+        if not self.notificacao:
+            return None
         partial_name = re.search(r"\d+", self.notificacao)[0]
         folder_name = f'{self.notificacao[-4:]}-{int(partial_name)} - {self.verificacao.name}'
         return get_current_audit().notification_path() / folder_name
 
     def notification_response_path(self) -> Path:
-        return self.notification_path() / 'Resposta'
+        return self.notification_path() / 'Resposta' if self.notification_path() else None
 
     def notification_numeric_part(self) -> str:
         partial_name = re.search(r"\d+", self.notificacao)[0]
@@ -194,10 +197,19 @@ class AiimItem(PossibleInfraction):
         return AiimProof.generate_notification_proof(self, ws)
 
     def relato(self) -> str:
-        return self._personalize_text(self.infracao.report)
+        if not self._relato:
+            self._relato = self._personalize_text(self.infracao.report)
+        return self._relato
 
     def relatorio_circunstanciado(self) -> str:
-        return self._personalize_text(self.infracao.relatorio_circunstanciado)
+        if not self._relatorio_circunstanciado:
+            self._relatorio_circunstanciado = self._personalize_text(self.infracao.relatorio_circunstanciado)
+        return self._relatorio_circunstanciado
+
+    def clear_cache(self):
+        super().clear_cache()
+        self._relato = ''
+        self._relatorio_circunstanciado = ''
 
     def _personalize_text(self, text: str) -> str:
         revised_text = super()._personalize_text(text)
@@ -214,8 +226,9 @@ class Audit:
 
     @classmethod
     def has_local_dados_osf(cls, path_name: Path):
-        os.makedirs(str(path_name / 'Dados'), exist_ok=True)
-        return (path_name / 'Dados' / 'dados_auditoria.json').is_file()
+        json_file = GeneralFunctions.get_audit_json_path(path_name)
+        json_file.parent.mkdir(exist_ok=True)
+        return json_file.is_file()
 
     def __init__(self, path: Path):
         self._path_name = path
@@ -224,8 +237,9 @@ class Audit:
         self._word = None
         self._empresa: str
         self.aiim_itens: list[AiimItem] = []
+        Analysis.load_audit_analysis(path)
         try:
-            with (self._path_name / 'Dados' / 'dados_auditoria.json').open(mode='r') as outfile:
+            with GeneralFunctions.get_audit_json_path(path).open(mode='r') as outfile:
                 self._dicionario = json.load(outfile)
         except FileNotFoundError:
             self._dicionario = {}
@@ -398,18 +412,18 @@ class Audit:
             dic.pop(k)
         return dic
 
-    def get_sheet(self):
+    def get_sheet(self) -> ExcelDDFs:
         if not self._excel:
             self._excel = ExcelDDFs()
         return self._excel
 
     def get_report(self):
         if not self._word:
-            self._word = WordReport(pasta_base=self._path_name, audit=self)
+            self._word = WordReport(audit=self)
         return self._word
 
     def update_report(self):
-        get_current_audit().get_sheet().refresh_sheet()
+        self.clear_cache()
         for item in self.aiim_itens:
             self.get_report().remove_item(item.item)
             self.get_report().remove_anexo(item.item)
@@ -425,9 +439,16 @@ class Audit:
         self.get_report().atualiza_provas_gerais(provas_gerais)
         self.get_report().save_report()
 
+    def clear_cache(self):
+        self.get_sheet().clear_cache()
+        for notif in self.notificacoes:
+            notif.clear_cache()
+        for item in self.aiim_itens:
+            item.clear_cache()
+
     def save(self):
         os.makedirs(str(self._path_name / 'Dados'), exist_ok=True)
-        with (self._path_name / 'Dados' / 'dados_auditoria.json').open(mode='w') as outfile:
+        with GeneralFunctions.get_audit_json_path(self._path_name).open(mode='w') as outfile:
             json.dump(self.toJson(), outfile, sort_keys=True, indent=3)
 
     def get_periodos_da_fiscalizacao(self, rpa=True) -> list[[date, date]]:
@@ -455,7 +476,7 @@ class Audit:
             descricao += ' contribuinte está enquadrado no ' if len(
                 periodos) == 1 else ' contribuinte foi enquadrado no '
             descricao += 'Regime Simples Nacional' if p[2] == 'sn' else 'Regime Periódico de Apuração'
-            if p[1] == datetime.date():
+            if p[1] == date.today():
                 descricao += f'desde {p[0].strftime("%d/%m/%Y")}, permanecendo até o presente.'
             else:
                 descricao += f'desde {p[0].strftime("%d/%m/%Y")} até {p[1].strftime("%d/%m/%Y")}.'
@@ -500,6 +521,15 @@ class Audit:
 
     def notification_path(self):
         return self.path() / 'Notificações'
+
+    def reports_path(self):
+        return self.path() / 'Dados'
+
+    def aiim_path(self):
+        return self.path() / 'AIIM'
+
+    def findings_path(self):
+        return self.path() / 'Achados'
 
 
 _singleton: Audit = None

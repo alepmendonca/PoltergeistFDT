@@ -1,3 +1,4 @@
+import copy
 import importlib
 import json
 import os
@@ -5,6 +6,7 @@ import re
 import sys
 from json import JSONDecodeError
 from pathlib import Path
+import GeneralFunctions
 
 
 class ConfigFileDecoderException(Exception):
@@ -25,7 +27,7 @@ class InfractionSpecialArticle(InfractionArticle):
 
 
 class InfractionRICMSArticle(InfractionArticle):
-    def __init__(self, infraction_name: str, article_data: dict):
+    def __init__(self, infraction, article_data: dict):
         try:
             self.artigo = str(article_data['artigo'])
             self.inciso = str(int(str(article_data.get('inciso', '0'))))
@@ -38,7 +40,7 @@ class InfractionRICMSArticle(InfractionArticle):
             if self.paragrafo != 'UN':
                 self.paragrafo = re.sub(r'[^\d]', '', self.paragrafo)
                 if len(self.paragrafo) == 0:
-                    raise ConfigFileDecoderException(f'Capitulação da infração {infraction_name} '
+                    raise ConfigFileDecoderException(f'Capitulação da infração {infraction} '
                                                      f'possui parágrafo inválido: {self.paragrafo}')
                 if int(self.paragrafo) <= 0:
                     self.paragrafo = None
@@ -50,56 +52,91 @@ class InfractionRICMSArticle(InfractionArticle):
                 self.letra = None
             self.juntar = article_data.get('juntar', 'Nenhum')
             if self.juntar not in ('Nenhum', 'C/C', 'E'):
-                raise ConfigFileDecoderException(f'Capitulação da infração {infraction_name} '
+                raise ConfigFileDecoderException(f'Capitulação da infração {infraction} '
                                                  f'possui opção "juntar" inválida: {self.juntar}')
         except ValueError:
-            raise ConfigFileDecoderException(f'Capitulação da infração {infraction_name} '
+            raise ConfigFileDecoderException(f'Capitulação da infração {infraction} '
                                              f'possui dados inválidos: {article_data}')
 
 
 class InfractionCapitulation:
-    def __init__(self, infraction_name: str, dicionario: dict):
+    def __init__(self, infraction, dicionario: dict):
         self.clear_existing_capitulation = dicionario.get('limpa', False)
         self.articles: list[InfractionArticle] = \
             [InfractionSpecialArticle(artigo) if artigo.get('especial', None)
-             else InfractionRICMSArticle(infraction_name, artigo)
+             else InfractionRICMSArticle(infraction, artigo)
              for artigo in dicionario.get('artigos', [])]
 
 
 class Analysis:
+    _builtin_analysis = {}
+    _user_analysis = {}
+    _audit_analysis = {}
 
-    _all_analysis = {}
+    @classmethod
+    def __put_analysis_from_path_in_dict(cls, directory: Path, dic: dict):
+        if len(dic) == 0 and directory:
+            try:
+                for (path, _, verificacoes) in os.walk(str(directory.absolute())):
+                    for verificacao in verificacoes:
+                        if verificacao.endswith('.json') and \
+                                verificacao not in GeneralFunctions.get_project_special_files():
+                            a = cls(Path(path) / verificacao)
+                            dic.update({a.name: a})
+            except ConfigFileDecoderException as ce:
+                dic.clear()
+                raise ce
 
     @classmethod
     def __get_default_analysis_dict(cls) -> dict:
-        verificacoes_path = r'resources/verificacoes'
-        if len(cls._all_analysis) == 0:
+        cls.__put_analysis_from_path_in_dict(Path(r'resources/verificacoes'), cls._builtin_analysis)
+        return cls._builtin_analysis
+
+    @classmethod
+    def __get_user_analysis_dict(cls) -> dict:
+        cls.__put_analysis_from_path_in_dict(GeneralFunctions.get_user_path(), cls._user_analysis)
+        return cls._user_analysis
+
+    @classmethod
+    def __get_audit_analysis_dict(cls, audit_path: Path = None) -> dict:
+        cls.__put_analysis_from_path_in_dict(audit_path, cls._audit_analysis)
+        return cls._audit_analysis
+
+    @classmethod
+    def get_all_analysis(cls, audit_path: Path) -> list:
+        vls = list(cls.__get_default_analysis_dict().values())
+        vls.extend(list(cls.__get_user_analysis_dict().values()))
+        vls.extend(list(cls.__get_audit_analysis_dict(audit_path).values()))
+        return vls
+
+    @classmethod
+    def load_audit_analysis(cls, path_home: Path):
+        cls.__get_audit_analysis_dict(path_home)
+
+    @classmethod
+    def clear_audit_analysis(cls):
+        cls._audit_analysis.clear()
+
+    @classmethod
+    def clear_user_analysis(cls):
+        cls._user_analysis.clear()
+
+    @classmethod
+    def get_analysis_by_name(cls, name: str):
+        return cls.__get_default_analysis_dict().get(
+            name, cls.__get_user_analysis_dict().get(
+                name, cls.__get_audit_analysis_dict().get(name)))
+
+    def __init__(self, par: Path | dict):
+        if isinstance(par, Path):
             try:
-                for (path, _, verificacoes) in os.walk(verificacoes_path):
-                    for verificacao in verificacoes:
-                        if verificacao.endswith('.json'):
-                            a = cls(Path(path) / verificacao)
-                            cls._all_analysis.update({a.name: a})
-            except ConfigFileDecoderException as ce:
-                cls._all_analysis.clear()
-                raise ce
-        return cls._all_analysis
-
-    @classmethod
-    def get_default_analysis(cls) -> list:
-        return list(cls.__get_default_analysis_dict().values())
-
-    @classmethod
-    def get_analysis_for_name(cls, name: str):
-        return cls.__get_default_analysis_dict().get(name, None)
-
-    def __init__(self, json_file: Path):
-        try:
-            with json_file.open(mode='r') as outfile:
-                dados = json.load(outfile)
-        except JSONDecodeError as jex:
-            raise ConfigFileDecoderException(f'Falha ao abrir arquivo de análise {json_file}, '
-                                             f'está com falha no seu conteúdo: {jex}')
+                with par.open(mode='r') as outfile:
+                    dados = json.load(outfile)
+            except JSONDecodeError as jex:
+                raise ConfigFileDecoderException(f'Falha ao abrir arquivo de análise {par}, '
+                                                 f'está com falha no seu conteúdo: {jex}')
+        else:
+            dados = par
 
         try:
             self.name = dados['verificacao']
@@ -118,6 +155,7 @@ class Analysis:
                 try:
                     self.function_ddf = getattr(modulo, f"{dados['funcao']['nome']}_ddf")
                 except AttributeError:
+                    # TODO seria melhor dar um pau aqui né...
                     self.function_ddf = None
                 self.query = None
             self.fix_database_function = None
@@ -133,15 +171,18 @@ class Analysis:
             self.notification_attachments = dados.get('notificacao', {}).get('anexo')
             infracoes = dados['infracoes']
             if isinstance(infracoes, list):
-                self.infractions = [Infraction(i, self, Path(r'resources/infracoes', f'{i}.json')) for i in infracoes]
+                self.infractions = [Infraction.get_by_name(i) for i in infracoes]
+                for i in self.infractions:
+                    i.analysis = self
             else:
                 self.infractions = []
                 for i, overriden_data in dict(infracoes).items():
-                    infraction = Infraction(i, self, Path(r'resources/infracoes', f'{i}.json'))
+                    infraction = Infraction.get_by_name(i)
+                    infraction.analysis = self
                     infraction.update(overriden_data)
                     self.infractions.append(infraction)
         except KeyError as e:
-            raise ConfigFileDecoderException(f'Arquivo de análise {json_file} não tem um '
+            raise ConfigFileDecoderException(f'Arquivo de análise {par} não tem um '
                                              f'parâmetro obrigatório: {e.args}')
 
     def __repr__(self):
@@ -184,17 +225,31 @@ class Analysis:
 
 class AiimProof:
     proof_types = {
-        'listagem': {'modulo': 'AiimProofGenerator', 'funcao': 'get_aiim_listing_from_sheet'},
-        'LRE': {'modulo': 'AiimProofGenerator', 'funcao': 'get_lre', 'allows_sampling': True},
-        'LRS': {'modulo': 'AiimProofGenerator', 'funcao': 'get_lrs', 'allows_sampling': True},
-        'LRI': {'modulo': 'AiimProofGenerator', 'funcao': 'get_lri'},
-        'LRAICMS': {'modulo': 'AiimProofGenerator', 'funcao': 'get_lraicms'},
-        'DFe': {'modulo': 'AiimProofGenerator', 'funcao': 'get_dfe', 'allows_sampling': True},
-        'GIA-OutrosDebitos': {'modulo': 'AiimProofGenerator', 'funcao': 'get_gia_outros_debitos', 'allows_sampling': True},
-        'GIA-OutrosCreditos': {'modulo': 'AiimProofGenerator', 'funcao': 'get_gia_outros_creditos', 'allows_sampling': True},
-        'EFD-Obrigatoriedade': {'modulo': 'AiimProofGenerator', 'funcao': 'get_efd_obrigatoriedade'},
-        'EFD-Extrato': {'modulo': 'AiimProofGenerator', 'funcao': 'get_efd_entregas'}
+        'listagem': {'modulo': 'AiimProofGenerator', 'funcao': 'get_aiim_listing_from_sheet',
+                     'nome': 'Planilha'},
+        'LRE': {'modulo': 'AiimProofGenerator', 'funcao': 'get_lre', 'allows_sampling': True,
+                'nome': 'Livro de Entradas'},
+        'LRS': {'modulo': 'AiimProofGenerator', 'funcao': 'get_lrs', 'allows_sampling': True,
+                'nome': 'Livro de Saídas'},
+        'LRI': {'modulo': 'AiimProofGenerator', 'funcao': 'get_lri',
+                'nome': 'Livro de Inventário'},
+        'LRAICMS': {'modulo': 'AiimProofGenerator', 'funcao': 'get_lraicms',
+                    'nome': 'Livro de Apuração ICMS'},
+        'DFe': {'modulo': 'AiimProofGenerator', 'funcao': 'get_dfe', 'allows_sampling': True,
+                'nome': 'Documentos Fiscais'},
+        'GIA-OutrosDebitos': {'modulo': 'AiimProofGenerator', 'funcao': 'get_gia_outros_debitos',
+                              'allows_sampling': True, 'nome': 'GIA - Outros Débitos'},
+        'GIA-OutrosCreditos': {'modulo': 'AiimProofGenerator', 'funcao': 'get_gia_outros_creditos',
+                               'allows_sampling': True, 'nome': 'GIA - Outros Créditos'},
+        'EFD-Obrigatoriedade': {'modulo': 'AiimProofGenerator', 'funcao': 'get_efd_obrigatoriedade',
+                                'nome': 'EFD - Obrigatoriedade'},
+        'EFD-Extrato': {'modulo': 'AiimProofGenerator', 'funcao': 'get_efd_entregas',
+                        'nome': 'EFD - Entregas'}
     }
+
+    @classmethod
+    def get_proof_type_by_name(cls, nome: str) -> str:
+        return [k for k, v in cls.proof_types.items() if v['nome'] == nome][0]
 
     @classmethod
     def generate_notification_proof(cls, aiim_item, ws) -> list[Path]:
@@ -215,6 +270,9 @@ class AiimProof:
         self.sample_verification_function = getattr(modulo, "has_sample")
         self.allows_sampling = self.proof_types[self.tipo].get('allows_sampling', False)
 
+    def proof_type_name(self) -> str:
+        return self.proof_types[self.tipo]['nome']
+
     def is_prioritary(self) -> bool:
         return self.proof_types[self.tipo].get('initial', False)
 
@@ -231,15 +289,35 @@ class Infraction:
                          'VII': 7, 'VIII': 8, 'IX': 9,
                          'X': 10, 'XI': 11, 'XII': 12, 'SN': 99}
 
-    def __init__(self, infraction_name: str, analysis: Analysis, json_file: Path):
+    __infractions = []
+
+    @classmethod
+    def all_default_infractions(cls):
+        if not cls.__infractions:
+            infractions_path = r'resources\infracoes'
+            for (path, _, infracoes) in os.walk(infractions_path):
+                for infracao in infracoes:
+                    if infracao.endswith('.json'):
+                        cls.__infractions.append(Infraction((Path(path) / infracao)))
+            cls.__infractions.sort()
+        return cls.__infractions
+
+    @classmethod
+    def get_by_name(cls, name: str):
+        infracoes_com_nome = [i for i in cls.all_default_infractions() if i.filename == name]
+        if len(infracoes_com_nome) != 1:
+            raise ConfigFileDecoderException(f'Não foi encontrada infração com nome {name}')
+        return copy.copy(infracoes_com_nome[0])
+
+    def __init__(self, json_file: Path):
         self.filtro_coluna = None
         self.filtro_tipo = None
-        self.capitulation: InfractionCapitulation
-        self.name = infraction_name
-        self.analysis = analysis
-        self.analysis_name = analysis.name
-        self.inciso = re.search(r'^[A-Z]+', self.name).group()
-        self.alinea = re.search(r'[a-z]+', self.name).group()
+        self.capitulation: InfractionCapitulation = None
+        self.filename = json_file.stem
+        self._analysis = None
+        self.planilha_titulo = None
+        self.inciso = re.search(r'^[A-Z]+', self.filename).group()
+        self.alinea = re.search(r'[a-z]+', self.filename).group()
         self.relatorio_circunstanciado = None
         self.provas: list[AiimProof] = []
         try:
@@ -252,8 +330,8 @@ class Infraction:
             raise ConfigFileDecoderException(f'Não foi localizado arquivo de infração {json_file}')
 
         try:
+            self.nome = dados.get('nome')
             self.report = dados['relato']
-            self.report_updated = self.report
             self.ttpa = dados['ttpa']
             self.order = dados.get('ordem')
             self.operation_type = dados.get('operacao')
@@ -261,7 +339,7 @@ class Infraction:
                 raise ConfigFileDecoderException(f'Arquivo de infração {json_file} tem um '
                                                  f'tipo de operação inválido: {self.operation_type}')
             if dados.get('capitulacao'):
-                self.capitulation = InfractionCapitulation(self.name, dados['capitulacao'])
+                self.capitulation = InfractionCapitulation(self.filename, dados['capitulacao'])
             if dados.get('relatorio_circunstanciado'):
                 self.relatorio_circunstanciado = dados['relatorio_circunstanciado']
             self.provas = [AiimProof(dic) for dic in dados.get('provas', [])]
@@ -275,7 +353,7 @@ class Infraction:
         if dicionario.get('ordem'):
             self.order = dicionario['ordem']
         if dicionario.get('capitulacao'):
-            self.capitulation = InfractionCapitulation(self.name, dicionario['capitulacao'])
+            self.capitulation = InfractionCapitulation(self, dicionario['capitulacao'])
         if dicionario.get('relatorio_circunstanciado'):
             self.relatorio_circunstanciado = dicionario['relatorio_circunstanciado']
         if dicionario.get('provas'):
@@ -285,8 +363,17 @@ class Infraction:
             self.filtro_tipo = dicionario['filtro']
             if self.filtro_tipo not in ['positivo', 'negativo']:
                 raise ConfigFileDecoderException(f'Opção inválida para filtro: {self.filtro_tipo}')
-            if dicionario.get('verificacao'):
-                self.analysis_name = dicionario['verificacao']
+            if dicionario.get('planilha_titulo'):
+                self.planilha_titulo = dicionario['planilha_titulo']
+
+    @property
+    def analysis(self) -> Analysis:
+        return self._analysis
+
+    @analysis.setter
+    def analysis(self, a: Analysis):
+        self._analysis = a
+        self.planilha_titulo = a.name if a else None
 
     def inciso_number(self) -> int:
         return self.__roman_to_number[self.inciso]
@@ -305,7 +392,7 @@ class Infraction:
                (self.inciso_number() == other.inciso_number() and self.alinea < other.alinea)
 
     def __repr__(self):
-        return f'{self.inciso},"{self.alinea}" - {self.analysis}'
+        return f'{self.inciso},"{self.alinea}"' if not self.nome else f'{self.inciso},"{self.alinea}" - {self.nome}'
 
     def __str__(self):
-        return f'{self.inciso},"{self.alinea}" - {self.analysis}'
+        return f'{self.inciso},"{self.alinea}"' if not self.nome else f'{self.inciso},"{self.alinea}" - {self.nome}'

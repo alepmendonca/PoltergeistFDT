@@ -8,7 +8,9 @@ import PySimpleGUI as sg
 import numpy as np
 
 import Controller
+import GeneralConfiguration
 import GeneralFunctions
+import InitialConfigurationWizard
 import QueryResultWindow
 import WaitWindow
 from pathlib import Path
@@ -17,18 +19,15 @@ from tkhtmlview import html_parser
 from AnalysisFunctions import AnalysisFunctionException
 from AnalysisWizardWindow import AnalysisWizardWindow
 from Audit import Audit, AiimItem, PossibleInfraction
-from Audit import get_current_audit
+from Audit import get_current_audit, create_new_audit, set_audit
 from ConfigFiles import ConfigFileDecoderException, Analysis
 from ExcelDDFs import ExcelArrazoadoAbaInexistenteException, ExcelArrazoadoIncompletoException
 from LogWindow import LogWindow
 from SQLReader import QueryAnalysisException
 
 window: sg.Window
-pasta: Path = None
-
 
 def refresh_data_tab():
-
     for grupo in Controller.data_groups.keys():
         global extracoes
         extracoes = {}
@@ -108,76 +107,15 @@ def refresh_aiim_tab():
         window['-AIIM-RECEIPT-'].update(visible=False)
 
 
-def open_audit():
-    global pasta
-
-    if pasta == Path(values["-PASTA-"]):
-        return
-
-    Controller.set_main_path(None)
+def __clean_tabs():
+    set_audit(None)
     refresh_data_tab()
     refresh_analysis_tab()
     refresh_notifications_tab()
     refresh_aiim_tab()
 
-    pasta = Path(values["-PASTA-"])
-    Controller.set_main_path(pasta)
-    Controller.set_dados_afr('ultima_pasta', str(pasta))
-    if not Audit.has_local_dados_osf(pasta):
-        numosf = None
-        buscar = True
-        if not GeneralFunctions.has_local_osf(pasta):
-            layout_popup = [[sg.Text("Será necessário carregar os dados do PGSF e Cadesp.\n"
-                                     "Insira abaixo o número da OSF", auto_size_text=True)],
-                            [sg.InputText(key='_INPUT_', change_submits=True, do_not_clear=True,
-                                          justification='center')],
-                            [sg.Button('OK', size=(10, 1), bind_return_key=True, disabled=True),
-                             sg.Button('Cancelar', size=(10, 1))]]
-            popup = sg.Window(title="Carregar OSF", layout=layout_popup, auto_size_text=True,
-                              grab_anywhere=False, finalize=True, modal=True, no_titlebar=False,
-                              element_justification='c')
-            while True:
-                evento, valores = popup.read()
-                if evento in (None, 'Cancelar', 'Quit'):
-                    buscar = False
-                    break
-                if evento == '_INPUT_':
-                    popup['_INPUT_'].update(re.sub(r"[^\d]", "", valores[evento])[:11])
-                    must_disable = len(valores['_INPUT_']) != 11
-                    popup['OK'].update(disabled=must_disable)
-                    if len(valores['_INPUT_']) == 11:
-                        digitado = valores['_INPUT_']
-                        popup['_INPUT_'].update(
-                            f'{digitado[0:2]}.{digitado[2]}.{digitado[3:8]}/{digitado[8:10]}-{digitado[10]}')
-                if evento == 'OK':
-                    numosf = valores['_INPUT_']
-                    break
-            popup.close()
-            del popup
 
-        if buscar:
-            WaitWindow.open_wait_window(Controller.update_dados_osf, 'Carregar dados da OSF', numosf)
-            if get_current_audit().inicio_auditoria is None:
-                inicio = None
-                while inicio is None:
-                    inicio = sg.popup_get_text('Não descobri pela OSF o início da auditoria. Informe (mm/aaaa):',
-                                               title='Início Auditoria',
-                                               default_text=get_current_audit().inicio_inscricao.strftime('%m/%Y'))
-                    if inicio and not re.match(r'\d{2}/\d{4}', inicio):
-                        inicio = None
-                get_current_audit().inicio_auditoria = inicio
-                get_current_audit().save()
-            if get_current_audit().fim_auditoria is None:
-                fim = None
-                while fim is None:
-                    fim = sg.popup_get_text('Não descobri pela OSF o fim da auditoria. Informe (mm/aaaa):',
-                                            title='Fim Auditoria',
-                                            default_text=datetime.datetime.now().strftime('%m/%Y'))
-                    if fim and not re.match(r'\d{2}/\d{4}', fim):
-                        fim = None
-                get_current_audit().fim_auditoria = fim
-                get_current_audit().save()
-
+def __refresh_tabs(pasta: Path):
     if Audit.has_local_dados_osf(pasta):
         try:
             Controller.get_local_dados_osf_up_to_date_with_aiim2003()
@@ -191,7 +129,7 @@ def open_audit():
                            f'{str(ex)}')
             return
 
-        window['pasta'].update(f"Pasta inicial da fiscalização: {pasta}")
+        window['pasta'].update(f"Pasta inicial da fiscalização: {get_current_audit().path()}")
         window['osf'].update(f'OSF: {get_current_audit().osf}')
         window['empresa'].update(f'{get_current_audit().empresa} - CNPJ {get_current_audit().cnpj} - '
                                  f'IE {get_current_audit().ie if get_current_audit() else "Não Informada"}')
@@ -203,6 +141,92 @@ def open_audit():
         refresh_analysis_tab()
         refresh_notifications_tab()
         refresh_aiim_tab()
+
+
+def create_audit(pasta: Path):
+    audit = get_current_audit()
+    ultima_pasta = audit.path() if audit else None
+    if ultima_pasta == pasta:
+        return
+    if Audit.has_local_dados_osf(pasta) and \
+            'Sim' == sg.popup('Já existem dados de uma auditoria aberta nesta pasta. Deseja abrí-la?',
+                              title='Auditoria existente',
+                              custom_text=('Sim', 'Não')):
+        open_audit(pasta)
+
+    __clean_tabs()
+    create_new_audit(pasta)
+
+    numosf = None
+    buscar = True
+    if not GeneralFunctions.has_local_osf(pasta):
+        layout_popup = [[sg.Text("Será necessário carregar os dados do PGSF e Cadesp.\n"
+                                 "Insira abaixo o número da OSF", auto_size_text=True)],
+                        [sg.InputText(key='_INPUT_', change_submits=True, do_not_clear=True,
+                                      justification='center')],
+                        [sg.Button('OK', size=(10, 1), bind_return_key=True, disabled=True),
+                         sg.Button('Cancelar', size=(10, 1))]]
+        popup = sg.Window(title="Carregar OSF", layout=layout_popup, auto_size_text=True,
+                          grab_anywhere=False, finalize=True, modal=True, no_titlebar=False,
+                          element_justification='c')
+        while True:
+            evento, valores = popup.read()
+            if evento in (None, 'Cancelar', 'Quit'):
+                buscar = False
+                break
+            if evento == '_INPUT_':
+                popup['_INPUT_'].update(re.sub(r"[^\d]", "", valores[evento])[:11])
+                must_disable = len(valores['_INPUT_']) != 11
+                popup['OK'].update(disabled=must_disable)
+                if len(valores['_INPUT_']) == 11:
+                    digitado = valores['_INPUT_']
+                    popup['_INPUT_'].update(
+                        f'{digitado[0:2]}.{digitado[2]}.{digitado[3:8]}/{digitado[8:10]}-{digitado[10]}')
+            if evento == 'OK':
+                numosf = valores['_INPUT_']
+                break
+        popup.close()
+        del popup
+
+    if buscar:
+        WaitWindow.open_wait_window(Controller.update_dados_osf, 'Carregar dados da OSF', numosf)
+        if get_current_audit().inicio_auditoria is None:
+            inicio = None
+            while inicio is None:
+                inicio = sg.popup_get_text('Não descobri pela OSF o início da auditoria. Informe (mm/aaaa):',
+                                           title='Início Auditoria',
+                                           default_text=get_current_audit().inicio_inscricao.strftime('%m/%Y'))
+                if inicio and not re.match(r'\d{2}/\d{4}', inicio):
+                    inicio = None
+            get_current_audit().inicio_auditoria = inicio
+            get_current_audit().save()
+        if get_current_audit().fim_auditoria is None:
+            fim = None
+            while fim is None:
+                fim = sg.popup_get_text('Não descobri pela OSF o fim da auditoria. Informe (mm/aaaa):',
+                                        title='Fim Auditoria',
+                                        default_text=datetime.datetime.now().strftime('%m/%Y'))
+                if fim and not re.match(r'\d{2}/\d{4}', fim):
+                    fim = None
+            get_current_audit().fim_auditoria = fim
+            get_current_audit().save()
+    __refresh_tabs(pasta)
+
+
+def open_audit(pasta: Path):
+    audit = get_current_audit()
+    ultima_pasta = audit.path() if audit else None
+    if ultima_pasta == pasta:
+        return
+    if not Audit.has_local_dados_osf(pasta) and \
+            'Sim' == sg.popup('Não existe auditoria nesta pasta. Deseja criá-la?',
+                              title='Auditoria inexistente',
+                              custom_text=('Sim', 'Não')):
+        create_audit(pasta)
+
+    __clean_tabs()
+    set_audit(pasta)
+    __refresh_tabs(pasta)
 
 
 def populate_database(groups: list, progress: dict, eventoThread: threading.Event):
@@ -350,8 +374,8 @@ def notification_prettyprint(titulo: str, texto: str):
     if titulo == texto == '':
         window['-NOTIFICATION-PREVIEW-'].update('')
     else:
-        nomeAFR = Controller.get_dados_afr()['nome']
-        ifAFR = Controller.get_dados_afr()['funcional']
+        nomeAFR = GeneralConfiguration.get().nome
+        ifAFR = GeneralConfiguration.get().funcional
         parser = html_parser.HTMLTextParser()
         html = f'<span style="font-size: 10px"><b>Complemento do Assunto:</b><i>{titulo}</i></span><br><br><br>' \
                f'<span style="font-size: 10px">{texto}' \
@@ -406,7 +430,7 @@ def notification_send(notification: PossibleInfraction, title: str, content: str
 
 
 def update_gifs():
-    for v in [v for k, v in window.key_dict.items() if k.endswith('-INFINITE-') and v.visible]:
+    for v in [v for k, v in window.key_dict.items() if isinstance(k, str) and k.endswith('-INFINITE-') and v.visible]:
         v.update_animation(v.Source, time_between_frames=100)
 
 
@@ -632,7 +656,7 @@ def window_layout():
                 [sg.Text('Verificações pré-cadastradas')],
                 [sg.Listbox(values=[],
                             auto_size_text=True, expand_y=True,
-                            enable_events=True, key='-ANALYSIS-CHOSEN-')]
+                            enable_events=True, key='-ANALYSIS-CHOSEN-')],
             ], expand_y=True),
             sg.Column([
                 [sg.Text("Consulta em SQL:", key='query_title')],
@@ -679,19 +703,12 @@ def window_layout():
     tab_aiim = sg.Tab('AIIM', [
         [
             sg.Column([
-                [sg.Button("Cria AIIM", key='-AIIM-CREATE-', visible=False)],
                 [sg.Text('Possíveis infrações')],
                 [sg.Listbox(values=[], size=(40, 15),
                             auto_size_text=True, expand_y=True,
                             enable_events=True, key='-INFRACTION-CHOSEN-')]
             ], expand_y=True, justification='left'),
             sg.Frame(layout=[
-                [sg.Column([[sg.Button('Gera Relato, Quadros e Relatório', key='-AIIM-REPORTS-', visible=False)]]),
-                 sg.Column([[sg.Button('Atualiza Quadro de Operações', key='-AIIM-OPERATIONS-', visible=False)]]),
-                 sg.Column([[sg.Button('Envia Recibo de Arquivos Digitais', key='-AIIM-RECEIPT-', visible=False)]]),
-                 sg.Column([[sg.Button('Gera Arquivo Backup', key='-AIIM-EXPORT-', visible=False)]]),
-                 sg.Column([[sg.Button('Reabre AIIM', key='-AIIM-REOPEN-', visible=False)]]),
-                 sg.Column([[sg.Button('Gera Arquivo Transmissão', key='-AIIM-UPLOAD-', visible=False)]])],
                 [sg.Column([[sg.Multiline("AIIM item data", key='-AIIM-ITEM-DATA-',
                                           expand_x=True, expand_y=True,
                                           auto_size_text=True, visible=False)]], expand_x=True, expand_y=True)],
@@ -706,15 +723,38 @@ def window_layout():
             ], title='AIIM', expand_x=True, element_justification='center', expand_y=True, key='-AIIM-FRAME-'),
         ]
     ])
+    menu_sem_auditoria = [
+        ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
+                      'Abrir Auditoria::-MENU-OPEN-AUDIT-',
+                      'Sair::-MENU-EXIT-']],
+        ['&Editar', ['Propriedades', 'Cria Análise::-MENU-CREATE-ANALYSIS-']],
+        ['A&juda', ['Sobre::-MENU-ABOUT-']]
+    ]
+    menu_com_auditoria_sem_aiim = [
+        ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
+                      'Abrir Auditoria::-MENU-OPEN-AUDIT-',
+                      'Sair::-MENU-EXIT-']],
+        ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
+                     'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
+        ['A&IIM', ['Cria AIIM (gera número e AIIM2003)::-MENU-CREATE-AIIM-']],
+        ['A&juda', ['Sobre::-MENU-ABOUT-']]
+    ]
+    menu_com_auditoria_com_aiim = [
+        ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
+                      'Abrir Auditoria::-MENU-OPEN-AUDIT-',
+                      'Sair::-MENU-EXIT-']],
+        ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
+                     'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
+        ['A&IIM', ['Gera Relato, Quadros e Relatório::-MENU-AIIM-REPORTS-',
+                   'Atualiza Quadro de Operações::-MENU-AIIM-OPERATIONS-',
+                   'Envia Recibo de Arquivos Digitais::-MENU-AIIM-RECEIPT-',
+                   'Gera Arquivo Backup AIIM2003::-MENU-AIIM-EXPORT-',
+                   'Gera Arquivo Transmissão AIIM2003::-MENU-AIIM-UPLOAD-']],
+        ['A&juda', ['Sobre::-MENU-ABOUT-']]
+    ]
     # Principal
     return [
-        [
-            sg.Push(),
-            sg.InputText(key='-PASTA-', enable_events=True, visible=False),
-            sg.FolderBrowse(
-                "Abrir Fiscalização", initial_folder=pasta_inicial, target='-PASTA-'),
-            sg.Push()
-        ],
+        [sg.Menu(menu_sem_auditoria, tearoff=False, key='-MENU-')],
         [sg.Text(key='pasta')],
         [sg.Text(key='osf')],
         [sg.Text(key='empresa')],
@@ -822,14 +862,11 @@ if __name__ == "__main__":
     sg.theme('SystemDefaultForReal')
     sg.set_options(ttk_theme=sg.THEME_WINNATIVE)
 
-    if GeneralFunctions.has_local_dados_afr():
-        pasta_inicial = GeneralFunctions.get_local_dados_afr().get('ultima_pasta', Path.home())
-    else:
-        pasta_inicial = Path.home()
-    Path('tmp').mkdir(exist_ok=True)
+    if not GeneralConfiguration.get():
+        InitialConfigurationWizard.create_config_file()
 
     # Criar janela
-    window = sg.Window("AutoFDT", window_layout(), size=(1024, 768),
+    window = sg.Window(GeneralFunctions.project_name, window_layout(), size=(1024, 768),
                        resizable=True, finalize=True,
                        enable_close_attempted_event=True)
     window.set_min_size((800, 500))
@@ -849,148 +886,164 @@ if __name__ == "__main__":
                 clear_data_tab()
             continue
         if isinstance(w, AnalysisWizardWindow):
-            w.hand_event(event, values)
+            w.handle_event(event, values)
+            if event == sg.WINDOW_CLOSED:
+                w.close()
+                refresh_analysis_tab()
             continue
         elif event == sg.TIMEOUT_EVENT:
             if log_window:
                 log_window.handle_event(event, values)
             update_gifs()
         # eventos da janela principal
-        elif event != sg.TIMEOUT_EVENT:
-            if event == sg.WINDOW_CLOSE_ATTEMPTED_EVENT and \
-                    sg.popup_yes_no('Deseja realmente sair?') == 'Yes':
-                break
-            elif event == sg.WIN_CLOSED or event == 'Cancel':  # if user closes window or clicks cancel
-                break
-            elif event == '-MAIN-TAB-':
-                if values[event] == 'Dados':
-                    refresh_data_tab()
-                if values[event] == 'Análise':
-                    refresh_analysis_tab()
-                if values[event] == 'Notificações':
-                    refresh_notifications_tab()
-                if values[event] == 'AIIM':
-                    refresh_aiim_tab()
-            elif event == '-PASTA-' and values['-PASTA-'] != '':
+        elif (event == sg.WINDOW_CLOSE_ATTEMPTED_EVENT
+              or (event != sg.WINDOW_CLOSED and event.endswith('-MENU-EXIT-'))) and \
+                sg.popup('Deseja realmente sair?', custom_text=('Sim', 'Não')) == 'Sim':
+            break
+        elif event == sg.WIN_CLOSED or event == 'Cancel':  # if user closes window or clicks cancel
+            break
+        elif event == '-MAIN-TAB-':
+            if values[event] == 'Dados':
+                refresh_data_tab()
+            if values[event] == 'Análise':
+                refresh_analysis_tab()
+            if values[event] == 'Notificações':
+                refresh_notifications_tab()
+            if values[event] == 'AIIM':
+                refresh_aiim_tab()
+        elif event.endswith('-MENU-CREATE-AUDIT-'):
+            folder = sg.popup_get_folder('Escolha a pasta da nova auditoria', 'Criar auditoria',
+                                         history_setting_filename=str(GeneralFunctions.get_folders_history_json_path()),
+                                         no_window=True)
+            if folder:
+                create_audit(Path(folder))
+        elif event.endswith('-MENU-OPEN-AUDIT-'):
+            folder = sg.popup_get_folder('Escolha a pasta da auditoria', 'Abrir auditoria',
+                                         history=True,
+                                         history_setting_filename=str(GeneralFunctions.get_folders_history_json_path()),
+                                         modal=True)
+            if folder:
                 try:
-                    open_audit()
+                    open_audit(Path(folder))
                 except ConfigFileDecoderException as e:
                     sg.popup_error(str(e), title='Falha na abertura da auditoria')
-            elif event == '-DATA-EXTRACTION-':
-                grupos = [k[1:-10] for k, v in values.items() if k.endswith('-CHECKBOX-') and v]
-                LogWindow(populate_database, 'Levantamento EFD e Launchpad', grupos, extracoes)
-            elif event == '-DATA-EXTRACTION-STATUS-':
-                # eventos lançados pelo processo de extração, para atualizar tela
-                tipo = values[event][0]
-                evento = values[event][1]
-                data_extraction_progress_update(evento, tipo)
-            elif event == '-ANALYSIS-CHOSEN-':
-                if len(values[event]) > 0:
-                    analysis_chosen(values[event][0])
+        elif event == '-DATA-EXTRACTION-':
+            grupos = [k[1:-10] for k, v in values.items() if k.endswith('-CHECKBOX-') and v]
+            LogWindow(populate_database, 'Levantamento EFD e Launchpad', grupos, extracoes)
+        elif event == '-DATA-EXTRACTION-STATUS-':
+            # eventos lançados pelo processo de extração, para atualizar tela
+            tipo = values[event][0]
+            evento = values[event][1]
+            data_extraction_progress_update(evento, tipo)
+        elif event == '-ANALYSIS-CHOSEN-':
+            if len(values[event]) > 0:
+                analysis_chosen(values[event][0])
+            else:
+                refresh_analysis_tab()
+        elif event == '-NEW-ANALYSIS-':
+            AnalysisWizardWindow()
+        elif event == '-QUERY-':
+            run_query(values['-ANALYSIS-CHOSEN-'][0])
+        elif event == '-NOTIFICATION-TAB-':
+            if values[event] == '-PREVIEW-TAB-':
+                if len(values['-NOTIFICATION-CHOSEN-']) > 0:
+                    notification_prettyprint(
+                        values['-NOTIFICATION-CHOSEN-'][0].notificacao_titulo(values['-NOTIFICATION-EDIT-TITLE-']),
+                        values['-NOTIFICATION-CHOSEN-'][0].notificacao_corpo(values['-NOTIFICATION-EDIT-'])
+                    )
                 else:
-                    refresh_analysis_tab()
-            elif event == '-NEW-ANALYSIS-':
-                AnalysisWizardWindow()
-            elif event == '-QUERY-':
-                run_query(values['-ANALYSIS-CHOSEN-'][0])
-            elif event == '-NOTIFICATION-TAB-':
-                if values[event] == '-PREVIEW-TAB-':
-                    if len(values['-NOTIFICATION-CHOSEN-']) > 0:
-                        notification_prettyprint(
-                            values['-NOTIFICATION-CHOSEN-'][0].notificacao_titulo(values['-NOTIFICATION-EDIT-TITLE-']),
-                            values['-NOTIFICATION-CHOSEN-'][0].notificacao_corpo(values['-NOTIFICATION-EDIT-'])
-                        )
+                    window['-NOTIFICATION-PREVIEW-'].update('')
+        elif event == '-NOTIFICATION-CHOSEN-':
+            if len(values[event]) > 0:
+                notification_chosen(values[event][0])
+            else:
+                verification_chosen_for_notification(None)
+        elif event == '-NOTIFICATION-ATTACHMENTS-':
+            notification_show_attachments(values['-NOTIFICATION-CHOSEN-'][0])
+        elif event == '-NOTIFICATION-SEND-':
+            notification_send(values['-NOTIFICATION-CHOSEN-'][0],
+                              values['-NOTIFICATION-EDIT-TITLE-'],
+                              values['-NOTIFICATION-EDIT-'])
+        elif event == '-NOTIFICATION-MANUAL-SEND-':
+            notification_manual_send(values['-NOTIFICATION-CHOSEN-'][0])
+        elif event == '-INFRACTION-CHOSEN-':
+            if len(values[event]) > 0:
+                verification_chosen_for_infraction(values[event][0])
+        elif event == '-MENU-AIIM-CREATE-':
+            aiims = WaitWindow.open_wait_window(Controller.get_aiims_for_osf, '')
+            if aiims is not None:
+                if len(aiims) == 0:
+                    WaitWindow.open_wait_window(Controller.create_aiim, 'criar AIIM')
+                else:
+                    if len(aiims) == 1:
+                        mensagem = 'Achei um AIIM aberto para esta OSF. Deseja utilizar esse número, ou criar um ' \
+                                   'novo? '
                     else:
-                        window['-NOTIFICATION-PREVIEW-'].update('')
-            elif event == '-NOTIFICATION-CHOSEN-':
-                if len(values[event]) > 0:
-                    notification_chosen(values[event][0])
-                else:
-                    verification_chosen_for_notification(None)
-            elif event == '-NOTIFICATION-ATTACHMENTS-':
-                notification_show_attachments(values['-NOTIFICATION-CHOSEN-'][0])
-            elif event == '-NOTIFICATION-SEND-':
-                notification_send(values['-NOTIFICATION-CHOSEN-'][0],
-                                  values['-NOTIFICATION-EDIT-TITLE-'],
-                                  values['-NOTIFICATION-EDIT-'])
-            elif event == '-NOTIFICATION-MANUAL-SEND-':
-                notification_manual_send(values['-NOTIFICATION-CHOSEN-'][0])
-            elif event == '-INFRACTION-CHOSEN-':
-                if len(values[event]) > 0:
-                    verification_chosen_for_infraction(values[event][0])
-            elif event == '-AIIM-CREATE-':
-                aiims = WaitWindow.open_wait_window(Controller.get_aiims_for_osf, '')
-                if aiims is not None:
-                    if len(aiims) == 0:
+                        mensagem = 'Achei AIIMs abertos para esta OSF. Deseja utilizar um deles, ou criar um novo?'
+                    layout_popup = [[sg.Text(mensagem, auto_size_text=True)], []]
+                    for auto in aiims:
+                        layout_popup[1].append(sg.Button(auto))
+                    layout_popup[1].append(sg.Button('Novo AIIM'))
+                    layout_popup[1].append(sg.Button('Cancelar'))
+                    popup = sg.Window(title="Número AIIM", layout=layout_popup, auto_size_text=True,
+                                      grab_anywhere=False, finalize=True, modal=True, no_titlebar=False,
+                                      element_justification='c')
+                    evento, valores = popup.read()
+                    popup.close()
+                    del popup
+                    if evento == 'Novo AIIM':
                         WaitWindow.open_wait_window(Controller.create_aiim, 'criar AIIM')
                     else:
-                        if len(aiims) == 1:
-                            mensagem = 'Achei um AIIM aberto para esta OSF. Deseja utilizar esse número, ou criar um ' \
-                                       'novo? '
-                        else:
-                            mensagem = 'Achei AIIMs abertos para esta OSF. Deseja utilizar um deles, ou criar um novo?'
-                        layout_popup = [[sg.Text(mensagem, auto_size_text=True)], []]
-                        for auto in aiims:
-                            layout_popup[1].append(sg.Button(auto))
-                        layout_popup[1].append(sg.Button('Novo AIIM'))
-                        layout_popup[1].append(sg.Button('Cancelar'))
-                        popup = sg.Window(title="Número AIIM", layout=layout_popup, auto_size_text=True,
-                                          grab_anywhere=False, finalize=True, modal=True, no_titlebar=False,
-                                          element_justification='c')
-                        evento, valores = popup.read()
-                        popup.close()
-                        del popup
-                        if evento == 'Novo AIIM':
-                            WaitWindow.open_wait_window(Controller.create_aiim, 'criar AIIM')
-                        else:
-                            aiim_existing = evento
-                            WaitWindow.open_wait_window(Controller.link_aiim_to_audit, 'cadastrar AIIM no AIIM2003',
-                                                        aiim_existing)
-                refresh_aiim_tab()
-            elif event == '-AIIM-CREATE-ITEM-':
-                WaitWindow.open_wait_window(Controller.create_aiim_item, 'Criar Item no AIIM',
-                                            values['-INFRACTION-CHOSEN-'][0])
+                        aiim_existing = evento
+                        WaitWindow.open_wait_window(Controller.link_aiim_to_audit, 'cadastrar AIIM no AIIM2003',
+                                                    aiim_existing)
+            refresh_aiim_tab()
+        elif event == '-AIIM-CREATE-ITEM-':
+            WaitWindow.open_wait_window(Controller.create_aiim_item, 'Criar Item no AIIM',
+                                        values['-INFRACTION-CHOSEN-'][0])
+            verification_chosen_for_infraction(values['-INFRACTION-CHOSEN-'][0])
+        elif event == '-AIIM-UPDATE-ITEM-':
+            WaitWindow.open_wait_window(Controller.cria_ddf, 'Atualizar DDF de Item no AIIM',
+                                        values['-INFRACTION-CHOSEN-'][0])
+            verification_chosen_for_infraction(values['-INFRACTION-CHOSEN-'][0])
+        elif event == '-AIIM-UPDATE-ITEM-NUMBER-':
+            resposta = sg.popup_get_text('Digite o número correto atual do item no AIIM2003',
+                                         title='Alteração Manual de Item')
+            if resposta and re.match(r'^\d+$', resposta):
+                Controller.update_aiim_item_number(values['-INFRACTION-CHOSEN-'][0], int(resposta))
                 verification_chosen_for_infraction(values['-INFRACTION-CHOSEN-'][0])
-            elif event == '-AIIM-UPDATE-ITEM-':
-                WaitWindow.open_wait_window(Controller.cria_ddf, 'Atualizar DDF de Item no AIIM',
+        elif event == '-AIIM-UPDATE-NOTIF-ANSWER-':
+            resposta = sg.popup_get_text('Digite o expediente Sem Papel com resposta à notificação',
+                                         title='Resposta à Notificação')
+            try:
+                aiim_item: AiimItem = values['-INFRACTION-CHOSEN-'][0]
+                Controller.update_aiim_item_notification_response(aiim_item, resposta)
+                verification_chosen_for_infraction(aiim_item)
+            except ValueError:
+                sg.popup_error('Formato inválido para número de expediente Sem Papel '
+                               '(deveria ser algo como SFP-EXP-<ano>/<numero>)')
+        elif event == '-AIIM-REMOVE-ITEM-':
+            if sg.popup_yes_no('Deseja realmente remover este item da lista de infrações e do AIIM?',
+                               title='Alerta') == 'Yes':
+                WaitWindow.open_wait_window(Controller.remove_aiim_item, 'Remover Item do AIIM',
                                             values['-INFRACTION-CHOSEN-'][0])
-                verification_chosen_for_infraction(values['-INFRACTION-CHOSEN-'][0])
-            elif event == '-AIIM-UPDATE-ITEM-NUMBER-':
-                resposta = sg.popup_get_text('Digite o número correto atual do item no AIIM2003',
-                                             title='Alteração Manual de Item')
-                if resposta and re.match(r'^\d+$', resposta):
-                    Controller.update_aiim_item_number(values['-INFRACTION-CHOSEN-'][0], int(resposta))
-                    verification_chosen_for_infraction(values['-INFRACTION-CHOSEN-'][0])
-            elif event == '-AIIM-UPDATE-NOTIF-ANSWER-':
-                resposta = sg.popup_get_text('Digite o expediente Sem Papel com resposta à notificação',
-                                             title='Resposta à Notificação')
-                try:
-                    aiim_item: AiimItem = values['-INFRACTION-CHOSEN-'][0]
-                    Controller.update_aiim_item_notification_response(aiim_item, resposta)
-                    verification_chosen_for_infraction(aiim_item)
-                except ValueError:
-                    sg.popup_error('Formato inválido para número de expediente Sem Papel '
-                                   '(deveria ser algo como SFP-EXP-<ano>/<numero>)')
-            elif event == '-AIIM-REMOVE-ITEM-':
-                if sg.popup_yes_no('Deseja realmente remover este item da lista de infrações e do AIIM?',
-                                   title='Alerta') == 'Yes':
-                    WaitWindow.open_wait_window(Controller.remove_aiim_item, 'Remover Item do AIIM',
-                                                values['-INFRACTION-CHOSEN-'][0])
-                    refresh_aiim_tab()
-            elif event == '-AIIM-ITEM-PROOFS-':
-                WaitWindow.open_wait_window(Controller.aiim_item_cria_anexo, 'Criar anexo para Item no AIIM',
-                                            values['-INFRACTION-CHOSEN-'][0])
-            elif event == '-AIIM-REPORTS-':
-                WaitWindow.open_wait_window(Controller.print_aiim_reports, 'Gerar Relatórios do AIIM')
-            elif event == '-AIIM-OPERATIONS-':
-                WaitWindow.open_wait_window(Controller.declare_operations_in_aiim, 'Cadastrar Operações no AIIM2003')
-            elif event == '-AIIM-RECEIPT-':
-                WaitWindow.open_wait_window(Controller.send_notification_with_files_digital_receipt, 'Enviar Recibo')
                 refresh_aiim_tab()
-            elif event == '-AIIM-EXPORT-':
-                WaitWindow.open_wait_window(Controller.export_aiim, 'Exportar AIIM')
-            elif event == '-AIIM-REOPEN-':
-                WaitWindow.open_wait_window(Controller.reopen_aiim, 'Reabrir AIIM')
-            elif event == '-AIIM-UPLOAD-':
-                WaitWindow.open_wait_window(Controller.upload_aiim, 'Transmitir AIIM')
+        elif event == '-AIIM-ITEM-PROOFS-':
+            WaitWindow.open_wait_window(Controller.aiim_item_cria_anexo, 'Criar anexo para Item no AIIM',
+                                        values['-INFRACTION-CHOSEN-'][0])
+        elif event.endswith('-MENU-AIIM-REPORTS-'):
+            WaitWindow.open_wait_window(Controller.print_aiim_reports, 'Gerar Relatórios do AIIM')
+        elif event.endswith('-MENU-AIIM-OPERATIONS-'):
+            WaitWindow.open_wait_window(Controller.declare_operations_in_aiim, 'Cadastrar Operações no AIIM2003')
+        elif event.endswith('-MENU-AIIM-RECEIPT-'):
+            WaitWindow.open_wait_window(Controller.send_notification_with_files_digital_receipt, 'Enviar Recibo')
+            refresh_aiim_tab()
+        elif event.endswith('-MENU-AIIM-EXPORT-'):
+            WaitWindow.open_wait_window(Controller.export_aiim, 'Exportar AIIM')
+        elif event.endswith('-AIIM-REOPEN-'):
+            WaitWindow.open_wait_window(Controller.reopen_aiim, 'Reabrir AIIM')
+        elif event.endswith('-MENU-AIIM-UPLOAD-'):
+            WaitWindow.open_wait_window(Controller.upload_aiim, 'Transmitir AIIM')
+        elif event.endswith('-MENU-ABOUT-'):
+            sg.popup_ok()
     window.close()

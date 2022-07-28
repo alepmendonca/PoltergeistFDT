@@ -1,4 +1,5 @@
 {
+	"nome": "Não Tributada",
 	"operacao": "Não Tributada",
 	"ttpa": [1, 1, 1],
 	"relato": "Deixou de escriturar, n<periodo>, no livro fiscal próprio - Livro Registro de Entradas (LRE) em EFD, documentos fiscais <modelos> relativos a entradas de mercadorias no estabelecimento ou tomada de serviços de transporte interestadual e intermunicipal, referentes a operações não tributadas, sendo que já se encontram escrituradas as operações do período, conforme demonstrativo do Anexo do item.\nValor das operações: @CRO",

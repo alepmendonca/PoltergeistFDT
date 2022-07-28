@@ -1,6 +1,10 @@
+import base64
 import hashlib
 import json
 import logging
+import ssl
+import threading
+from logging.handlers import RotatingFileHandler
 import os
 import re
 import shutil
@@ -9,44 +13,67 @@ import winreg
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
-from json import JSONDecodeError
 from pathlib import Path
+
+import pythoncom
+import wincertstore as wincertstore
+from cryptography import x509
+from cryptography.hazmat._oid import ObjectIdentifier
 
 meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho',
          'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
-nomes_delegacias = {
-    'DRTC-I': 'DELEGACIA REGIONAL TRIBUTÁRIA DA CAPITAL-I',
-    'DRTC-II': 'DELEGACIA REGIONAL TRIBUTÁRIA DA CAPITAL-II',
-    'DRTC-III': 'DELEGACIA REGIONAL TRIBUTÁRIA DA CAPITAL-III',
-    'DRT-2': 'DELEGACIA REGIONAL TRIBUTÁRIA DO LITORAL',
-    'DRT-3': 'DELEGACIA REGIONAL TRIBUTÁRIA DO VALE DO PARAÍBA',
-    'DRT-4': 'DELEGACIA REGIONAL TRIBUTÁRIA DE SOROCABA',
-    'DRT-5': 'DELEGACIA REGIONAL TRIBUTÁRIA DE CAMPINAS',
-    'DRT-6': 'DELEGACIA REGIONAL TRIBUTÁRIA DE RIBEIRÃO PRETO',
-    'DRT-7': 'DELEGACIA REGIONAL TRIBUTÁRIA DE BAURU',
-    'DRT-8': 'DELEGACIA REGIONAL TRIBUTÁRIA DE SÃO JOSÉ DO RIO PRETO',
-    'DRT-9': 'DELEGACIA REGIONAL TRIBUTÁRIA DE ARAÇATUBA',
-    'DRT-10': 'DELEGACIA REGIONAL TRIBUTÁRIA DE PRESIDENTE PRUDENTE',
-    'DRT-11': 'DELEGACIA REGIONAL TRIBUTÁRIA DE MARÍLIA',
-    'DRT-12': 'DELEGACIA REGIONAL TRIBUTÁRIA DO ABCD',
-    'DRT-13': 'DELEGACIA REGIONAL TRIBUTÁRIA DE GUARULHOS',
-    'DRT-14': 'DELEGACIA REGIONAL TRIBUTÁRIA DE OSASCO',
-    'DRT-15': 'DELEGACIA REGIONAL TRIBUTÁRIA DE ARARAQUARA',
-    'DRT-16': 'DELEGACIA REGIONAL TRIBUTÁRIA DE JUNDIAÍ'
-}
 infractions = {}
 
-# TODO mover senhas para alguma configuração
-login_rede = "apmendonca"
-senha_rede = "y4b62B#R"
-certificado_senha = "991984"
-login_sempapel = "SFP30114"
-senha_sempapel = "z6p$GAGa#M^G!9JfF*s2&8c2heX7PY"
 
-logger = logging.getLogger('AIIMGenerator')
+class ThreadWithReturnValue(threading.Thread):
+    def __init__(self, target, args=()):
+        threading.Thread.__init__(self, group=None, target=target, name=None, args=args, kwargs=None, daemon=True)
+        self._return = None
+        self._exception = None
+
+    def run(self):
+        if self._target is not None:
+            # Esse CoInitialize é pra não dar erro quando rodar qualquer comando COM dentro de uma thread
+            pythoncom.CoInitialize()
+            try:
+                self._return = self._target(*self._args, **self._kwargs)
+            except Exception as e:
+                self._exception = e
+
+    def join(self, *args):
+        threading.Thread.join(self, *args)
+        if self._exception:
+            raise self._exception
+        return self._return
+
+
+def get_user_path() -> Path:
+    return (Path.home() / project_name).absolute()
+
+
+def get_local_dados_afr_path() -> Path:
+    return get_user_path() / 'dados_afr.json'
+
+
+def get_audit_json_path(home_path: Path) -> Path:
+    return home_path / 'Dados' / 'dados_auditoria.json'
+
+
+def get_folders_history_json_path():
+    return get_user_path() / 'folders_history.json'
+
+
+def get_tmp_path() -> Path:
+    return Path('tmp')
+
+
+project_name = 'PoltergeistFDT'
+logger = logging.getLogger(project_name)
 logger.setLevel(logging.DEBUG)
-fh = logging.FileHandler(filename='AIIMGenerator.log', encoding='iso-8859-1')
-fh.setLevel(logging.WARNING)
+get_user_path().mkdir(exist_ok=True)
+fh = RotatingFileHandler(filename=get_user_path() / f'{project_name}.log', encoding='iso-8859-1',
+                         backupCount=3, maxBytes=10485760)
+fh.setLevel(logging.ERROR)
 fh.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
 logger.addHandler(fh)
 ch = logging.StreamHandler()
@@ -54,11 +81,12 @@ ch.setFormatter(logging.Formatter("%(asctime)s [%(threadName)s] - %(levelname)s 
 logger.addHandler(ch)
 
 
-def last_day_of_month(any_day: datetime.date) -> date:
+def last_day_of_month(any_day: (date | datetime)) -> date:
     next_month = any_day.replace(day=28) + timedelta(days=4)
     # subtract the number of remaining 'overage' days to get last day of current month, or said programattically
     # said, the previous day of the first of next month
-    return next_month - timedelta(days=next_month.day)
+    retorno = next_month - timedelta(days=next_month.day)
+    return retorno if isinstance(retorno, date) else retorno.date()
 
 
 def first_day_of_month_before(any_day: datetime.date) -> datetime.date:
@@ -75,12 +103,12 @@ def periodos_prettyprint(referencias: list, freq='M') -> str:
     for i in range(len(referencias)):
         if i != len(referencias) - 1 and not sequencia and \
                 ((freq == 'M' and referencias[i + 1].month == referencias[i].month + 1
-                  and referencias[i].year == referencias[i+1].year)
+                  and referencias[i].year == referencias[i + 1].year)
                  or (freq == 'Y' and referencias[i + 1].year == referencias[i].year + 1)):
             sequencia = [referencias[i]]
             continue
         if sequencia and (i == len(referencias) - 1 or
-                          ((freq == 'M' and (referencias[i].year != referencias[i+1].year
+                          ((freq == 'M' and (referencias[i].year != referencias[i + 1].year
                                              or referencias[i + 1].month > referencias[i].month + 1))
                            or (freq == 'Y' and referencias[i + 1].year > referencias[i].year + 1))):
             sequencia.append(referencias[i])
@@ -100,17 +128,17 @@ def periodos_prettyprint(referencias: list, freq='M') -> str:
 
     for i in range(len(referencias)):
         i_last_year = 5000 if i == 0 else \
-            referencias[i-1][0].year if isinstance(referencias[i-1], list) else referencias[i-1].year
+            referencias[i - 1][0].year if isinstance(referencias[i - 1], list) else referencias[i - 1].year
         i_year = referencias[i][0].year if isinstance(referencias[i], list) else referencias[i].year
         i_plus_year = 0 if i == len(referencias) - 1 else \
-            referencias[i+1][0].year if isinstance(referencias[i+1], list) else referencias[i+1].year
+            referencias[i + 1][0].year if isinstance(referencias[i + 1], list) else referencias[i + 1].year
         if freq == 'M':
             if i > 0 and (i == len(referencias) - 1 or (i_last_year < i_year and i_year == all_years[-1]) or
                           (i_last_year == i_year and i_year < i_plus_year)):
                 texto = texto[:-2] + ' e '
             if isinstance(referencias[i], list):
                 if referencias[i][0].year != referencias[i][1].year:
-                    texto += f'{meses[referencias[i][0].month - 1].casefold()} de {referencias[i][0].year} '\
+                    texto += f'{meses[referencias[i][0].month - 1].casefold()} de {referencias[i][0].year} ' \
                              f'a {meses[referencias[i][1].month - 1].casefold()} de {referencias[i][1].year}, '
                 else:
                     texto += f'{meses[referencias[i][0].month - 1].casefold()} a ' \
@@ -211,22 +239,12 @@ def get_dados_efds(path_name: Path):
     return __get_json_file(get_efds_json_path(path_name))
 
 
-def has_local_dados_afr():
-    os.makedirs('local', exist_ok=True)
-    return os.path.isfile('local/dados_afr.json')
+def get_conta_fiscal_json_path(path_name: Path) -> Path:
+    return path_name / 'Dados' / 'cficms.json'
 
 
 def get_dados_observacoes_aiim() -> list[dict]:
     return __get_json_file(Path('resources/observacoes_aiim.json'))
-
-
-def get_local_dados_afr():
-    return __get_json_file(Path('local/dados_afr.json'))
-
-
-def save_local_dados_afr(dados: dict):
-    with open('local/dados_afr.json', 'w') as outfile:
-        json.dump(dados, outfile, sort_keys=True, indent=1)
 
 
 def get_dados_efd(path_name: Path):
@@ -240,26 +258,6 @@ def save_dados_efd(dados: dict, path_name: Path):
     os.makedirs(str(path_name / 'Dados'), exist_ok=True)
     with (path_name / 'Dados' / 'efds.json').open(mode='w') as outfile:
         json.dump(dados, outfile, sort_keys=True, indent=3)
-
-
-def __get_default_infractions():
-    infractions_path = r'resources\infracoes'
-    infracao = None
-    if len(infractions) == 0:
-        try:
-            for (path, _, infracoes) in os.walk(infractions_path):
-                for infracao in infracoes:
-                    if infracao.endswith('.json'):
-                        dicionario_json = __get_json_file(Path(path) / infracao)
-                        infractions.update({os.path.splitext(os.path.basename(infracao))[0]: dicionario_json})
-        except JSONDecodeError as jex:
-            infractions.clear()
-            raise Exception(f'Falha ao abrir arquivo de infração {infracao}: {jex}')
-    return infractions
-
-
-def get_infraction_for_name(infraction_name: str) -> dict:
-    return __get_default_infractions().get(infraction_name, None)
 
 
 def get_periodos_da_fiscalizacao(dadosOSF, rpa=True):
@@ -335,6 +333,7 @@ def get_file_size_pretty_print(path: Path) -> str:
 
 
 def clean_tmp_folder():
+    get_tmp_path().mkdir(exist_ok=True)
     try:
         for (path, _, files) in os.walk('tmp'):
             for file in files:
@@ -359,3 +358,30 @@ def get_sha256(file: Path) -> str:
         for byte_block in iter(lambda: f.read(4096), b""):
             sha256_hash.update(byte_block)
         return sha256_hash.hexdigest()
+
+
+def get_icp_certificates() -> list:
+    if os.name != 'nt':
+        raise Exception('Você deveria estar rodando isso em Windows... o AIIM 2003 não roda em Linux!')
+    certs = []
+    with wincertstore.CertSystemStore("MY") as store:
+        for cert in store.itercerts(usage=wincertstore.CLIENT_AUTH):
+            pem = cert.get_pem()
+            encodedDer = ''.join(pem.split("\n")[1:-2])
+
+            cert_bytes = base64.b64decode(encodedDer)
+            cert_pem = ssl.DER_cert_to_PEM_cert(cert_bytes)
+            cert_details = x509.load_pem_x509_certificate(cert_pem.encode('utf-8'))
+
+            tipos = cert_details.issuer.get_attributes_for_oid(ObjectIdentifier('2.5.4.10'))
+            if tipos and tipos[0].value == 'ICP-Brasil' and cert_details.not_valid_after > datetime.now():
+                certs.append(cert.get_name())
+    return certs
+
+
+def get_project_special_files():
+    return [get_audit_json_path(get_tmp_path()).name,
+            get_local_dados_afr_path().name,
+            get_efds_json_path(get_tmp_path()).name,
+            get_conta_fiscal_json_path(get_tmp_path()).name,
+            get_folders_history_json_path().name]

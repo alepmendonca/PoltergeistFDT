@@ -108,7 +108,7 @@ def vencimentos_de_PDF_CFICMS(file_cficms: Path, path_name: Path,
     # busca um PDF do extrato da Conta Fiscal do ICMS
     # varre os meses em busca das linhas de GIA normal, pegando o vencimento
     # retorna um DataFrame com referencia e vencimento
-    cficms_json = path_name / 'Dados' / 'cficms.json'
+    cficms_json = GeneralFunctions.get_conta_fiscal_json_path(path_name)
     if cficms_json.is_file():
         return pd.read_json(cficms_json, orient='records',
                             dtype={'referencia': 'datetime64[D]', 'vencimento': 'datetime64[D]', 'saldo': 'Float64'})
@@ -208,7 +208,7 @@ def get_quadro_1_data(quadro1_file: Path):
         # tem grupo de valor original, imposto e multa, valor original e multa ou só multa
         if colunas[1].find(',') > 0:
             if colunas[2].find('/') > 0:
-                if colunas[6].find('/') > 0:
+                if colunas[6].find('/') > 0 and len(colunas) >= 8:
                     # tem os três
                     linha.extend(colunas[:9])
                 else:
@@ -238,9 +238,11 @@ def get_quadro_1_data(quadro1_file: Path):
         if colunas[-1].find(',') > 0:
             # não tem coluna 15 de data
             fim_linha = [colunas[-1], None]
-        elif colunas[-1].find('/') > 0 and colunas[-2].find(',') > 0:
-            # tem colunas 14 e 15
-            fim_linha = colunas[-2:]
+        elif colunas[-1].find('/') > 0:
+            if colunas[-2].find(',') > 0:
+                # tem colunas 14 e 15
+                fim_linha.append(colunas[-2])
+            fim_linha.append(colunas[-1])
 
         linha = linha + [None for _ in range(15 - len(linha) - len(fim_linha))] + fim_linha
         # coluna 11 é relevante apenas se for 'MI'
