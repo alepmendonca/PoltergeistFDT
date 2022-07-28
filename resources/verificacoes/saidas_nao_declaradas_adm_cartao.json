@@ -1,0 +1,23 @@
+{
+  "verificacao": "Transações de cartões sem documento fiscal de saída associado",
+  "consulta": "SELECT cnpj_cpf_formatted(cnpj) AS \"CNPJ\", emissor AS \"Administradora de Cartões\", emissao AS \"Emissão\", tipo AS \"Tipo Transação\", identificador AS \"Número Transação\", natureza \"Natureza Transação\", valor \"Valor Transação\"\n FROM transacao_cartao\n EXCEPT\n (SELECT tc.* FROM transacao_cartao tc JOIN nfe ON tc.cnpj = nfe.cnpj_emit AND tc.emissao = nfe.emissao\n  WHERE nfe.tipo_doc_fiscal = 'Saída' AND abs(nfe.total_nfe - tc.valor) < 1\n  UNION\n  SELECT tc2.* FROM transacao_cartao tc2 JOIN sat_cupom sc ON tc2.emissao = sc.emissao\n  WHERE sc.ie = ie_auditoria() AND abs(sc.valor - tc2.valor) < 1\n  UNION\n  SELECT tc3.* FROM transacao_cartao tc3 JOIN redf r ON tc3.cnpj = r.cnpj AND tc3.emissao = r.emissao\n  WHERE abs(r.valor - tc3.valor) < 1\n )\n ORDER BY 3, 5",
+  "planilha_nome": "Transacoes",
+  "notificacao": {
+  	"titulo": "OSF <osf> - Transações com Administradoras",
+  	"corpo": "No âmbito das verificações fiscais da Ordem de Serviço Fiscal <osf>, fica o contribuinte acima identificado NOTIFICADO a prestar informações que esclareçam as divergências identificadas, por meio de cruzamento de dados eletrônicos existentes nos bancos de dados desta Receita Estadual, entre os documentos fiscais emitidos pelo contribuinte n<periodoAAAA> e as operações com cartões de crédito ou de débito informadas pelas empresas administradoras, nos termos do anexo juntado.<br><p><b>PRAZO PARA ATENDIMENTO</b>: 10 (dez) dias, contados da ciência da notificação.<br><b>FORMA DE ATENDIMENTO</b>: Envio de declaração firmada por representante legal do contribuinte, digitalizada ou assinada digitalmente, por intermédio do SIPET - Sistema de Peticionamento Eletrônico, disciplinado pela Portaria CAT 83/20, que pode ser acessado através do endereço eletrônico https://www3.fazenda.sp.gov.br/sipet, utilizando a opção \"Comunicações\" -> \"Atendimento de notificação de fiscalização\".<br><b>BASE LEGAL</b>: Art. 494 do RICMS (Aprovado pelo Decreto 45.490/00).</p>",
+  	"anexo": "Transacoes"
+  },
+  "infracoes": {
+     "Ia": {
+      	"relato": "Deixou de pagar ICMS no montante de @CRI, referente a<periodo>, decorrente de operações de saída de mercadorias omitidas ao Fisco, apuradas por meio de levantamento fiscal realizado com fundamento no inciso VI do artigo 509-A do RICMS/00, com base em informações de transações do contribuinte constantes nos arquivos digitais disponibilizados por administradoras de cartões de crédito e débito, listadas no Anexo do item.",
+        "capitulacao": {
+            "artigos": [
+                {"artigo": "58"},
+                {"artigo": "87"},
+                {"artigo": "509A", "inciso": "6", "junta": "C/C"},
+                {"artigo": "509", "parágrafo": "3"}
+            ]
+        }
+     }
+  }
+}

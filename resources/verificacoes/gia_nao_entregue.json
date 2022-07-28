@@ -1,0 +1,6 @@
+{
+  "verificacao": "GIAs não entregues",
+  "consulta": "WITH referencia AS (\n\tSELECT DISTINCT date_trunc('month', i)::date AS periodo\n\tFROM generate_series(inicio_auditoria(), fim_auditoria(), '1 day'::interval) i\n\t\tJOIN cadesp_regime ON cadesp_regime.ie = ie_auditoria()\n\t\t\tAND cadesp_regime.regime = 'RPA'\n\t\t\tAND i BETWEEN cadesp_regime.inicio_regime AND COALESCE(cadesp_regime.fim_regime, NOW())\n), operacoes AS (\n\tSELECT date_trunc('month', nfe.emissao)::date AS referencia, sum(total_nfe) AS operacoes\n\tFROM nfe\n\tWHERE situacao_documento = 0\n\tAND ((cnpj_emit = cnpj_auditoria() AND tipo_doc_fiscal = 'Saída') OR (cnpj_dest = cnpj_auditoria() AND tipo_doc_fiscal = 'Entrada'))\n\tGROUP BY 1\n)\nSELECT referencia.periodo AS \"Referência\", NULL AS \"Entrega\", NULL AS \"Dias Atraso\", COALESCE(operacoes.operacoes, 0) AS \"Valor Operações\"\nFROM referencia\n\tLEFT JOIN operacoes ON referencia.periodo = operacoes.referencia\n\tLEFT JOIN gia_apuracao ON referencia.periodo = gia_apuracao.referencia\nWHERE gia_apuracao.entrega IS NULL\nORDER BY 1",
+  "planilha_nome": "GIAs não entregues",
+  "infracoes": ["VIIa-falta_entrega"]
+}

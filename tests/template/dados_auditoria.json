@@ -1,0 +1,57 @@
+{
+   "aiim": {
+      "aberto": true,
+      "numero": "1.111.111-2"
+   },
+   "bairro": "CENTRO",
+   "cep": "01.234-000",
+   "cidade": "SAO PAULO",
+   "cnae": "4530703",
+   "cnpj": "10.203.040/0001-50",
+   "complemento": "FUNDOS",
+   "empresa": "TESTE COMERCIAL LTDA",
+   "fim_auditoria": "12/2018",
+   "historico_regime": [
+      [
+         "13/05/2009",
+         "31/12/2017",
+         "SIMPLES NACIONAL"
+      ],
+      [
+         "01/01/2018",
+         "Atual",
+         "NORMAL - REGIME PERI\u00d3DICO DE APURA\u00c7\u00c3O"
+      ]
+   ],
+   "ie": "012.345.678.910",
+   "infracoes": [
+      {
+         "infracao": "Va-nao_tributado",
+         "notificacao": "IC/N/FIS/000002375/2022",
+         "planilha": "planilha",
+         "verificacao": "Documentos de entrada n\u00e3o tributados (NF-e e CT-e) n\u00e3o escriturados no LRE"
+      },
+      {
+         "infracao": "Va-tributado",
+         "item": 1,
+         "notificacao": "IC/N/FIS/000002375/2022",
+         "planilha": "planilha",
+         "verificacao": "Documentos de entrada tributados (NF-e e CT-e) n\u00e3o escriturados no LRE"
+      }
+   ],
+   "inicio_auditoria": "01/2017",
+   "inicio_inscricao": "13/05/2009",
+   "inicio_situacao": "16/10/2010",
+   "logradouro": "AVENIDA BAGACA FRANCO",
+   "notificacoes": [
+      {
+         "planilha": "PGDAS",
+         "verificacao": "Diverg\u00eancias RBA x PGDAS-D"
+      }
+   ],
+   "numero": "334",
+   "osf": "01.1.68489/17-6",
+   "schema": "teste",
+   "situacao": "Ativo",
+   "uf": "SP"
+}

@@ -1,0 +1,5 @@
+{
+	"nome": "Alíquota errada",
+	"ttpa": [1, 1, 1, 3, [1, 1]],
+	"relato": "Deixou de pagar o ICMS no montante de @CRI, referente a<periodo>, por emissão de documentos fiscais <modelos> relativos a operações tributadas com erro na aplicação da alíquota, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas."
+}

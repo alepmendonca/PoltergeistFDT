@@ -1,0 +1,9 @@
+{
+  "verificacao": "Não exibição de livro fiscal de apuração mensal em EFD",
+  "consulta": "WITH referencias_esperadas AS (\n\tSELECT dd::date AS referencia \n\tFROM generate_series(inicio_auditoria()::timestamp, fim_auditoria()::timestamp, '1 month'::interval) AS dd\n\tJOIN cadesp_regime ON dd BETWEEN cadesp_regime.inicio_regime AND COALESCE(cadesp_regime.fim_regime, now())\n\tWHERE cadesp_regime.ie = ie_auditoria() AND cadesp_regime.regime = 'RPA'\n)\nSELECT referencias_esperadas.referencia AS \"Referência\"\nFROM referencias_esperadas LEFT JOIN escrituracaofiscal ON referencias_esperadas.referencia = escrituracaofiscal.datainicial\nWHERE escrituracaofiscal.ie IS NULL\nORDER BY 1",
+  "notificacao": {
+    "titulo": "OSF <osf> -  Falta de entrega de Escrituração Fiscal Digital(EFD)",
+    "corpo": "No Âmbito da Ordem de Serviço Fiscal <osf>, e em decorrência da não localização nas bases de dados desta Receita Estadual de EFDs listadas a seguir, fica o contribuinte acima identificado NOTIFICADO a entregar a Escrituração Fiscal Digital d<periodo>, contendo especialmente as informações dos Livros Fiscais Registro de Entradas, Registro de Saídas e Apuração de ICMS, sob pena de aplicação da penalidade prevista na Lei 6.374, art. 85, inciso V, alínea \"m\".<br><p><b>PRAZO PARA ATENDIMENTO</b>: 30 (trinta) dias, contados da ciência da notificação.<br><b>FORMA DE ATENDIMENTO</b>: Envio de EFDs pelo portal SPED Fiscal.<br><b>BASE LEGAL</b>: Art. 494 e 497 do RICMS (Aprovado pelo Decreto 45.490/00).</p>"
+  },
+  "infracoes": ["Vm-LRS", "Vm-LRE", "Vm-LRAICMS"]
+}
