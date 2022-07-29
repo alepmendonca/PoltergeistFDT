@@ -26,8 +26,10 @@ class AuditTestSetup(TestCase):
         Audit.set_audit(self._main_path)
 
     def tearDown(self) -> None:
-        (self._main_path / 'Dados' / 'dados_auditoria.json').unlink(missing_ok=True)
-        (self._main_path / 'Achados' / 'Arrazoado - Teste.xlsm').unlink(missing_ok=True)
+        for subpasta in ['Dados', 'Achados', 'AIIM', 'Notificações']:
+            for path, _, arquivos in os.walk(self._main_path / subpasta):
+                for arquivo in arquivos:
+                    (Path(path) / arquivo).unlink(missing_ok=True)
 
     @classmethod
     def tearDownClass(cls) -> None:

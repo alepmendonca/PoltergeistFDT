@@ -694,7 +694,7 @@ class ExcelDDFs:
             if csv_df is not None:
                 return csv_df
             else:
-                return []
+                return pd.DataFrame()
         try:
             logger.info('Encontrei arquivo de relatório Valor Total Documentos Fiscais x GIA, processando valores...')
             wb = openpyxl.load_workbook(str(operacoes_xls))
@@ -723,7 +723,7 @@ class ExcelDDFs:
             else:
                 valor = ws.cell(row=row, column=11).value
                 if valor:
-                    total_gias = float(str().replace('.', '').replace(',', '.'))
+                    total_gias = float(str(valor).replace('.', '').replace(',', '.'))
                 else:
                     total_gias = 0
             if total_docs > total_gias:
@@ -749,7 +749,8 @@ class ExcelDDFs:
                 ops_df = pd.concat([csv_df, new_df])
             else:
                 ops_df = new_df
-            ops_df = ops_df.drop_duplicates(subset=['Ano', 'Mes'], keep='last').sort_index(ascending=False)
+            ops_df = ops_df.drop_duplicates(subset=['Ano', 'Mes'], keep='last').sort_values(
+                by=['Ano', 'Mes'], ascending=False)
             ops_df.to_csv(self.operacoes_csv)
             if operacoes_xls.is_file():
                 operacoes_xls.unlink()
