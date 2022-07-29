@@ -9,6 +9,7 @@ import pandas as pd
 from tika import parser
 
 import Audit
+from ExcelDDFs import ExcelArrazoadoIncompletoException, ExcelArrazoadoCriticalException
 from tests.test_Audit import AuditTestSetup
 
 
@@ -30,7 +31,6 @@ class ExcelDDFsTest(AuditTestSetup):
         self.assertTrue((self._main_path / 'AIIM' / 'Quadro 3.pdf').is_file())
         self.assertEqualsContents(aiim_number, caminho_q3, self._main_path / 'AIIM' / 'Quadro 3.pdf')
 
-    @unittest.skip
     def test_gera_quadro_3(self):
         with mock.patch('MDBReader.MDBReader.get_last_ufesp_stored', return_value=31.97):
             self._verifica_quadro_3('41500581')
@@ -166,3 +166,58 @@ class ExcelDDFsTest(AuditTestSetup):
         valores = ['300.000,00' for i in range(0, 13)]
         valores.extend(['316.672.689,54', '303.077.942,56', '313.859.083,41', '296.753.854,64'])
         self.assertListEqual(valores, resultado['Valor Contabil - CFOP'].tolist())
+
+    def test_get_ddf_sem_agrupamento_failure(self):
+        df = pd.DataFrame(columns=['Chave', 'Emissao', 'Valor'],
+                          data=[['351722115556546654', datetime.date(2022, 1, 5), 100],
+                                ['371854654656666556', datetime.date(2022, 4, 2), 300]])
+        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=df):
+            with self.assertRaises(ExcelArrazoadoIncompletoException) as cm:
+                Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'IV', 'b')
+            self.assertEqual('Planilha planilha não tem coluna "Referência" ou "Período" (quando itens já '
+                             'estão agrupados) ou ela tem vários itens da mesma referência, mas está sem '
+                             'totalizadores!\nNo segundo caso, execute a macro com CTRL+SHIFT+E, salve, '
+                             'feche a planilha e tente novamente!', str(cm.exception))
+
+    def test_get_ddf_sem_agrupamento_planejado(self):
+        df = pd.DataFrame(columns=['Chave', 'Período', 'Valor'],
+                          data=[['351722115556546654', datetime.date(2022, 1, 5), 100],
+                                ['371854654656666556', datetime.date(2022, 4, 2), 300]])
+        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=df):
+            ddf = Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'IV', 'b')
+        self.assertIsInstance(ddf, dict)
+        self.assertIsInstance(ddf['ddf'], pd.DataFrame)
+        self.assertEqual(['31/01/22', '30/04/22'], ddf['ddf']['referencia'].tolist())
+        self.assertEqual(['100,00', '300,00'], ddf['ddf']['valor'].tolist())
+
+    def test_get_ddf_I_a(self):
+        df = pd.DataFrame(columns=['Chave', 'Período', 'Valor', 'mês'],
+                          data=[['351722115556546654', datetime.date(2022, 1, 5), 100, datetime.date(2022, 1, 31)],
+                                ['Total Subitem 1.1', None, 100, datetime.date(2022, 1, 31)],
+                                ['371854654656666556', datetime.date(2022, 4, 2), 300],
+                                ['Total Subitem 1.2', None, 300, datetime.date(2022, 4, 30)]])
+        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=df):
+            with self.assertRaises(ExcelArrazoadoCriticalException) as cm:
+                Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'I', 'a')
+        self.assertEqual('Inciso/alinea não mapeados: I, a', str(cm.exception))
+
+    def test_get_ddf_I_b_agrupado(self):
+        df = pd.DataFrame(columns=['Chave', 'Período', 'Valor', 'mês'],
+                          data=[['351722115556546654', datetime.date(2022, 1, 5), 100, datetime.date(2022, 1, 31)],
+                                ['Total Subitem 1.1', None, 100, datetime.date(2022, 1, 31)],
+                                ['371854654656666556', datetime.date(2022, 4, 2), 300],
+                                ['Total Subitem 1.2', None, 300, datetime.date(2022, 4, 30)]])
+        gia = pd.DataFrame(columns=['referencia', 'vencimento', 'saldo'],
+                           data=[[datetime.date(2022, 1, 31), datetime.date(2022, 2, 20), 150.2],
+                           [datetime.date(2022, 4, 30), datetime.date(2022, 5, 20), 180.3]])
+        gia['referencia'] = gia['referencia'].astype('datetime64[D]')
+        gia['vencimento'] = gia['vencimento'].astype('datetime64[D]')
+        gia['saldo'] = gia['saldo'].astype('Float64')
+        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=df):
+            with mock.patch('ExcelDDFs.ExcelDDFs.get_vencimentos_GIA', return_value=gia):
+                ddf = Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'I', 'b')
+        self.assertIsInstance(ddf, dict)
+        self.assertIsInstance(ddf['ddf'], pd.DataFrame)
+        self.assertEqual(['31/01/22', '30/04/22'], ddf['ddf']['referencia'].tolist())
+        self.assertEqual(['100,00', '300,00'], ddf['ddf']['valor'].tolist())
+        self.assertEqual(['21/02/22', '21/05/22'], ddf['ddf']['vencimento'].tolist())
