@@ -437,10 +437,10 @@ class ExcelDDFs:
         titulos_planilha = sheet.keys().tolist()
         if not is_monthly_grouped and any([titulo in titulos_planilha for titulo in ['Referência', 'Período']]):
             # se a planilha não é agrupada, vou supor que última coluna tem os valores
-            titulo_index = int(sheet[sheet[sheet.keys()[0]].isin(titulos_planilha)].index[0])
+            #titulo_index = int(sheet[sheet[sheet.keys()[0]].isin(titulos_planilha)].index[0])
             titulo = [titulo for titulo in titulos_planilha if titulo in ['Referência', 'Período']][0]
-            aba = sheet[titulo_index+1:]
-            aba = aba.dropna(axis=0, how='all')
+            #aba = sheet[titulo_index+1:]
+            aba = sheet.dropna(axis=0, how='all')
             aba['item'] = aba.index
             aba = aba.iloc[:, [-1, -2, titulos_planilha.index(titulo)]]
             aba['numero'] = aba.index
