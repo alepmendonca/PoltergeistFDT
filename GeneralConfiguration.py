@@ -47,7 +47,13 @@ class Configuration:
         self.certificado_pass = self._dicionario.get('certificado_pass')
         self.sigadoc_login = self._dicionario.get('sigadoc_login')
         self.sigadoc_pass = self._dicionario.get('sigadoc_pass')
+        self.postgres_address = self._dicionario.get('postgres_address', 'localhost')
+        self._postgres_port = self._dicionario.get('postgres_port', 5432)
+        self.postgres_dbname = self._dicionario.get('postgres_dbname', 'postgres')
+        self.postgres_user = self._dicionario.get('postgres_user', 'postgres')
+        self.postgres_pass = self._dicionario.get('postgres_pass')
         self.ultima_pasta = Path(self._dicionario.get('ultima_pasta', str(GeneralFunctions.get_user_path().absolute())))
+        self._efd_path = Path(self._dicionario['efd_path']) if self._dicionario.get('efd_path') else Path.home()
         self.max_epat_attachment_size = 8
 
     @property
@@ -80,6 +86,23 @@ class Configuration:
             self._equipe_fiscal = int(matches.group(1))
 
     @property
+    def postgres_port(self) -> int:
+        return self._postgres_port
+
+    @postgres_port.setter
+    def postgres_port(self, porta: int | str):
+        if isinstance(porta, str):
+            try:
+                valor = int(porta)
+            except ValueError:
+                raise ValueError('Porta deve ser um número!')
+        else:
+            valor = porta
+        if valor <= 0:
+            raise ValueError('Porta deve ser um número maior que zero!')
+        self._postgres_port = valor
+
+    @property
     def drt_nome(self) -> str:
         return self.nomes_delegacias[self.drt_sigla]
 
@@ -88,11 +111,33 @@ class Configuration:
         if nome and nome in self.nomes_delegacias.values():
             self.drt_sigla = {v: k for k, v in self.nomes_delegacias.items()}[nome]
 
+    @property
+    def efd_path(self) -> Path:
+        return Path(self._efd_path) if self._efd_path else None
+
+    @efd_path.setter
+    def efd_path(self, path: str | Path):
+        if isinstance(path, str):
+            self._efd_path = Path(path)
+        else:
+            self._efd_path = path
+        if not (self.efd_java_path() / 'java.exe').is_file():
+            msg_erro = f'Caminho para EFD PVA ICMS inválido. É necessário que exista ' \
+                       f'um arquivo java.exe'\
+                       f' dentro da subpasta {self.efd_java_path()}'
+            self._efd_path = None
+            raise ValueError(msg_erro)
+
+    def efd_java_path(self) -> Path:
+        return self.efd_path / 'jre' / 'bin'
+
     def save(self):
         dadosAFR = self.__dict__.copy()
         dadosAFR['drt'] = self._drt
         dadosAFR['equipe'] = self._equipe_fiscal
+        dadosAFR['postgres_port'] = self.postgres_port
         dadosAFR['ultima_pasta'] = str(self.ultima_pasta.absolute())
+        dadosAFR['efd_path'] = str(self.efd_path.absolute())
         for k in [k for k in dadosAFR.keys() if k.startswith('_') or not dadosAFR[k]]:
             dadosAFR.pop(k)
         with GeneralFunctions.get_local_dados_afr_path().open(mode='w') as outfile:
@@ -112,25 +157,41 @@ def get() -> Configuration:
 
 def configuration_window():
     layout = [
-        [sg.Text("Nome Completo:"), sg.InputText(key='nome', default_text=get().nome, expand_x=True)],
-        [sg.Text("E-mail:"), sg.InputText(key='email', default_text=get().email, expand_x=True)],
-        [sg.Text("Delegacia Tributária:"), sg.Combo(values=list(Configuration.nomes_delegacias.values()),
+        [sg.Frame(title='Dados do AFRE', layout=[
+            [sg.Text("Nome Completo:"), sg.InputText(key='nome', default_text=get().nome, expand_x=True)],
+            [sg.Text("E-mail:"), sg.InputText(key='email', default_text=get().email, expand_x=True)],
+            [sg.Text("Delegacia Tributária:"), sg.Combo(values=list(Configuration.nomes_delegacias.values()),
                                                     key='drt_nome', default_value=get().drt_nome,
                                                     readonly=True, expand_x=True)],
-        [sg.Text("Equipe Fiscal:"), sg.Input(key='equipe_fiscal', default_text=get().equipe_fiscal, expand_x=True)],
-        [sg.Text("Usuário da intranet:"), sg.Input(key='intranet_login', default_text=get().intranet_login,
-                                                   expand_x=True)],
-        [sg.Text("Senha da intranet:"), sg.Input(key='intranet_pass', default_text=get().intranet_pass,
-                                                 password_char='*', expand_x=True)],
-        [sg.Text("Certificado digital:"), sg.Combo(values=sorted(GeneralFunctions.get_icp_certificates()),
-                                                   key='certificado', default_value=get().certificado,
-                                                   readonly=True, expand_x=True)],
-        [sg.Text("Senha do certificado digital:"), sg.Input(key='certificado_pass', default_text=get().certificado_pass,
-                                                            password_char='*', expand_x=True)],
-        [sg.Text("Usuário do Sem Papel (Sigadoc):"), sg.Input(key='sigadoc_login', default_text=get().sigadoc_login,
-                                                              expand_x=True)],
-        [sg.Text("Senha do Sem Papel (Sigadoc):"), sg.Input(key='sigadoc_pass', default_text=get().sigadoc_pass,
-                                                            password_char='*', expand_x=True)],
+            [sg.Text("Equipe Fiscal:"), sg.Input(key='equipe_fiscal', default_text=get().equipe_fiscal, expand_x=True)]
+        ], expand_x=True)],
+        [sg.Frame(title='Autenticação de Sistemas Sefaz', layout=[
+            [sg.Text("Usuário da intranet:"), sg.Input(key='intranet_login', default_text=get().intranet_login,
+                                                       expand_x=True)],
+            [sg.Text("Senha da intranet:"), sg.Input(key='intranet_pass', default_text=get().intranet_pass,
+                                                     password_char='*', expand_x=True)],
+            [sg.Text("Certificado digital:"), sg.Combo(values=sorted(GeneralFunctions.get_icp_certificates()),
+                                                       key='certificado', default_value=get().certificado,
+                                                       readonly=True, expand_x=True)],
+            [sg.Text("Senha do certificado digital:"), sg.Input(key='certificado_pass', default_text=get().certificado_pass,
+                                                                password_char='*', expand_x=True)],
+            [sg.Text("Usuário do Sem Papel (Sigadoc):"), sg.Input(key='sigadoc_login', default_text=get().sigadoc_login,
+                                                                  expand_x=True)],
+            [sg.Text("Senha do Sem Papel (Sigadoc):"), sg.Input(key='sigadoc_pass', default_text=get().sigadoc_pass,
+                                                                password_char='*', expand_x=True)]
+         ], expand_x=True)],
+        [sg.Frame(title='Banco de Dados do AFRE', layout=[
+            [sg.Text("Local (padrão localhost):"), sg.Input(key='postgres_address', default_text=get().postgres_address,
+                                                            expand_x=True)],
+            [sg.Text("Porta (padrão 5432):"), sg.Input(key='postgres_port', default_text=get().postgres_port,
+                                                            expand_x=True)],
+            [sg.Text("Instância (padrão postgres):"), sg.Input(key='postgres_dbname', default_text=get().postgres_dbname,
+                                                            expand_x=True)],
+            [sg.Text("Usuário (padrão postgres):"), sg.Input(key='postgres_user', default_text=get().postgres_user,
+                                                            expand_x=True)],
+            [sg.Text("Senha:"), sg.Input(key='postgres_pass', default_text=get().postgres_pass,
+                                         expand_x=True, password_char='*')],
+        ], expand_x=True)],
         [sg.Push(), sg.Button('Salvar'), sg.Button('Cancelar'), sg.Push()]
     ]
     window = sg.Window('Propriedades do Sistema', layout, modal=True)

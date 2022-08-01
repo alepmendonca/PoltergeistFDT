@@ -633,7 +633,6 @@ class AIIMAutoIt:
         logger.info('Importação de AIIM realizada com sucesso')
 
     def exporta(self, aiim_number: str, aiim_posicao: int, aex_path: Path):
-        # TODO apenas exportar se o AIIM estiver aberto, senão acaba ficando com versão fechada
         logger.info(f'Realizando exportação do AIIM {aiim_number} em {aex_path}')
         (aex_path / f'{aiim_number.replace(".", "")}.aex').unlink(missing_ok=True)
 

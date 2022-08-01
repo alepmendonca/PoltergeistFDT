@@ -2,6 +2,8 @@ import PySimpleGUI as sg
 import queue
 
 from collections.abc import Callable
+
+import GUIFunctions
 from GeneralFunctions import logger, ThreadWithReturnValue
 from LogWindow import QueueHandler, QueueFormatter
 
@@ -33,10 +35,10 @@ def open_wait_window(funcao_batch: Callable, funcao_desc: str, *parametros_funca
                 result = thread.join()
             except Exception as e:
                 logger.exception(f'Erro ocorrido em WaitWindow da função {funcao_batch.__name__}')
-                sg.popup_error(f'Ocorreu um erro: {str(e)}')
+                GUIFunctions.popup_erro(f'Ocorreu o seguinte erro: {e}')
             else:
                 if funcao_desc:
-                    sg.popup_ok(f'Tarefa "{funcao_desc}" finalizada com sucesso!')
+                    GUIFunctions.popup_ok(f'Tarefa "{funcao_desc}" finalizada com sucesso!')
             finally:
                 logger.removeHandler(queue_handler)
                 break

@@ -14,6 +14,7 @@ from py4j.compat import (unicode, bytestr)
 from py4j.java_gateway import JavaGateway
 from py4j.java_gateway import GatewayParameters
 
+import GeneralConfiguration
 import GeneralFunctions
 from Audit import get_current_audit
 from GeneralFunctions import logger
@@ -45,8 +46,7 @@ class EFDPVAReversed:
         else:
             self.script_path = os.path.dirname(os.path.abspath(__file__))
 
-        efd_pva_path = r'C:\Sefaz\EFD ICMS IPI'
-        java_path = os.path.join(efd_pva_path, 'jre', 'bin', 'java')
+        efd_pva_path = str(GeneralConfiguration.get().efd_path.absolute())
         class_path = [
             os.path.join(self.script_path, 'efd-pva-inspector'),
             os.path.join(efd_pva_path, 'fiscalpva.jar'),
@@ -63,7 +63,7 @@ class EFDPVAReversed:
         try:
             retorno = py4j.java_gateway.launch_gateway(
                 classpath=os.pathsep.join(class_path),
-                java_path=java_path,
+                java_path=str((GeneralConfiguration.get().efd_java_path() / 'java').absolute()),
                 javaopts=['-Dfile.encoding=Cp1252'],
                 cwd=efd_pva_path,
                 die_on_exit=True,

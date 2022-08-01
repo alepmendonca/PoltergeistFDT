@@ -576,7 +576,7 @@ def upload_aiim():
 
 
 def generate_audit_schema():
-    with SQLReader() as postgres:
+    with SQLWriter() as postgres:
         if not postgres.does_schema_exist(get_current_audit().schema):
             logger.info(
                 f'Criando schema chamado {get_current_audit().schema} no banco de dados central para a auditoria...')
@@ -782,7 +782,7 @@ def efd_files_import_SGBD(pva: EFDPVAReversed, window: sg.Window, evento: thread
     window.write_event_value('-DATA-EXTRACTION-STATUS-', ['EFD-BD', f'TOTAL{sum(1 for _ in efds)}'])
 
     try:
-        with SQLReader() as postgres:
+        with SQLWriter() as postgres:
             postgres.drop_master_schema()
             for efd in efds:
                 if evento.is_set():

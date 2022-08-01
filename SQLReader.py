@@ -4,6 +4,8 @@ import pandas as pd
 import psycopg2
 from psycopg2 import sql
 from pathlib import Path
+
+import GeneralConfiguration
 import GeneralFunctions
 
 
@@ -38,11 +40,11 @@ def _get_dtypes_from_oids(oids: list) -> list:
 
 
 class SQLReader:
-    def __init__(self, schema: str = None):
-        # TODO trazer para configuracoes a senha e porta do PostgreSQL
+    def __init__(self, schema: str = None, config=GeneralConfiguration.get()):
         try:
-            self._conn = psycopg2.connect(host='localhost', port=5432, dbname='postgres',
-                                          user='postgres', password='alexey99')
+            self._conn = psycopg2.connect(host=config.postgres_address, port=config.postgres_port,
+                                          dbname=config.postgres_dbname,
+                                          user=config.postgres_user, password=config.postgres_pass)
             # self._conn.set_client_encoding("LATIN1")
             self._cursor = self._conn.cursor()
             if schema:
@@ -89,16 +91,6 @@ class SQLReader:
             raise Exception(e.pgerror)
         return bool(len(self._cursor.fetchall()))
 
-    def drop_master_schema(self):
-        if not self.does_schema_exist('master'):
-            return
-        try:
-            self._cursor.execute('DROP SCHEMA master CASCADE;')
-            self._conn.commit()
-        except psycopg2.Error as e:
-            self._conn.rollback()
-            raise Exception(e.pgerror)
-
     def has_return_set(self, sql_string: str, sql_args: tuple = None) -> bool:
         try:
             self._cursor.execute(sql_string, sql_args)
@@ -114,53 +106,7 @@ class SQLReader:
     def is_efd_unified(self) -> bool:
         return self.does_table_exist('reg_k990')
 
-    def create_audit_schema(self, schema_name: str, cnpj: str, ie: int, inicio: datetime.date, fim: datetime.date):
-        # TODO fazer a criação de todas as tabelas pra não dar erros nas queries
-        try:
-            self._cursor.execute(f'CREATE SCHEMA IF NOT EXISTS {schema_name};')
-            self._cursor.execute(f'SET search_path = {schema_name}, public;')
-            self._cursor.execute("CREATE OR REPLACE FUNCTION cnpj_auditoria() RETURNS varchar AS " +
-                                 f"$$ SELECT '{cnpj}' $$ LANGUAGE SQL IMMUTABLE;")
-            self._cursor.execute("CREATE OR REPLACE FUNCTION ie_auditoria() RETURNS bigint AS " +
-                                 f"$$ SELECT {ie} $$ LANGUAGE SQL IMMUTABLE;")
-            self._cursor.execute("CREATE OR REPLACE FUNCTION inicio_auditoria() RETURNS date AS " +
-                                 f"$$ SELECT '{inicio.strftime('%d-%m-%Y')}'::DATE $$ LANGUAGE SQL IMMUTABLE;")
-            self._cursor.execute("CREATE OR REPLACE FUNCTION fim_auditoria() RETURNS date AS " +
-                                 f"$$ SELECT '{fim.strftime('%d-%m-%Y')}'::DATE $$ LANGUAGE SQL IMMUTABLE;")
-            self._conn.commit()
-        except psycopg2.Error as e:
-            self._conn.rollback()
-            raise Exception(e.pgerror)
 
-    def create_efd_schema(self, schema_name: str, sql_file: Path):
-        # TODO precisa testar se é assim mesmo, ou se tem como fazer via psycopg2
-        importar = 'psql -h server -d databasename -U username -f data.sql'
-        try:
-            self._cursor.execute(f'CREATE SCHEMA {schema_name}')
-            self._cursor.execute(f'SET search_path = {schema_name};')
-            script = sql_file.open(mode='r').read()
-            # remove a parte de scripting que atrapalha no PGSql
-            script = script.replace('SET @saved_cs_client     = @@character_set_client;', '')
-            script = script.replace('SET character_set_client = utf8;', '')
-            script = script.replace('SET character_set_client = @saved_cs_client;', '')
-            script = script.replace('collate latin1_general_ci', '')
-            # incongruências de tipagem entre MySQL e PGSql
-            script = re.sub(r'bigint\(\d+\)', 'numeric', script)
-            script = re.sub(r'int\(\d+\)', 'integer', script)
-            script = script.replace('varchar(255)', 'varchar(1000)')
-            script = script.replace('unsigned', '')
-            # remove as criações de indices, depois cria nas tabelas centralizadas
-            script = re.sub(r',\s+KEY.*\),', ',', script)
-            script = re.sub(r',\s+KEY.*\)', '', script)
-            script = script.replace('DROP TABLE', 'COMMIT;\nDROP TABLE')
-            self._cursor.execute(script)
-            self._conn.commit()
-        except psycopg2.Error as e:
-            self._conn.rollback()
-            raise Exception(e.pgerror)
-
-
-# TODO mover metodos com commit do SQLReader para cá
 class SQLWriter(SQLReader):
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._cursor:
@@ -175,6 +121,12 @@ class SQLWriter(SQLReader):
         except psycopg2.Error as e:
             self._conn.rollback()
             raise Exception(e.pgerror)
+
+    def drop_master_schema(self):
+        if not self.does_schema_exist('master'):
+            return
+        self.executa_transacao('DROP SCHEMA master CASCADE;')
+        self._conn.commit()
 
     def run_ddl(self, sql_script_name: str):
         scripts_path = Path('resources') / 'sql'
@@ -236,3 +188,49 @@ class SQLWriter(SQLReader):
         except psycopg2.Error as e:
             self._conn.rollback()
             raise Exception(e.pgerror)
+
+    def create_efd_schema(self, schema_name: str, sql_file: Path):
+        # TODO precisa testar se é assim mesmo, ou se tem como fazer via psycopg2
+        importar = 'psql -h server -d databasename -U username -f data.sql'
+        try:
+            self._cursor.execute(f'CREATE SCHEMA {schema_name}')
+            self._cursor.execute(f'SET search_path = {schema_name};')
+            script = sql_file.open(mode='r').read()
+            # remove a parte de scripting que atrapalha no PGSql
+            script = script.replace('SET @saved_cs_client     = @@character_set_client;', '')
+            script = script.replace('SET character_set_client = utf8;', '')
+            script = script.replace('SET character_set_client = @saved_cs_client;', '')
+            script = script.replace('collate latin1_general_ci', '')
+            # incongruências de tipagem entre MySQL e PGSql
+            script = re.sub(r'bigint\(\d+\)', 'numeric', script)
+            script = re.sub(r'int\(\d+\)', 'integer', script)
+            script = script.replace('varchar(255)', 'varchar(1000)')
+            script = script.replace('unsigned', '')
+            # remove as criações de indices, depois cria nas tabelas centralizadas
+            script = re.sub(r',\s+KEY.*\),', ',', script)
+            script = re.sub(r',\s+KEY.*\)', '', script)
+            script = script.replace('DROP TABLE', 'COMMIT;\nDROP TABLE')
+            self._cursor.execute(script)
+            self._conn.commit()
+        except psycopg2.Error as e:
+            self._conn.rollback()
+            raise Exception(e.pgerror)
+
+    def create_audit_schema(self, schema_name: str, cnpj: str, ie: int, inicio: datetime.date, fim: datetime.date):
+        # TODO fazer a criação de todas as tabelas pra não dar erros nas queries
+        try:
+            self._cursor.execute(f'CREATE SCHEMA IF NOT EXISTS {schema_name};')
+            self._cursor.execute(f'SET search_path = {schema_name}, public;')
+            self._cursor.execute("CREATE OR REPLACE FUNCTION cnpj_auditoria() RETURNS varchar AS " +
+                                 f"$$ SELECT '{cnpj}' $$ LANGUAGE SQL IMMUTABLE;")
+            self._cursor.execute("CREATE OR REPLACE FUNCTION ie_auditoria() RETURNS bigint AS " +
+                                 f"$$ SELECT {ie} $$ LANGUAGE SQL IMMUTABLE;")
+            self._cursor.execute("CREATE OR REPLACE FUNCTION inicio_auditoria() RETURNS date AS " +
+                                 f"$$ SELECT '{inicio.strftime('%d-%m-%Y')}'::DATE $$ LANGUAGE SQL IMMUTABLE;")
+            self._cursor.execute("CREATE OR REPLACE FUNCTION fim_auditoria() RETURNS date AS " +
+                                 f"$$ SELECT '{fim.strftime('%d-%m-%Y')}'::DATE $$ LANGUAGE SQL IMMUTABLE;")
+            self._conn.commit()
+        except psycopg2.Error as e:
+            self._conn.rollback()
+            raise Exception(e.pgerror)
+
