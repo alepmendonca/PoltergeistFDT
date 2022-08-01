@@ -54,7 +54,7 @@ def get_user_path() -> Path:
 
 
 def get_local_dados_afr_path() -> Path:
-    return get_user_path() / 'dados_afr.json'
+    return get_user_path() / 'dados_afre.json'
 
 
 def get_audit_json_path(home_path: Path) -> Path:
