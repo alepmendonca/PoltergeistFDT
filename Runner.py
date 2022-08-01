@@ -736,7 +736,7 @@ def menu_layout(tipo_menu: str):
                 ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
                               'Abrir Auditoria::-MENU-OPEN-AUDIT-',
                               'Sair::-MENU-EXIT-']],
-                ['&Editar', ['Propriedades', 'Cria Análise::-MENU-CREATE-ANALYSIS-']],
+                ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-']],
                 ['A&juda', ['Sobre::-MENU-ABOUT-']]
             ]
         case 'AUDITORIA_SEM_AIIM':
@@ -863,7 +863,7 @@ if __name__ == "__main__":
     GeneralFunctions.clean_tmp_folder()
 
     sg.theme('SystemDefaultForReal')
-    sg.set_options(ttk_theme=sg.THEME_WINNATIVE)
+    sg.set_options(ttk_theme=sg.THEME_WINNATIVE, text_justification='center')
 
     if not GeneralConfiguration.get():
         InitialConfigurationWizard.create_config_file()
@@ -1041,6 +1041,8 @@ if __name__ == "__main__":
         elif event.endswith('-MENU-RELOAD-SHEET-'):
             get_current_audit().clear_cache()
             __refresh_tabs(get_current_audit().path())
+        elif event.endswith('-MENU-PROPERTIES-'):
+            GeneralConfiguration.configuration_window()
         elif event.endswith('-MENU-AIIM-REPORTS-'):
             WaitWindow.open_wait_window(Controller.print_aiim_reports, 'Gerar Relatórios do AIIM')
         elif event.endswith('-MENU-AIIM-OPERATIONS-'):
@@ -1056,7 +1058,9 @@ if __name__ == "__main__":
         elif event.endswith('-MENU-AIIM-UPLOAD-'):
             WaitWindow.open_wait_window(Controller.upload_aiim, 'Transmitir AIIM')
         elif event.endswith('-MENU-ABOUT-'):
-            sg.popup_ok([[InitialConfigurationWizard.get_splash_image()],
-                         [sg.Text(GeneralFunctions.project_name)],
-                         [sg.Text(f'versão {GeneralFunctions.project_version}')]])
+            sg.Window(GeneralFunctions.project_name,
+                      [
+                          [sg.Image(InitialConfigurationWizard.get_splash_image())],
+                          [sg.T(f'{GeneralFunctions.project_name} versão {GeneralFunctions.project_version}')],
+                          [sg.OK(s=10)]], element_justification='c').read(close=True)
     window.close()
