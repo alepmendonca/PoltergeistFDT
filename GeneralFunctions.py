@@ -20,6 +20,8 @@ import wincertstore as wincertstore
 from cryptography import x509
 from cryptography.hazmat._oid import ObjectIdentifier
 
+project_name = 'PoltergeistFDT'
+project_version = '0.1.1'
 meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho',
          'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 infractions = {}
@@ -67,7 +69,6 @@ def get_tmp_path() -> Path:
     return Path('tmp')
 
 
-project_name = 'PoltergeistFDT'
 logger = logging.getLogger(project_name)
 logger.setLevel(logging.DEBUG)
 get_user_path().mkdir(exist_ok=True)
@@ -86,7 +87,7 @@ def last_day_of_month(any_day: (date | datetime)) -> date:
     # subtract the number of remaining 'overage' days to get last day of current month, or said programattically
     # said, the previous day of the first of next month
     retorno = next_month - timedelta(days=next_month.day)
-    return retorno if isinstance(retorno, date) else retorno.date()
+    return retorno.date() if isinstance(retorno, datetime) else retorno
 
 
 def first_day_of_month_before(any_day: datetime.date) -> datetime.date:

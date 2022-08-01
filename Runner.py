@@ -27,6 +27,7 @@ from SQLReader import QueryAnalysisException
 
 window: sg.Window
 
+
 def refresh_data_tab():
     for grupo in Controller.data_groups.keys():
         global extracoes
@@ -78,33 +79,15 @@ def refresh_aiim_tab():
     window['-AIIM-ITEM-PROOFS-'].update(visible=False)
     if get_current_audit():
         if get_current_audit().aiim_number:
+            window['-MENU-'].update(menu_definition=menu_layout('AUDITORIA_COM_AIIM'))
             window['-AIIM-FRAME-'].update(value=f'AIIM {get_current_audit().aiim_number}')
-            window['-AIIM-CREATE-'].update(visible=False)
-            window['-AIIM-REPORTS-'].update(visible=True)
-            window['-AIIM-EXPORT-'].update(visible=True)
-            window['-AIIM-UPLOAD-'].update(visible=True)
-            window['-AIIM-REOPEN-'].update(visible=not get_current_audit().is_aiim_open)
-            window['-AIIM-OPERATIONS-'].update(visible=True)
-            window['-AIIM-RECEIPT-'].update(visible=not get_current_audit().receipt_digital_files)
         else:
+            window['-MENU-'].update(menu_definition=menu_layout('AUDITORIA_SEM_AIIM'))
             window['-AIIM-FRAME-'].update(value='AIIM')
-            window['-AIIM-CREATE-'].update(visible=True)
-            window['-AIIM-REPORTS-'].update(visible=False)
-            window['-AIIM-EXPORT-'].update(visible=False)
-            window['-AIIM-REOPEN-'].update(visible=False)
-            window['-AIIM-UPLOAD-'].update(visible=False)
-            window['-AIIM-OPERATIONS-'].update(visible=False)
-            window['-AIIM-RECEIPT-'].update(visible=False)
         window['-INFRACTION-CHOSEN-'].update(sorted(get_current_audit().aiim_itens))
     else:
+        window['-MENU-'].update(menu_definition=menu_layout('SEM_AUDITORIA'))
         window['-AIIM-FRAME-'].update(value='AIIM')
-        window['-AIIM-CREATE-'].update(visible=False)
-        window['-AIIM-REPORTS-'].update(visible=False)
-        window['-AIIM-EXPORT-'].update(visible=False)
-        window['-AIIM-REOPEN-'].update(visible=False)
-        window['-AIIM-UPLOAD-'].update(visible=False)
-        window['-AIIM-OPERATIONS-'].update(visible=False)
-        window['-AIIM-RECEIPT-'].update(visible=False)
 
 
 def __clean_tabs():
@@ -137,6 +120,8 @@ def __refresh_tabs(pasta: Path):
         window['periodo'].update(f'Período de Fiscalização: '
                                  f'{get_current_audit().inicio_auditoria.strftime("%m/%Y")} '
                                  f'a {get_current_audit().fim_auditoria.strftime("%m/%Y")}')
+        window['-MENU-'].update(menu_definition=menu_layout('AUDITORIA_COM_AIIM' if get_current_audit().aiim_number
+                                                            else 'AUDITORIA_SEM_AIIM'))
         refresh_data_tab()
         refresh_analysis_tab()
         refresh_notifications_tab()
@@ -336,7 +321,7 @@ def verification_chosen_for_infraction(aiim_item: AiimItem):
                                                   font_for_value=('Arial', 10, 'bold'), append=True)
                 window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.notificacao}', append=True)
                 if aiim_item.notificacao_resposta:
-                    window['-AIIM-ITEM-DATA-'].update(f' (Resposta: {aiim_item.notificacao_resposta}', append=True)
+                    window['-AIIM-ITEM-DATA-'].update(f' (Resposta: {aiim_item.notificacao_resposta})', append=True)
                 window['-AIIM-ITEM-DATA-'].update('\n', append=True)
                 window['-AIIM-UPDATE-NOTIF-ANSWER-'].update(visible=not aiim_item.notificacao_resposta)
             window['-AIIM-ITEM-DATA-'].update(visible=True)
@@ -723,38 +708,9 @@ def window_layout():
             ], title='AIIM', expand_x=True, element_justification='center', expand_y=True, key='-AIIM-FRAME-'),
         ]
     ])
-    menu_sem_auditoria = [
-        ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
-                      'Abrir Auditoria::-MENU-OPEN-AUDIT-',
-                      'Sair::-MENU-EXIT-']],
-        ['&Editar', ['Propriedades', 'Cria Análise::-MENU-CREATE-ANALYSIS-']],
-        ['A&juda', ['Sobre::-MENU-ABOUT-']]
-    ]
-    menu_com_auditoria_sem_aiim = [
-        ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
-                      'Abrir Auditoria::-MENU-OPEN-AUDIT-',
-                      'Sair::-MENU-EXIT-']],
-        ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
-                     'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
-        ['A&IIM', ['Cria AIIM (gera número e AIIM2003)::-MENU-CREATE-AIIM-']],
-        ['A&juda', ['Sobre::-MENU-ABOUT-']]
-    ]
-    menu_com_auditoria_com_aiim = [
-        ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
-                      'Abrir Auditoria::-MENU-OPEN-AUDIT-',
-                      'Sair::-MENU-EXIT-']],
-        ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
-                     'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
-        ['A&IIM', ['Gera Relato, Quadros e Relatório::-MENU-AIIM-REPORTS-',
-                   'Atualiza Quadro de Operações::-MENU-AIIM-OPERATIONS-',
-                   'Envia Recibo de Arquivos Digitais::-MENU-AIIM-RECEIPT-',
-                   'Gera Arquivo Backup AIIM2003::-MENU-AIIM-EXPORT-',
-                   'Gera Arquivo Transmissão AIIM2003::-MENU-AIIM-UPLOAD-']],
-        ['A&juda', ['Sobre::-MENU-ABOUT-']]
-    ]
     # Principal
     return [
-        [sg.Menu(menu_sem_auditoria, tearoff=False, key='-MENU-')],
+        [sg.Menu(menu_layout('SEM_AUDITORIA'), tearoff=False, key='-MENU-')],
         [sg.Text(key='pasta')],
         [sg.Text(key='osf')],
         [sg.Text(key='empresa')],
@@ -771,6 +727,53 @@ def window_layout():
                 expand_y=True, expand_x=True, enable_events=True, key='-MAIN-TAB-')
         ],
     ]
+
+
+def menu_layout(tipo_menu: str):
+    match tipo_menu:
+        case 'SEM_AUDITORIA':
+            return [
+                ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
+                              'Abrir Auditoria::-MENU-OPEN-AUDIT-',
+                              'Sair::-MENU-EXIT-']],
+                ['&Editar', ['Propriedades', 'Cria Análise::-MENU-CREATE-ANALYSIS-']],
+                ['A&juda', ['Sobre::-MENU-ABOUT-']]
+            ]
+        case 'AUDITORIA_SEM_AIIM':
+            return [
+                ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
+                              'Abrir Auditoria::-MENU-OPEN-AUDIT-',
+                              'Sair::-MENU-EXIT-']],
+                ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
+                             'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
+                             'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
+                ['A&IIM', ['Cria AIIM (gera número e AIIM2003)::-MENU-CREATE-AIIM-']],
+                ['A&juda', ['Sobre::-MENU-ABOUT-']]
+            ]
+        case 'AUDITORIA_COM_AIIM':
+            recibo_key = 'Envia Recibo de Arquivos Digitais::-MENU-AIIM-RECEIPT-'
+            aiim_submenu = ['Gera Relato, Quadros e Relatório::-MENU-AIIM-REPORTS-',
+                            'Atualiza Quadro de Operações::-MENU-AIIM-OPERATIONS-',
+                            'Gera Arquivo Backup AIIM2003::-MENU-AIIM-EXPORT-',
+                            'Gera Arquivo Transmissão AIIM2003::-MENU-AIIM-UPLOAD-']
+            if not get_current_audit().is_aiim_open:
+                aiim_submenu = ['!' + item for item in aiim_submenu]
+                aiim_submenu.append('Reabre AIIM2003::-MENU-AIIM-REOPEN-')
+            if get_current_audit().receipt_digital_files:
+                recibo_key = '!' + recibo_key
+            aiim_submenu.extend(['---', recibo_key])
+            return [
+                ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
+                              'Abrir Auditoria::-MENU-OPEN-AUDIT-',
+                              'Sair::-MENU-EXIT-']],
+                ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
+                             'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
+                             'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
+                ['A&IIM', aiim_submenu],
+                ['A&juda', ['Sobre::-MENU-ABOUT-']]
+            ]
+        case unknown_command:
+            raise Exception(f'Menu inválido: {unknown_command}')
 
 
 # ATENCAO: Hack no SimplePyGUI acessando o TKinter
@@ -1031,6 +1034,13 @@ if __name__ == "__main__":
         elif event == '-AIIM-ITEM-PROOFS-':
             WaitWindow.open_wait_window(Controller.aiim_item_cria_anexo, 'Criar anexo para Item no AIIM',
                                         values['-INFRACTION-CHOSEN-'][0])
+        elif event.endswith('-MENU-UPDATE-OSF-'):
+            WaitWindow.open_wait_window(Controller.update_dados_osf, 'Atualizar Dados do Contribuinte',
+                                        get_current_audit().osf)
+            __refresh_tabs(get_current_audit().path())
+        elif event.endswith('-MENU-RELOAD-SHEET-'):
+            get_current_audit().clear_cache()
+            __refresh_tabs(get_current_audit().path())
         elif event.endswith('-MENU-AIIM-REPORTS-'):
             WaitWindow.open_wait_window(Controller.print_aiim_reports, 'Gerar Relatórios do AIIM')
         elif event.endswith('-MENU-AIIM-OPERATIONS-'):
@@ -1040,10 +1050,13 @@ if __name__ == "__main__":
             refresh_aiim_tab()
         elif event.endswith('-MENU-AIIM-EXPORT-'):
             WaitWindow.open_wait_window(Controller.export_aiim, 'Exportar AIIM')
-        elif event.endswith('-AIIM-REOPEN-'):
+        elif event.endswith('-MENU-AIIM-REOPEN-'):
             WaitWindow.open_wait_window(Controller.reopen_aiim, 'Reabrir AIIM')
+            refresh_aiim_tab()
         elif event.endswith('-MENU-AIIM-UPLOAD-'):
             WaitWindow.open_wait_window(Controller.upload_aiim, 'Transmitir AIIM')
         elif event.endswith('-MENU-ABOUT-'):
-            sg.popup_ok()
+            sg.popup_ok([[InitialConfigurationWizard.get_splash_image()],
+                         [sg.Text(GeneralFunctions.project_name)],
+                         [sg.Text(f'versão {GeneralFunctions.project_version}')]])
     window.close()

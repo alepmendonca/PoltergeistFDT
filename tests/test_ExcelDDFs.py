@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import numpy as np
 import pandas as pd
 from tika import parser
 
@@ -135,7 +136,7 @@ class ExcelDDFsTest(AuditTestSetup):
                              resultado['Mes'].tolist())
         self.assertListEqual([2022, 2022, 2022, 2022, 2022, 2022, 2021, 2021, 2021, 2021, 2021, 2021, 2021],
                              resultado['Ano'].tolist())
-        self.assertListEqual(['300.000,00' for i in range(0, 13)],
+        self.assertListEqual(['300.000,00' for _ in range(0, 13)],
                              resultado['Valor Contabil - CFOP'].tolist())
 
     def test_get_operations_with_csv_and_xlsx_update_existing_values(self):
@@ -163,12 +164,46 @@ class ExcelDDFsTest(AuditTestSetup):
         self.assertListEqual([2022, 2022, 2022, 2022, 2022, 2022, 2021, 2021, 2021, 2021, 2021, 2021, 2021,
                               2021, 2021, 2021, 2021],
                              resultado['Ano'].tolist())
-        valores = ['300.000,00' for i in range(0, 13)]
+        valores = ['300.000,00' for _ in range(0, 13)]
         valores.extend(['316.672.689,54', '303.077.942,56', '313.859.083,41', '296.753.854,64'])
         self.assertListEqual(valores, resultado['Valor Contabil - CFOP'].tolist())
 
+    @staticmethod
+    def _planilha_sem_agrupamento():
+        return pd.DataFrame(columns=['Chave', 'Período', 'Valor'],
+                            data=[['351722115556546654', datetime.date(2022, 1, 5), 100],
+                                  ['371854654656666556', datetime.date(2022, 4, 2), 300]])
+
+    @staticmethod
+    def _planilha_com_agrupamento():
+        return pd.DataFrame(columns=['Chave', 'Período', 'Valor', 'mês'],
+                            data=[['351722115556546654', datetime.date(2022, 1, 5), 100, datetime.date(2022, 1, 31)],
+                                  ['Total Subitem 1.1', None, 100, datetime.date(2022, 1, 31)],
+                                  ['371854654656666556', datetime.date(2022, 4, 2), 300, datetime.date(2022, 4, 30)],
+                                  ['Total Subitem 1.2', None, 300, datetime.date(2022, 4, 30)],
+                                  ['TOTAL ITEM 1', None, 400, 'Total Geral']])
+
+    def test_get_periodos_referencia_sem_agrupamento_sem_periodo(self):
+        df = pd.DataFrame(columns=['Chave', 'Horario', 'Valor'],
+                          data=[['351722115556546654', datetime.datetime(2022, 1, 5, 10, 5, 0), 100],
+                                ['371854654656666556', datetime.datetime(2022, 4, 2, 22, 1, 3), 300]])
+        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=df):
+            with self.assertRaises(ExcelArrazoadoIncompletoException) as cm:
+                Audit.get_current_audit().get_sheet().periodos_de_referencia('planilha')
+        self.assertEqual('Planilha planilha não tem uma coluna de data sem horário!', str(cm.exception))
+
+    def test_get_periodos_referencia_sem_agrupamento(self):
+        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_sem_agrupamento()):
+            periodos = Audit.get_current_audit().get_sheet().periodos_de_referencia('planilha')
+        self.assertListEqual([datetime.date(2022, 1, 31), datetime.date(2022, 4, 30)], periodos)
+
+    def test_get_periodos_referencia_com_agrupamento(self):
+        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_com_agrupamento()):
+            periodos = Audit.get_current_audit().get_sheet().periodos_de_referencia('planilha')
+        self.assertListEqual([datetime.date(2022, 1, 31), datetime.date(2022, 4, 30)], periodos)
+
     def test_get_ddf_sem_agrupamento_failure(self):
-        df = pd.DataFrame(columns=['Chave', 'Emissao', 'Valor'],
+        df = pd.DataFrame(columns=['Chave', 'Nome qualquer', 'Valor'],
                           data=[['351722115556546654', datetime.date(2022, 1, 5), 100],
                                 ['371854654656666556', datetime.date(2022, 4, 2), 300]])
         with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=df):
@@ -180,10 +215,7 @@ class ExcelDDFsTest(AuditTestSetup):
                              'feche a planilha e tente novamente!', str(cm.exception))
 
     def test_get_ddf_sem_agrupamento_planejado(self):
-        df = pd.DataFrame(columns=['Chave', 'Período', 'Valor'],
-                          data=[['351722115556546654', datetime.date(2022, 1, 5), 100],
-                                ['371854654656666556', datetime.date(2022, 4, 2), 300]])
-        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=df):
+        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_sem_agrupamento()):
             ddf = Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'IV', 'b')
         self.assertIsInstance(ddf, dict)
         self.assertIsInstance(ddf['ddf'], pd.DataFrame)
@@ -191,29 +223,17 @@ class ExcelDDFsTest(AuditTestSetup):
         self.assertEqual(['100,00', '300,00'], ddf['ddf']['valor'].tolist())
 
     def test_get_ddf_I_a(self):
-        df = pd.DataFrame(columns=['Chave', 'Período', 'Valor', 'mês'],
-                          data=[['351722115556546654', datetime.date(2022, 1, 5), 100, datetime.date(2022, 1, 31)],
-                                ['Total Subitem 1.1', None, 100, datetime.date(2022, 1, 31)],
-                                ['371854654656666556', datetime.date(2022, 4, 2), 300],
-                                ['Total Subitem 1.2', None, 300, datetime.date(2022, 4, 30)]])
-        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=df):
+        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_com_agrupamento()):
             with self.assertRaises(ExcelArrazoadoCriticalException) as cm:
                 Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'I', 'a')
         self.assertEqual('Inciso/alinea não mapeados: I, a', str(cm.exception))
 
     def test_get_ddf_I_b_agrupado(self):
-        df = pd.DataFrame(columns=['Chave', 'Período', 'Valor', 'mês'],
-                          data=[['351722115556546654', datetime.date(2022, 1, 5), 100, datetime.date(2022, 1, 31)],
-                                ['Total Subitem 1.1', None, 100, datetime.date(2022, 1, 31)],
-                                ['371854654656666556', datetime.date(2022, 4, 2), 300],
-                                ['Total Subitem 1.2', None, 300, datetime.date(2022, 4, 30)]])
         gia = pd.DataFrame(columns=['referencia', 'vencimento', 'saldo'],
                            data=[[datetime.date(2022, 1, 31), datetime.date(2022, 2, 20), 150.2],
-                           [datetime.date(2022, 4, 30), datetime.date(2022, 5, 20), 180.3]])
-        gia['referencia'] = gia['referencia'].astype('datetime64[D]')
-        gia['vencimento'] = gia['vencimento'].astype('datetime64[D]')
-        gia['saldo'] = gia['saldo'].astype('Float64')
-        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=df):
+                                 [datetime.date(2022, 4, 30), datetime.date(2022, 5, 20), 180.3]])
+        gia = gia.astype({'referencia': np.datetime64, 'vencimento': np.datetime64, 'saldo': float})
+        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_com_agrupamento()):
             with mock.patch('ExcelDDFs.ExcelDDFs.get_vencimentos_GIA', return_value=gia):
                 ddf = Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'I', 'b')
         self.assertIsInstance(ddf, dict)
