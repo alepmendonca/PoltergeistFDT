@@ -1207,7 +1207,6 @@ class SeleniumWebScraper:
             EC.visibility_of_element_located((By.ID, "ctl00_MainContent_filtroCombos_ddlDrt")))
 
         config.drt_sigla = self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlDrt").text
-        config.nucleo_fiscal = self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlInspetor").text
         config.equipe_fiscal = self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlTeamLeader").text
 
         logger.info("Acessando Sem Papel para confirmar login/senha")
