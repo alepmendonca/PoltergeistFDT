@@ -453,9 +453,9 @@ class Audit:
 
     def get_periodos_da_fiscalizacao(self, rpa=True) -> list[[date, date]]:
         retorno = []
-        nome_regime = 'NORMAL - REGIME PERIÓDICO DE APURAÇÃO' if rpa else 'SIMPLES NACIONAL'
+        nome_regime = 'NORMAL' if rpa else 'SIMPLES NACIONAL'
         for periodo in self.historico_regime:
-            if periodo[2] == nome_regime:
+            if periodo[2].startswith(nome_regime):
                 inicio = datetime.strptime(periodo[0], '%d/%m/%Y').date()
                 if periodo[1] == 'Atual':
                     fim = date.today()

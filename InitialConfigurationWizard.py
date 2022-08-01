@@ -21,13 +21,17 @@ def __get_dados_from_web(config):
     return True
 
 
-def create_config_file():
+def get_splash_image():
     image = Image.open(r'resources/splash.jpg')
     image.thumbnail((480, 270))
     bio = io.BytesIO()
     image.save(bio, format='PNG')
+    return sg.Image(bio.getvalue())
+
+
+def create_config_file():
     layout = [
-        [sg.Image(bio.getvalue())],
+        [get_splash_image()],
         [sg.Text(f'Este é o {GeneralFunctions.project_name}, que faz a possessão do seu computador ')],
         [sg.Text('para fazer as tarefas mais repetitivas de uma auditoria fiscal.')],
         [sg.Text(f'Como não localizei nenhuma informação sua (sem entrar na sua cabeça), para começar, ')],

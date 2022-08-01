@@ -4,6 +4,7 @@ import os
 import shutil
 import openpyxl
 import pandas as pd
+import numpy as np
 import re
 import pywintypes
 import win32com.client
@@ -306,10 +307,16 @@ class ExcelDDFs:
 
     def planilha(self, sheet_name: str) -> pd.DataFrame:
         if self._planilha.get(sheet_name) is None:
-            self._planilha[sheet_name] = pd.read_excel(self.planilha_path, sheet_name=sheet_name, header=9)
+            try:
+                self._planilha[sheet_name] = pd.read_excel(self.planilha_path, sheet_name=sheet_name, header=9)
+            except ValueError as ex:
+                if str(ex) == f"Worksheet named '{sheet_name}' not found":
+                    raise ExcelArrazoadoAbaInexistenteException(f'Aba {sheet_name} não existe mais na planilha!')
+                else:
+                    raise ex
             # remove colunas que não sejam com título em string
             for key in self._planilha[sheet_name].keys():
-                if not isinstance(key, str):
+                if not isinstance(key, str) or key.startswith('Unnamed'):
                     self._planilha[sheet_name].drop(key, inplace=True, axis=1)
         return self._planilha[sheet_name]
 
@@ -332,8 +339,13 @@ class ExcelDDFs:
                                 self.creditos_path)
                 wb = openpyxl.load_workbook(self.creditos_path)
                 ws = wb['Dados']
-                mes_referencia = GeneralFunctions.last_day_of_month(
-                    Audit.get_current_audit().get_periodos_da_fiscalizacao()[0][0])
+                periodos_rpa = Audit.get_current_audit().get_periodos_da_fiscalizacao()
+                if len(periodos_rpa) == 0:
+                    raise ExcelArrazoadoCriticalException('Contribuinte não possui nenhum histórico de RPA no arquivo!'
+                                                          '\nPara gerar autuação sobre créditos, é necessário verificar'
+                                                          ' os saldos de GIA.\n'
+                                                          'Atualize os dados da fiscalizada e tente novamente.')
+                mes_referencia = GeneralFunctions.last_day_of_month(periodos_rpa[0][0])
                 ws['A2'].value = mes_referencia
 
                 linha_saldo = 2
@@ -378,7 +390,8 @@ class ExcelDDFs:
             glosas = pd.read_excel(self.glosas_item_path, sheet_name='Subitens')
             glosas = glosas[glosas['subitem'] > 0]
             glosas = glosas.iloc[:, [1, 11, 17, 18, 19]]
-            glosas['referencia'] = glosas.iloc[:, 0].map(lambda dt: GeneralFunctions.last_day_of_month(dt))
+            glosas['referencia'] = glosas.iloc[:, 0].map(lambda dt: GeneralFunctions.last_day_of_month(dt))\
+                .astype(np.datetime64)
             resultado = ddf.merge(glosas, on='referencia')
             if 'valor_basico' in resultado.columns:
                 resultado = resultado.iloc[:, [1, 3, 8, 9, 10, 11]]
@@ -386,7 +399,7 @@ class ExcelDDFs:
                 resultado['valor_basico'] = resultado['valor_basico'].apply(
                     lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
             else:
-                resultado = resultado.iloc[:, [2, 7, 8, 9, 10]]
+                resultado = resultado.iloc[:, [2, 6, 7, 8, 9]]
                 resultado.columns = ['referencia', 'valor', 'dci', 'dij', 'dcm']
                 resultado['valor_basico'] = resultado['valor'].apply(
                     lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
@@ -563,25 +576,29 @@ class ExcelDDFs:
             raise e
 
     def periodos_de_referencia(self, sheet_name, freq='M'):
-        try:
-            aba = self.planilha(sheet_name)
-        except KeyError:
-            raise ExcelArrazoadoAbaInexistenteException(f'Aba {sheet_name} não existe mais na planilha!')
-        if type(aba.iloc[-2, -1]) == datetime.datetime:
-            aba = aba.iloc[:, [-1]]
+        aba = self.planilha(sheet_name)
+        if type(aba.iloc[-2, -1]) in (datetime.datetime, datetime.date):
+            aba = aba.iloc[:-1, -1]
         else:
             # considera que a última coluna de data (não timestamp preenchido) encontrada é a referência
-            colunas_data = [idx for idx, vlw in enumerate(aba.dtypes.tolist()) if vlw == 'datetime64[ns]']
+            colunas_data = [idx for idx, vlw in enumerate(aba.iloc[-1].tolist())
+                            if isinstance(vlw, datetime.date) or isinstance(vlw, datetime.datetime)]
             colunas_data.reverse()
             achou = False
             for c in colunas_data:
+                data_types = aba.iloc[:, 1].map(lambda x: type(x)).unique().tolist()
+                if len(data_types) == 1 and data_types[0] == datetime.date:
+                    aba = aba.iloc[:, c]
+                    achou = True
+                    break
                 datas = aba.iloc[:, c].map(lambda x: x.time())
                 if len(datas[datas != datetime.time()]) == 0:
                     aba = aba.iloc[:, c]
                     achou = True
                     break
             if not achou:
-                raise ExcelArrazoadoIncompletoException(f'Planilha {sheet_name} não tem uma coluna de data sem horário!')
+                raise ExcelArrazoadoIncompletoException(f'Planilha {sheet_name} não '
+                                                        f'tem uma coluna de data sem horário!')
         if freq == 'M':
             retorno = [GeneralFunctions.last_day_of_month(r) for r in aba]
         else:
