@@ -1,0 +1,28 @@
+{
+  "verificacao": "Créditos integrais sobre entradas para ativo imobilizado",
+  "consulta": "SELECT nfe.chave AS \"Chave\", nfe.modelo AS \"Modelo\", nfe.numero AS \"Número\", nfe.emissao AS \"Emissão\", reg_c100.dt_e_s AS \"Entrada\", \n\tcnpj_cpf_formatted(reg_0150.cnpj) AS \"CNPJ Fornecedor\", reg_0150.nome AS \"Razão Social Fornecedor\", COALESCE(efd_uf.uf, 'EX') AS \"UF Fornecedor\", cnae.descricao AS \"CNAE Origem\",\n\tnfe_item.item AS \"Item\", nfe_item.desc_produto AS \"Descrição Produto\", \n\tnfe_item.valor_produto AS \"Valor Produto NF-e\", nfe_item.icms AS \"ICMS Produto NF-e\",\n\tcfopefd.codigo || ' - ' || cfopefd.descricao AS \"CFOP EFD\", reg_c190.vl_icms AS \"Crédito EFD (mesmo CFOP/CST)\", nfe.info_complementares_interesse_contribuinte\nFROM reg_c100 \n\t\tJOIN reg_0000 ON reg_0000.efd = reg_c100.efd\n\t\tJOIN reg_c190 ON reg_c100.efd = reg_c190.efd AND reg_c100.id = reg_c190.id_pai\n\t\tJOIN reg_0150 \n\t\t\tLEFT JOIN cadesp \n\t\t\t\tLEFT JOIN cnae ON cadesp.cnae = cnae.codigo\n\t\t\tON reg_0150.cnpj = cadesp.cnpj\n\t\t\tLEFT JOIN efd_uf ON LEFT(reg_0150.cod_mun, 2) = efd_uf.codigo\n\t\tON reg_c100.efd = reg_0150.efd AND reg_c100.cod_part = reg_0150.cod_part\n\t\tJOIN cfop AS cfopefd ON cfopefd.codigo = reg_c190.cfop\n\t\tLEFT JOIN nfe \n\t\t\tLEFT JOIN nfe_item \n\t\t\t\tLEFT JOIN cfop ON nfe_item.cfop = cfop.codigo\n\t\t\tON nfe.chave = nfe_item.chave \n\t\tON reg_c100.chv_nfe = nfe.chave\nWHERE \nreg_c100.ind_oper = 0\nAND reg_c190.cfop in (1407,1551,1552,1554,1555,1556,1557,1901,1902,1903,1905,1906,1907,1908,1909,1911,1912,1913,1914,1915,\n1916,1920,1921,1922,1923,1926,2551,2552,2554,2555,2556,2557,2908,2909,2911,2915,2916,3551,3556) \nAND reg_c190.vl_icms > 0\nAND (nfe_item.cst IS NULL OR nfe_item.cst = reg_c190.cst_icms)\nORDER BY 4, 3, 10",
+  "planilha_nome": "Ativo Imobilizado",
+  "notificacao": {
+    "titulo": "OSF <osf> - Créditos de Ativo Imobilizado fora do CIAP",
+    "corpo": "No âmbito da Ordem de Serviço Fiscal <osf>, fica o contribuinte acima identificado NOTIFICADO a prestar informações sobre o motivo da escrituração em Livro Registro de Entradas com aproveitamento de créditos das operações de entrada listadas no anexo juntado, sendo que a escrituração declara a destinação das mercadorias para o ativo imobilizado e não há registros destas entradas no CIAP.<br><p><b>PRAZO PARA ATENDIMENTO</b>: 10 (dez) dias, contados da ciência da notificação.<br><b>FORMA DE ATENDIMENTO</b>: Encaminhamento de declaração firmada por representante legal do contribuinte, digitalizada ou assinada digitalmente, e memória de cálculo por intermédio do SIPET - Sistema de Peticionamento Eletrônico, disciplinado pela Portaria CAT 83/20, que pode ser acessado através do endereço eletrônico https://www3.fazenda.sp.gov.br/sipet, utilizando a opção \"Comunicações\" -> \"Atendimento de notificação de fiscalização\".<br><b>BASE LEGAL</b>: Arts. 61, §10 e 494 do RICMS (Aprovado pelo Decreto 45.490/00), Art. 29 das DDTT do RICMS.</p>",
+    "anexo": "Créditos Ativo Imobilizado"
+  },
+  "infracoes": {
+    "IIj": {
+      "relato": "Creditou-se indevidamente, n<periodo>, de forma integral, de imposto sobre entradas de bens destinados à integração ao ativo imobilizado, sendo que os fornecedores não são fabricantes, ou são fabricantes não estabelecidos neste Estado, conforme comprova-se pelos documentos juntados no Anexo do item.",
+      "capitulacao": {
+        "limpa": true,
+        "artigos": [
+          {"especial": "Art. 29, II das DDTT do RICMS/00"},
+          {"artigo": "61", "paragrafo": "10"}
+        ]
+      },
+      "relatorio_circunstanciado": "o contribuinte foi autuado por ter escriturado no livro fiscal próprio, Livro Registro de Entradas - LRE, documentos fiscais de entrada com créditos em situação não permitida pelo RICMS/00.\nDe acordo com o art. 29 da DDTT, é permitida a apropriação excepcional de crédito do imposto em operações com bens destinados à integração ao ativo imobilizado nas operações realizadas por estabelecimento industrial (dentre aqueles listados no §3º do artigo da DDTT) que os adquirir diretamente de seu fabricante localizado neste Estado. Condiciona-se ainda que o bem tenha sido produzido em estabelecimento localizado neste Estado.\nNa impossibilidade de atendimento às condições do art. 29 das DDTT, deve o contribuinte apropriar-se do crédito em 48 parcelas mensais, nos termos do art. 61, §10.",
+      "provas": [
+        {"tipo": "listagem", "descricao": "Listagem contendo os documentos fiscais de entradas de mercadorias com aproveitamento indevido de créditos"},
+        {"tipo": "DFe", "descricao": "Transcrições de documentos fiscais eletrônicos que tiveram aproveitamento indevido de créditos"},
+        {"tipo": "LRE", "descricao": "Escrituração em LRE dos documentos fiscais eletrônicos, demonstrando o aproveitamento de créditos"}
+      ]
+    }
+  }
+}
