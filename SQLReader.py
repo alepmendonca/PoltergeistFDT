@@ -30,7 +30,7 @@ def _get_dtypes_from_oids(oids: list) -> list:
         'BOOL': 'bool',
         'TEXT': 'object',
         'NUMERIC': 'float64',
-        'DATE': 'datetime64'
+        'DATE': 'datetime64[ns]'
     }
     try:
         return [dtypes[pg_tipo] for pg_tipo in [oid_catalog[oid] for oid in oids]]

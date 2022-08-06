@@ -122,10 +122,10 @@ class Analysis:
         cls._user_analysis.clear()
 
     @classmethod
-    def get_analysis_by_name(cls, name: str):
+    def get_analysis_by_name(cls, audit_path: Path, name: str):
         return cls.__get_default_analysis_dict().get(
             name, cls.__get_user_analysis_dict().get(
-                name, cls.__get_audit_analysis_dict().get(name)))
+                name, cls.__get_audit_analysis_dict(audit_path).get(name)))
 
     def __init__(self, par: Path | dict):
         if isinstance(par, Path):
@@ -149,14 +149,27 @@ class Analysis:
                 self.query = dados['consulta']
                 self.query_detail = dados.get('consulta_detalhamento', None)
                 self.function = None
+                self.function_ddf = None
+                if dados.get('funcao_ddf'):
+                    try:
+                        self.function_ddf = getattr(modulo, f"{dados['funcao_ddf']}")
+                    except AttributeError:
+                        raise ValueError(f"Não existe a função {modulo.__name__}.{dados['funcao_ddf']}. "
+                                         f"Verifique o cadastro da verificação {self.name}")
+                self.ddf_headers = ['Referência']
             else:
-                self.function = getattr(modulo, dados['funcao']['nome'])
                 self.function_description = dados['funcao']['descricao']
+                try:
+                    self.function = getattr(modulo, dados['funcao']['nome'])
+                except AttributeError:
+                    raise ValueError(f"Não existe a função {modulo.__name__}.{dados['funcao']['nome']}. "
+                                     f"Verifique o cadastro da verificação {self.name}")
                 try:
                     self.function_ddf = getattr(modulo, f"{dados['funcao']['nome']}_ddf")
                 except AttributeError:
-                    # TODO seria melhor dar um pau aqui né...
-                    self.function_ddf = None
+                    raise ValueError(f"Não existe a função {modulo.__name__}.{dados['funcao']['nome']}_ddf. "
+                                     f"Verifique o cadastro da verificação {self.name}")
+                self.ddf_headers = dados['funcao'].get('cabecalho', ['Referência'])
                 self.query = None
             self.fix_database_function = None
             if dados.get('acerto_base', None):

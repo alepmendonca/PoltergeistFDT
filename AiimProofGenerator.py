@@ -71,7 +71,10 @@ def generate_general_proofs_file() -> list[str]:
 
 
 def get_aiim_listing_from_sheet(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:
+    if not item.planilha:
+        return []
     logger.info('Gerando listagem inicial a partir da planilha...')
+    get_current_audit().get_sheet().update_number_in_subtotals(item.planilha, item.item)
     return [get_current_audit().get_sheet().imprime_planilha(item.planilha,
                                                              ws.tmp_path / f'lista{item.item}.pdf',
                                                              item=item.item)]
@@ -132,12 +135,12 @@ def _get_sample_size(total: int) -> int:
 
 def has_sample(item: AiimItem) -> bool:
     listing = _get_sample(item)
-    return len(listing) < _get_sample_size(len(listing))
+    return len(listing) > _get_sample_size(len(listing))
 
 
 def _get_sample(item: AiimItem) -> pd.DataFrame:
     if item.df:
-        return pd.DataFrame({'Referência': item.df}, dtype='datetime64[ns]')
+        return item.df
     logger.info('Levantando informações da planilha para verificar o tamanho da amostra de DF-e')
     df = get_current_audit().get_sheet().get_sheet_as_df(item.planilha)
 

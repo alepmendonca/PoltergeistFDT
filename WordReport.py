@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 
 import win32com
+import win32com.client
 from docx import Document
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.text.paragraph import Paragraph
@@ -39,14 +40,19 @@ def _insert_bullets_before(paragraph: Paragraph, level_1_text: str, contents: li
 
 
 def _save_docx_as_pdf(docx_path: Path, pdf_path: Path):
-    word = None
+    was_open = False
     try:
+        word = win32com.client.GetActiveObject("Word.Application")
+    except:
         word = win32com.client.Dispatch("Word.Application")
+        was_open = True
+
+    try:
         worddoc = word.Documents.Open(str(Path(docx_path).absolute()))
         worddoc.SaveAs(str(pdf_path.absolute()), FileFormat=17)
         worddoc.Close()
     finally:
-        if word:
+        if word and was_open:
             try:
                 word.Quit()
             except:
@@ -169,7 +175,7 @@ class WordReport:
         self._audit = audit
         self.report: Document = None
         audit.aiim_path().mkdir(exist_ok=True)
-        self.report_path = audit.aiim_path() / 'Relatório Circunstanciado.docx'
+        self.report_path: Path = audit.aiim_path() / 'Relatório Circunstanciado.docx'
         if not self.report_path.is_file():
             try:
                 self.report = Document(Path('resources/Relatório Circunstanciado.docx'))
@@ -183,12 +189,12 @@ class WordReport:
                     pass
                 raise e
         else:
-            self.report = Document(self.report_path)
+            self.report: Document = Document(self.report_path)
 
     def _initialize_report(self):
         self.report.sections[0].header.tables[0].rows[0].cells[0].paragraphs[2].add_run(
-            f'{GeneralConfiguration.get().drt_nome()} - {GeneralConfiguration.get().drt_sigla}\n'
-            f'NÚCLEO DE FISCALIZAÇÃO {GeneralConfiguration.get().nucleo_fiscal} '
+            f'{GeneralConfiguration.get().drt_nome} - {GeneralConfiguration.get().drt_sigla}\n'
+            f'NÚCLEO DE FISCALIZAÇÃO {GeneralConfiguration.get().nucleo_fiscal()} '
             f'- EQUIPE {GeneralConfiguration.get().equipe_fiscal}')
         for paragraph in self.report.paragraphs:
             paragraph.text = paragraph.text.replace('<osf>', self._audit.osf)
@@ -196,7 +202,8 @@ class WordReport:
             paragraph.text = paragraph.text.replace('<afre>', GeneralConfiguration.get().nome)
             paragraph.text = paragraph.text.replace('<if>', GeneralConfiguration.get().funcional)
             paragraph.text = paragraph.text.replace('<delegacia-sigla>', GeneralConfiguration.get().drt_sigla)
-            paragraph.text = paragraph.text.replace('<nf>', f'NF-{GeneralConfiguration.get().nucleo_fiscal}')
+            paragraph.text = paragraph.text.replace('<nf>', f'{GeneralConfiguration.get().nucleo_fiscal()}')
+            paragraph.text = paragraph.text.replace('<equipe>', f'{GeneralConfiguration.get().equipe_fiscal}')
             if paragraph.text.startswith('RELATÓRIO'):
                 for run in paragraph.runs:
                     run.bold = True
@@ -214,7 +221,9 @@ class WordReport:
                 paragraph.add_run(self._audit.periodos_da_fiscalizacao_descricao())
 
     def insere_item(self, item: int, inciso: int, texto: str, tem_provas: bool):
-        titulos_existentes = self._titulos_inseridos()
+        if item <= 0:
+            return
+        titulos_existentes = self.titulos_inseridos()
         texto = f'No item {item}, {texto}'
         if tem_provas:
             texto += f'\nOs demonstrativos que comprovam especificamente a infringência deste item ' \
@@ -225,7 +234,6 @@ class WordReport:
             idx_titulo = titulos_existentes[inciso]
             idx_prox_titulo = titulos_existentes[
                 list(titulos_existentes.keys())[list(titulos_existentes.keys()).index(inciso) + 1]]
-            style = self.report.paragraphs[idx_titulo + 1].style
             for idx in range(idx_titulo + 1, idx_prox_titulo + 1):
                 texto_item = re.search(r'^No item (\d+)', self.report.paragraphs[idx].text)
                 if texto_item:
@@ -241,20 +249,23 @@ class WordReport:
                 if alinea_existente > inciso:
                     ultimo_paragrafo = _insert_paragraphs_before(
                         self.report.paragraphs[titulos_existentes[alinea_existente]], texto)
-                    ultimo_paragrafo.insert_paragraph_before(text=self.titulos[inciso], style='Heading 1')
+                    ultimo_paragrafo.insert_paragraph_before(text=f'- {self.titulos[inciso]}', style='Heading 1')
+                    break
 
-    def _titulos_inseridos(self) -> dict:
+    def titulos_inseridos(self) -> dict:
         retorno = {}
         for i in range(len(self.report.paragraphs)):
             if self.report.paragraphs[i].style.name == 'Heading 1':
                 if self.report.paragraphs[i].text[2:].strip() in self.titulos.values():
                     retorno[list(self.titulos.keys())[
-                        list(self.titulos.values()).index(self.report.paragraphs[i].text[2:])]] = i
+                        list(self.titulos.values()).index(self.report.paragraphs[i].text[2:].strip())]] = i
         return retorno
 
     def insere_anexo(self, item: int, conteudos: list[str]):
+        if item <= 0:
+            return
         ultimo_paragrafo: Paragraph = None
-        for anexo_existente, idx in self._anexos_inseridos().items():
+        for anexo_existente, idx in self.anexos_inseridos().items():
             if anexo_existente > item:
                 ultimo_paragrafo = self.report.paragraphs[idx]
                 break
@@ -263,7 +274,7 @@ class WordReport:
         _insert_bullets_before(ultimo_paragrafo, f'Anexo do Item {item}, contendo:', conteudos)
 
     def atualiza_provas_gerais(self, conteudos: list[str]):
-        bullet_provas_gerais = self._anexos_inseridos()[self.PROVAS_GERAIS_BULLET]
+        bullet_provas_gerais = self.anexos_inseridos()[self.PROVAS_GERAIS_BULLET]
         _insert_bullets_before(self.report.paragraphs[bullet_provas_gerais], 'Provas Gerais, contendo:', conteudos)
         a_remover = []
         for idx in range(bullet_provas_gerais+len(conteudos)+1, len(self.report.paragraphs)):
@@ -274,9 +285,9 @@ class WordReport:
         for b in a_remover:
             _delete_paragraph(self.report.paragraphs[b])
 
-    def _anexos_inseridos(self) -> dict[int, int]:
+    def anexos_inseridos(self) -> dict[int, int]:
         retorno = {}
-        for i in range(self._titulos_inseridos()[self.PROVAS], len(self.report.paragraphs)):
+        for i in range(self.titulos_inseridos()[self.PROVAS], len(self.report.paragraphs)):
             texto_anexo = re.search(r'^Anexo do Item (\d+)', self.report.paragraphs[i].text)
             if texto_anexo:
                 anexo_existente = int(texto_anexo.group(1))
@@ -286,9 +297,11 @@ class WordReport:
         return retorno
 
     def remove_item(self, item: int):
+        if item <= 0:
+            return
         pos = -1
         for i in range(len(self.report.paragraphs)):
-            if pos == -1 and self.report.paragraphs[i].text.startswith(f'No item {item}'):
+            if pos == -1 and self.report.paragraphs[i].text.startswith(f'No item {item},'):
                 pos = i
                 _delete_paragraph(self.report.paragraphs[pos])
                 while not self.report.paragraphs[i].text.startswith(f'No item') \
@@ -302,8 +315,10 @@ class WordReport:
                 _delete_paragraph(self.report.paragraphs[pos - 1])
 
     def remove_anexo(self, item: int):
+        if item <= 0:
+            return
         for i in range(len(self.report.paragraphs)):
-            if self.report.paragraphs[i].text.startswith(f'Anexo do Item {item}'):
+            if self.report.paragraphs[i].text.startswith(f'Anexo do Item {item},'):
                 _delete_paragraph(self.report.paragraphs[i])
                 while not self.report.paragraphs[i].text.startswith(f'Anexo') \
                         and not self.report.paragraphs[i].text.startswith(f'Provas Gerais'):

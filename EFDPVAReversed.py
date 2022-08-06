@@ -69,35 +69,43 @@ class EFDPVAReversed:
                 die_on_exit=True,
                 return_proc=True
             )
+            self._porta_gateway = retorno[0]
             self._processoJVM = retorno[1]
-            self._gateway = JavaGateway(
-                gateway_parameters=GatewayParameters(port=retorno[0]),
-                java_process=self._processoJVM)
+            self._gateway = None
         except py4j.java_gateway.Py4JError as e:
             logger.exception(
                 'Não foi encontrado o Java adequado nessa máquina para acessar EFD PVA. Instale o JDK versão 8.')
-            raise e
-
-        try:
-            logger.info('Iniciando banco de dados do EFD PVA ICMS IPI')
-            self._gateway.jvm.br.gov.sp.aiimgenerator.EFDComprehension.inicializacaoSimplesBD()
-        except py4j.java_gateway.Py4JJavaError as e:
-            logger.exception(
-                'Ocorreu problema na inicializacao do banco de dados do EFD PVA ICMS IPI.'
-            )
             raise e
 
     def __enter__(self):
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        try:
-            self._gateway.jvm.br.gov.sp.aiimgenerator.EFDComprehension.encerramentoBD()
-            self._gateway.shutdown()
-            self._processoJVM.kill()
-            logger.debug('Encerrado banco de dados do EFD PVA ICMS IPI.')
-        except Exception:
-            logger.exception('Ocorreu erro durante encerramento do EFD PVA.')
+        if self._gateway is not None:
+            try:
+                self._gateway.jvm.br.gov.sp.aiimgenerator.EFDComprehension.encerramentoBD()
+                self._gateway.shutdown()
+                self._processoJVM.kill()
+                self._gateway = None
+                logger.debug('Encerrado banco de dados do EFD PVA ICMS IPI.')
+            except Exception:
+                logger.exception('Ocorreu erro durante encerramento do EFD PVA.')
+
+    def __gateway(self) -> JavaGateway:
+        if self._gateway is None:
+            try:
+                self._gateway = JavaGateway(
+                    gateway_parameters=GatewayParameters(port=self._porta_gateway),
+                    java_process=self._processoJVM)
+                logger.info('Iniciando banco de dados do EFD PVA ICMS IPI')
+                self._gateway.jvm.br.gov.sp.aiimgenerator.EFDComprehension.inicializacaoSimplesBD()
+            except py4j.java_gateway.Py4JJavaError as e:
+                self._gateway = None
+                logger.exception(
+                    'Ocorreu problema na inicializacao do banco de dados do EFD PVA ICMS IPI.'
+                )
+                raise e
+        return self._gateway
 
     def import_efd(self, efd_file: Path, window: PySimpleGUI.Window, evento: threading.Event):
         try:
@@ -106,7 +114,7 @@ class EFDPVAReversed:
                 return
             window.write_event_value('-DATA-EXTRACTION-STATUS-', ['EFD-PVA', 'BEGIN'])
             logger.info(f'Importando arquivo {efd_file} no EFD PVA ICMS IPI...')
-            self._gateway.jvm.br.gov.sp.aiimgenerator.EFDImporter.importaEFD(
+            self.__gateway().jvm.br.gov.sp.aiimgenerator.EFDImporter.importaEFD(
                 str(efd_file), str(self._efds_json_path))
             window.write_event_value('-DATA-EXTRACTION-STATUS-', ['EFD-PVA', 'END'])
         except Exception as e:
@@ -120,8 +128,8 @@ class EFDPVAReversed:
         logger.info(f'Imprimindo LRAICMS de {referencia.strftime("%m/%Y")}...')
         referencia = f"01/{referencia.strftime('%m/%Y')}"
         try:
-            self._gateway.jvm.br.gov.sp.aiimgenerator.EFDPrinter.imprimeApuracao(cnpj_sem_digitos, ie, referencia,
-                                                                                 str(arquivo.absolute()))
+            self.__gateway().jvm.br.gov.sp.aiimgenerator.EFDPrinter.imprimeApuracao(cnpj_sem_digitos, ie, referencia,
+                                                                                    str(arquivo.absolute()))
         except py4j.java_gateway.Py4JJavaError as e:
             logger.exception(f'Ocorreu uma falha na impressão do LRAICMS referencia {referencia}.')
             raise e
@@ -132,8 +140,8 @@ class EFDPVAReversed:
         logger.info(f'Imprimindo LRI de {referencia.strftime("%m/%Y")}...')
         referencia = f"01/{referencia.strftime('%m/%Y')}"
         try:
-            self._gateway.jvm.br.gov.sp.aiimgenerator.EFDPrinter.imprimeInventario(cnpj_sem_digitos, ie, referencia,
-                                                                                   str(arquivo.absolute()))
+            self.__gateway().jvm.br.gov.sp.aiimgenerator.EFDPrinter.imprimeInventario(cnpj_sem_digitos, ie, referencia,
+                                                                                      str(arquivo.absolute()))
         except py4j.java_gateway.Py4JJavaError as e:
             logger.exception(f'Ocorreu uma falha na impressão do LRI referencia {referencia}.')
             raise e
@@ -144,8 +152,8 @@ class EFDPVAReversed:
         logger.info(f'Imprimindo LRE de {referencia.strftime("%m/%Y")}...')
         referencia = f"01/{referencia.strftime('%m/%Y')}"
         try:
-            self._gateway.jvm.br.gov.sp.aiimgenerator.EFDPrinter.imprimeEntradas(cnpj_sem_digitos, ie, referencia,
-                                                                                 str(arquivo.absolute()))
+            self.__gateway().jvm.br.gov.sp.aiimgenerator.EFDPrinter.imprimeEntradas(cnpj_sem_digitos, ie, referencia,
+                                                                                    str(arquivo.absolute()))
         except py4j.java_gateway.Py4JJavaError as e:
             logger.exception(f'Ocorreu uma falha na impressão do LRE referencia {referencia}.')
             raise e
@@ -156,8 +164,8 @@ class EFDPVAReversed:
         logger.info(f'Imprimindo LRS de {referencia.strftime("%m/%Y")}...')
         referencia = f"01/{referencia.strftime('%m/%Y')}"
         try:
-            self._gateway.jvm.br.gov.sp.aiimgenerator.EFDPrinter.imprimeSaidas(cnpj_sem_digitos, ie, referencia,
-                                                                               str(arquivo.absolute()))
+            self.__gateway().jvm.br.gov.sp.aiimgenerator.EFDPrinter.imprimeSaidas(cnpj_sem_digitos, ie, referencia,
+                                                                                  str(arquivo.absolute()))
         except py4j.java_gateway.Py4JJavaError as e:
             logger.exception(f'Ocorreu uma falha na impressão do LRE referencia {referencia}.')
             raise e
@@ -165,6 +173,8 @@ class EFDPVAReversed:
     def list_imported_files(self, cnpj):
         efddb = None
         cur = None
+        # para garantir inicialização do BD do EFD PVA ICMS
+        self.__gateway()
         try:
             efddb = mysql.connector.connect(host='127.0.0.1', port=3337, charset='latin1',
                                             user='spedfiscal', password='spedfiscal', db='master')
@@ -193,6 +203,8 @@ class EFDPVAReversed:
             comando += f'--ignore-table={database}.{ignored_table} '
         comando += f'{database}'
         dump_file.unlink(missing_ok=True)
+        # para garantir inicialização do BD do EFD PVA ICMS
+        self.__gateway()
         try:
             subprocess.check_output(comando.split(' '))
         except subprocess.CalledProcessError as cpe:

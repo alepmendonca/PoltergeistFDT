@@ -1,6 +1,7 @@
 import os
 import re
 import time
+from datetime import date
 from datetime import datetime
 from datetime import timedelta
 
@@ -28,6 +29,7 @@ import Controller
 import GeneralFunctions
 import WebScraper
 from Audit import get_current_audit
+from ConfigFiles import Infraction
 from SQLReader import SQLWriter
 from WebScraper import SeleniumWebScraper
 
@@ -51,12 +53,17 @@ def verifica_omissao_efds() -> (int, pd.DataFrame):
     for periodo_fiscalizacao in periodos_fiscalizacao:
         for referencia in pd.date_range(periodo_fiscalizacao[0], periodo_fiscalizacao[1], freq='MS'):
             if referencia.date() not in periodos_com_EFD:
-                omissos.append(referencia.date())
-    return len(omissos), pd.DataFrame(omissos, columns=['Referencia'])
+                omissos.append(referencia)
+    df = pd.DataFrame(omissos, columns=['Referencia'])
+    return len(omissos), df
 
 
-def verifica_omissao_efds_ddf(df: list) -> pd.DataFrame:
-    return pd.DataFrame({'Livros': ['1'], 'Meses': [str(len(df))]})
+def verifica_omissao_efds_ddf(infraction: Infraction, df: pd.DataFrame) -> pd.DataFrame:
+    if infraction.filename.find('LRI') >= 0 or (infraction.nome is not None and infraction.nome.find('LRI') >= 0):
+        anos = GeneralFunctions.get_dates_from_df(df, freq='Y')
+        return pd.DataFrame({'Livros': ['1'], 'Meses': [str(len(anos))]})
+    else:
+        return pd.DataFrame({'Livros': ['1'], 'Meses': [str(len(df))]})
 
 
 def verifica_divergencia_pgdas() -> (int, pd.DataFrame):
@@ -91,6 +98,11 @@ def verifica_divergencia_pgdas() -> (int, pd.DataFrame):
     planilha_divergencias.iloc[:, 1:] = planilha_divergencias.iloc[:, 1:].astype(np.float64)
     planilha_divergencias = planilha_divergencias.reset_index()
     return len(planilha_divergencias), planilha_divergencias.iloc[:, 1:]
+
+
+def verifica_divergencia_pgdas_ddf(infraction: Infraction, df: pd.DataFrame) -> pd.DataFrame:
+    # nao foi feito nada com relação a este caso, por ser SN
+    return pd.DataFrame()
 
 
 # busca na base da RFB os dados básicos dos CNPJs fora do Cadesp,

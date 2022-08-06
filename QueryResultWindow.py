@@ -8,18 +8,23 @@ import Audit
 from ConfigFiles import Analysis
 
 
-def open_query_result_window(total: int, resultado: pd.DataFrame, query: str, analysis: Analysis):
+def open_query_result_window(total: int, resultado: pd.DataFrame, query: str, analysis: Analysis) -> dict:
     sheet_name = analysis.sheet_default_name
     button_text = 'Gera Notificação' if analysis.notification_title else 'Gera Infração'
     if total == len(resultado):
         texto = f'Resultado (total de {total} linhas)'
     else:
         texto = f"Resultado (total de {total} linhas, mostrando as primeiras {len(resultado)}):"
+    # necessária essa conversão apenas para mostrar como data, não inteiro, quando é apenas uma coluna de data
+    if len(resultado.keys()) == 1 and resultado.dtypes[0] == 'datetime64[ns]':
+        tabela = [[v] for v in resultado[resultado.keys()[0]].values.astype('datetime64[us]').tolist()]
+    else:
+        tabela = resultado.values.tolist()
     layout = [
         [sg.Text(texto)],
         [sg.Table(
             size=(300, 15), expand_x=True, expand_y=True, key='-TABELA-QUERY-', auto_size_columns=True,
-            headings=resultado.keys().tolist(), values=resultado.values.tolist(), justification='left',
+            headings=resultado.keys().tolist(), values=tabela, justification='left',
             vertical_scroll_only=False,
         )]
     ]

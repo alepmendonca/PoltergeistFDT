@@ -15,6 +15,7 @@ from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
 
+import pandas as pd
 import pythoncom
 import wincertstore as wincertstore
 from cryptography import x509
@@ -203,26 +204,51 @@ def has_local_osf(path_name: Path):
     return (path_name / 'OSF Completa.pdf').is_file()
 
 
-def set_df_from_list(lista: list) -> list:
+def get_dates_from_series(serie: pd.Series) -> list:
+    return serie.values.astype('datetime64[us]').tolist()
+
+
+def get_list_from_df(df: pd.DataFrame) -> list:
+    # necessária essa conversão apenas para mostrar como data, não inteiro, quando é apenas uma coluna de data
+    if len(df.keys()) == 1 and df.dtypes[0] == 'datetime64[ns]':
+        lista = [[v] for v in get_dates_from_series(df[df.keys()[0]])]
+    else:
+        lista = df.values.tolist()
     retorno = []
-    for x in lista:
-        if type(x) == date:
-            retorno.append(x.strftime('%d/%m/%Y'))
-        else:
-            retorno.append(x)
+    for itens in lista:
+        linha = []
+        for item in itens:
+            if isinstance(item, date) or isinstance(item, datetime):
+                linha.append(item.strftime('%d/%m/%Y'))
+            else:
+                linha.append(item)
+        retorno.append(linha)
     return retorno
 
 
-def get_df_from_list(lista: list, freq='M') -> list:
+def get_df_from_list(listing: list[list], headers: list[str]) -> pd.DataFrame:
+    data_cols = []
+    for i in range(0, len(listing)):
+        for j in range(0, len(listing[i])):
+            if isinstance(listing[i][j], str) and listing[i][j].find('/') > 0:
+                data_cols.append(j)
+                listing[i][j] = datetime.strptime(listing[i][j], '%d/%m/%Y').date()
+    df = pd.DataFrame(data=listing, columns=headers)
+    for col in set(data_cols):
+        df[headers[col]] = df[headers[col]].astype('datetime64[ns]')
+    return df
+
+
+def get_dates_from_df(df: pd.DataFrame, freq='M') -> list:
     retorno = []
-    for x in lista:
-        if x.find('/') > 0:
-            retorno.append(datetime.strptime(x, '%d/%m/%Y').date())
-        else:
-            retorno.append(x)
-    if len(retorno) > 0 and type(retorno[0]) == date:
-        if freq == 'Y':
-            retorno = sorted(set([datetime(x.year, 1, 1).date() for x in retorno]))
+    try:
+        indice_data = df.dtypes.tolist().index('datetime64[ns]')
+    except ValueError:
+        raise Exception(f'Não encontrei coluna de data no Dataframe da verificação!')
+    serie_data = df[df.keys()[indice_data]]
+    retorno = get_dates_from_series(serie_data)
+    if freq == 'Y':
+        retorno = sorted(set([datetime(x.year, 1, 1).date() for x in retorno]))
     return retorno
 
 
@@ -386,3 +412,8 @@ def get_project_special_files():
             get_efds_json_path(get_tmp_path()).name,
             get_conta_fiscal_json_path(get_tmp_path()).name,
             get_folders_history_json_path().name]
+
+def is_empty_directory(path: Path) -> bool:
+    if not path.is_dir():
+        raise ValueError(f'{path} não é um diretório, para verificar se está vazio!')
+    return not any(path.iterdir())

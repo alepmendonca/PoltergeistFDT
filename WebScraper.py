@@ -362,6 +362,7 @@ class SeleniumWebScraper:
         edge_path = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
         edge_full_version = GeneralFunctions.get_edge_version()
         edge_major_version = edge_full_version.split(".")[0]
+        (self.script_path / "driver").mkdir(exist_ok=True)
         driver_zip_path = self.script_path / "driver" / ("edgedriver_" + edge_major_version + ".zip")
 
         # baixa nova versão do chromedriver apenas se não baixou o zip da última versão
@@ -427,6 +428,7 @@ class SeleniumWebScraper:
         parser = Dispatch("Scripting.FileSystemObject")
         chrome_full_version = parser.GetFileVersion(chrome_path)
         chrome_major_version = chrome_full_version.split(".")[0]
+        (self.script_path / "driver").mkdir(exist_ok=True)
         driver_zip_path = self.script_path / "driver" / ("chromedriver_" + chrome_major_version + ".zip")
 
         # baixa nova versão do chromedriver apenas se não baixou o zip da última versão
@@ -527,10 +529,10 @@ class SeleniumWebScraper:
         absolute_link = pgsf_url + "/" + relative_link
         self.__get_driver().get(absolute_link)
 
-    def __save_html_as_pdf(self, html: str, download_path: Path):
+    def __save_html_as_pdf(self, html: str, download_path: Path, encoding: str = 'iso-8859-1'):
         tmp_file = self.tmp_path / 'html_to_pdf.html'
         tmp_file.unlink(missing_ok=True)
-        with tmp_file.open(mode='w', encoding='iso-8859-1') as f:
+        with tmp_file.open(mode='w', encoding=encoding) as f:
             f.write(html)
 
         pdfconfig = pdfkit.configuration(
@@ -540,7 +542,7 @@ class SeleniumWebScraper:
                 str(tmp_file.absolute()),
                 output_path=str(download_path.absolute()),
                 configuration=pdfconfig,
-                options={'--encoding': 'iso-8859-1'})
+                options={'--encoding': encoding})
         except OSError as ex:
             # ocorre erro no wkhtmltopdf se ele não encontra as imagens, mas ele consegue gerar o PDF
             if str(ex).find('network error') > 0 and download_path.is_file():
@@ -695,7 +697,8 @@ class SeleniumWebScraper:
                 try:
                     element = self.__get_driver().find_element(By.ID, 'dialog-modal')
                     if element.text.startswith('As consultas a partir de sua faixa de IP estão bloqueadas'):
-                        logger.warning(f'Site de consulta SAT bloqueou acessos. Apenas consegui baixar {len(paths)} amostras')
+                        logger.warning(
+                            f'Site de consulta SAT bloqueou acessos. Apenas consegui baixar {len(paths)} amostras')
                         break
                 except NoSuchElementException:
                     pass
@@ -1168,7 +1171,6 @@ class SeleniumWebScraper:
                 raise Exception('Não foi possível acessar o site do PGSF Produtividade! '
                                 'Verifique se o computador está conectado na rede da Sefaz.')
 
-
         # Click on "Certificado Digital"
         # Cria thread para preencher popup de senha, pois essa página trava thread do Selenium
         t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
@@ -1207,7 +1209,8 @@ class SeleniumWebScraper:
             EC.visibility_of_element_located((By.ID, "ctl00_MainContent_filtroCombos_ddlDrt")))
 
         config.drt_sigla = self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlDrt").text
-        config.equipe_fiscal = self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlTeamLeader").text
+        config.equipe_fiscal = self.__get_driver().find_element(By.ID,
+                                                                "ctl00_MainContent_filtroCombos_ddlTeamLeader").text
 
         logger.info("Acessando Sem Papel para confirmar login/senha")
         self.__sigadoc_login(config)
@@ -1393,7 +1396,6 @@ class SeleniumWebScraper:
                                                                      )
                 t.start()
                 input_certificado.click()
-            t.start()
             t.join()
 
             if len(self.__get_driver().window_handles) > 1:
@@ -1939,7 +1941,9 @@ class SeleniumWebScraper:
     def print_efd_obrigatoriedade(self, cnpj: str, download_path: Path):
         resposta = requests.get(f'https://www.fazenda.sp.gov.br/sped/obrigados/obrigados.asp?CNPJLimpo={cnpj}'
                                 f'&Submit=Enviar')
-        self.__save_html_as_pdf(resposta.text, download_path)
+        html = resposta.text
+        html = html.replace('/incs_internet', 'https://www.fazenda.sp.gov.br/incs_internet')
+        self.__save_html_as_pdf(html, download_path)
 
     def print_efd_entregas(self, cnpj: str, inicio: datetime.date, fim: datetime.date, download_path: Path):
         try:
@@ -1970,7 +1974,10 @@ class SeleniumWebScraper:
 
             WebDriverWait(self.__get_driver(), 5).until(
                 EC.visibility_of_element_located((By.ID, 'ctl00_ConteudoPagina_fsEntregaPorIE')))
-            self.__save_html_as_pdf(self.__get_driver().page_source, download_path)
+            html = self.__get_driver().page_source
+            html = html.replace('"/ArquivosDigitais/', '"https://www10.fazenda.sp.gov.br/ArquivosDigitais/')
+            html = html.replace("../", "https://www10.fazenda.sp.gov.br/ArquivosDigitais/")
+            self.__save_html_as_pdf(html, download_path, encoding='UTF-8')
         except Exception as e:
             logger.exception(f'Ocorreu um problema no download do extrato de entrega de EFD: {e}')
             raise e
