@@ -22,8 +22,12 @@ def __get_dados_from_web(config):
     return True
 
 
+def splash_image_path() -> str:
+    return r'resources/splash.jpg'
+
+
 def get_splash_image() -> bytes:
-    image = Image.open(r'resources/splash.jpg')
+    image = Image.open(splash_image_path())
     image.thumbnail((480, 270))
     bio = io.BytesIO()
     image.save(bio, format='PNG')

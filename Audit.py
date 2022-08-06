@@ -15,19 +15,20 @@ from WordReport import WordReport
 
 
 class PossibleInfraction:
-    def __init__(self, analysis_name: str, planilha: str, df: list):
-        self.verificacao: Analysis = Analysis.get_analysis_by_name(analysis_name)
-        if not self.verificacao:
-            raise ConfigFileDecoderException(f'Não existe verificação chamada {analysis_name}. '
-                                             f'Altere manualmente o arquivo de configurações da auditoria.')
+    def __init__(self, analysis: Analysis, planilha: str, df: pd.DataFrame | list[list]):
+        self.verificacao: Analysis = analysis
         self.planilha = planilha
-        self.df = df
+        if isinstance(df, pd.DataFrame) or df is None:
+            self.df = df
+        else:
+            self.df = self.__df_as_panda(df)
         self._notificacao_titulo = ''
         self._notificacao_corpo = ''
 
     def toJson(self) -> dict:
         dic = self.__dict__.copy()
         dic['verificacao'] = self.verificacao.name
+        dic['df'] = GeneralFunctions.get_list_from_df(self.df) if self.df is not None else None
         for k in [k for k in dic.keys() if dic[k] is None or k.startswith('_')]:
             dic.pop(k)
         return dic
@@ -40,7 +41,6 @@ class PossibleInfraction:
 
     def _personalize_text(self, text: str) -> str:
         nome_aba = self.planilha
-        df = self.df
         relato = text
         try:
             planilha = get_current_audit().get_sheet()
@@ -49,13 +49,13 @@ class PossibleInfraction:
             if relato.find('<periodo>') > 0:
                 # levanta os períodos indicados em "referencia"
                 referencias = planilha.periodos_de_referencia(nome_aba) \
-                    if nome_aba else GeneralFunctions.get_df_from_list(df)
+                    if nome_aba else GeneralFunctions.get_dates_from_df(self.df)
                 texto = GeneralFunctions.periodos_prettyprint(referencias)
                 relato = relato.replace('<periodo>', texto)
             if relato.find('<periodoAAAA>') > 0:
                 # levanta os períodos em anos indicados em "referencia"
                 referencias = planilha.periodos_de_referencia(nome_aba, freq='Y') \
-                    if nome_aba else GeneralFunctions.get_df_from_list(df, freq='Y')
+                    if nome_aba else GeneralFunctions.get_dates_from_df(self.df, freq='Y')
                 texto = GeneralFunctions.periodos_prettyprint(referencias, freq='Y')
                 relato = relato.replace('<periodoAAAA>', texto)
             if relato.find('<modelos>') > 0:
@@ -89,18 +89,26 @@ class PossibleInfraction:
         self._notificacao_titulo = ''
         self._notificacao_corpo = ''
 
+    def __df_as_panda(self, df: list[list]) -> pd.DataFrame:
+        if len(df) > 0 and len(df[0]) != len(self.verificacao.ddf_headers):
+            raise ValueError(f'Dataframe da função {self.verificacao.function.__name__} '
+                             f'da verificação {self.verificacao.name} '
+                             f'tem {len(df[0])} colunas, mas a configuração da verificação '
+                             f'tem os seguintes cabeçalhos: {self.verificacao.ddf_headers}')
+        return GeneralFunctions.get_df_from_list(df, self.verificacao.ddf_headers)
+
 
 class AiimItem(PossibleInfraction):
 
-    def __init__(self, infraction_name: str, analysis_name: str, item: int, notificacao: str,
-                 notificacao_resposta: str, planilha: str, df: list):
-        super().__init__(analysis_name, planilha, df)
+    def __init__(self, infraction_name: str, analysis: Analysis, item: int, notificacao: str,
+                 notificacao_resposta: str, planilha: str, df: pd.DataFrame | list[list]):
+        super().__init__(analysis, planilha, df)
         self._proofs_dfs_list = None
         self.infracao: Infraction
         infracao = list(filter(lambda i: i.filename == infraction_name, self.verificacao.infractions))
         if not len(infracao):
             raise ConfigFileDecoderException(f'Não existe infração {infraction_name} vinculada '
-                                             f'à verificação {analysis_name}. '
+                                             f'à verificação {analysis.name}. '
                                              f'Altere manualmente o arquivo de configurações da auditoria.')
         self.infracao = infracao[0]
         self._notificacao = None
@@ -167,7 +175,7 @@ class AiimItem(PossibleInfraction):
         return self.infracao < other.infracao
 
     def __str__(self):
-        return f'{self.infracao}'
+        return f'{self.infracao}' if not self.has_aiim_item_number() else f'{self.item} - {self.infracao}'
 
     def notification_path(self) -> Path:
         if not self.notificacao:
@@ -187,9 +195,14 @@ class AiimItem(PossibleInfraction):
         proofs = [f'{prova.descricao}{", por amostragem" if prova.has_sample(self) else ""}'
                   for prova in self.infracao.provas]
         if self.notificacao:
-            texto = f'Notificação DEC {self.notificacao} e resposta do contribuinte'
+            texto = f'Notificação DEC {self.notificacao}'
             if self.notificacao_resposta:
-                texto += f', apresentada sob expediente Sem Papel {self.notificacao_resposta}'
+                texto += f' e resposta do contribuinte, apresentada sob expediente Sem Papel {self.notificacao_resposta}'
+            else:
+                if GeneralFunctions.is_empty_directory(self.notification_response_path()):
+                    texto += ', sem resposta do contribuinte'
+                else:
+                    texto += ' e resposta do contribuinte, enviada diretamente à Fiscalização'
             proofs.append(f'{texto}')
         return proofs
 
@@ -237,6 +250,7 @@ class Audit:
         self._word = None
         self._empresa: str
         self.aiim_itens: list[AiimItem] = []
+        Analysis.clear_audit_analysis()
         Analysis.load_audit_analysis(path)
         try:
             with GeneralFunctions.get_audit_json_path(path).open(mode='r') as outfile:
@@ -272,18 +286,24 @@ class Audit:
         self.reports = self._dicionario.get('reports', {})
         self.notificacoes = []
         if self._dicionario.get('notificacoes', None):
-            self.notificacoes = [
-                PossibleInfraction(x['verificacao'], x.get('planilha', None), x.get('df', None))
-                for x in self._dicionario['notificacoes']
-            ]
+            self.notificacoes = []
+            for x in self._dicionario['notificacoes']:
+                analysis = Analysis.get_analysis_by_name(self._path_name, x['verificacao'])
+                if not analysis:
+                    raise ConfigFileDecoderException(f'Não existe verificação chamada {x["verificacao"]}. '
+                                                     f'Altere manualmente o arquivo de configurações da auditoria.')
+                self.notificacoes.append(PossibleInfraction(analysis, x.get('planilha', None), x.get('df', None)))
         self.aiim_itens = []
         if self._dicionario.get('infracoes', None):
-            self.aiim_itens = [
-                AiimItem(x['infracao'], x['verificacao'], x.get('item', None),
-                         x.get('notificacao', None), x.get('notificacao_resposta', None),
-                         x.get('planilha', None), x.get('df', None))
-                for x in self._dicionario['infracoes']
-            ]
+            self.aiim_itens = []
+            for x in self._dicionario['infracoes']:
+                analysis = Analysis.get_analysis_by_name(self._path_name, x['verificacao'])
+                if not analysis:
+                    raise ConfigFileDecoderException(f'Não existe verificação chamada {x["verificacao"]}. '
+                                                     f'Altere manualmente o arquivo de configurações da auditoria.')
+                self.aiim_itens.append(AiimItem(x['infracao'], analysis, x.get('item', None),
+                                                x.get('notificacao', None), x.get('notificacao_resposta', None),
+                                                x.get('planilha', None), x.get('df', None)))
 
     def aiim_number_no_digit(self) -> int:
         return int(re.sub(r'[^\d]', '', self.aiim_number)[:-1])
@@ -307,7 +327,8 @@ class Audit:
         return datetime.strptime(self._inicio_auditoria, "%m/%Y").date() if self._inicio_auditoria else None
 
     @inicio_auditoria.setter
-    def inicio_auditoria(self, inicio):
+    def inicio_auditoria(self, inicio: str | date | datetime):
+        inicio_date = None
         if isinstance(inicio, str):
             if not re.match(r'\d{2}/\d{4}', inicio) \
                     or not (1 <= int(inicio[:2]) <= 12) or int(inicio[3:]) <= 2000:
@@ -319,7 +340,7 @@ class Audit:
             inicio_date = inicio
             inicio = inicio_date.strftime('%m/%Y')
 
-        if self.fim_auditoria is not None and inicio_date > self.fim_auditoria:
+        if self.fim_auditoria is not None and inicio_date is not None and inicio_date > self.fim_auditoria:
             raise ValueError(f'Início de auditoria {inicio_date} deve ser menor que o final {self.fim_auditoria}')
 
         self._inicio_auditoria = inicio
@@ -330,7 +351,8 @@ class Audit:
             datetime.strptime(self._fim_auditoria, "%m/%Y").date()) if self._fim_auditoria else None
 
     @fim_auditoria.setter
-    def fim_auditoria(self, fim):
+    def fim_auditoria(self, fim: str | date | datetime):
+        fim_date = None
         if isinstance(fim, str):
             if not re.match(r'\d{2}/\d{4}', fim) \
                     or not (1 <= int(fim[:2]) <= 12) or int(fim[3:]) <= 2000:
@@ -341,7 +363,7 @@ class Audit:
             fim_date = fim
             fim = fim_date.strftime('%m/%Y')
 
-        if self.inicio_auditoria is not None and self.inicio_auditoria > fim_date:
+        if self.inicio_auditoria is not None and fim_date is not None and self.inicio_auditoria > fim_date:
             raise ValueError(f'Início de auditoria {self.inicio_auditoria} deve ser maior que o final {fim_date}')
         self._fim_auditoria = fim
 
@@ -381,8 +403,10 @@ class Audit:
         return re.sub(r'[^\d]', '', self.osf).zfill(11)
 
     def endereco_completo(self) -> str:
-        return f'{self.logradouro}, {self.numero} {self.complemento} - ' \
-               f'{self.bairro} - {self.cidade}/{self.uf} - CEP {self.cep}'
+        endereco = f'{self.logradouro}, {self.numero}'
+        if self.complemento:
+            endereco += f' - {self.complemento}'
+        return endereco + f' - {self.bairro} - {self.cidade}/{self.uf} - CEP {self.cep}'
 
     def __eq__(self, other):
         return self._path_name == other._path_name
@@ -434,6 +458,9 @@ class Audit:
                                               bool(provas))
                 if provas:
                     self.get_report().insere_anexo(item.item, provas)
+        self.get_report().save_report()
+
+    def update_general_proofs(self):
         funcao = getattr(sys.modules['AiimProofGenerator'], 'generate_general_proofs_file')
         provas_gerais = funcao()
         self.get_report().atualiza_provas_gerais(provas_gerais)
@@ -472,14 +499,13 @@ class Audit:
         periodos.sort(key=lambda p: p[0])
         descricao = 'O'
         for p in periodos:
-            descricao += 'Posteriormente, o' if p != periodos[0] else ''
-            descricao += ' contribuinte está enquadrado no ' if len(
-                periodos) == 1 else ' contribuinte foi enquadrado no '
+            descricao += ' Posteriormente, o' if p != periodos[0] else ''
+            descricao += ' contribuinte foi enquadrado no '
             descricao += 'Regime Simples Nacional' if p[2] == 'sn' else 'Regime Periódico de Apuração'
-            if p[1] == date.today():
-                descricao += f'desde {p[0].strftime("%d/%m/%Y")}, permanecendo até o presente.'
+            if p == periodos[-1]:
+                descricao += f' desde {p[0].strftime("%d/%m/%Y")}, permanecendo nele até o presente.'
             else:
-                descricao += f'desde {p[0].strftime("%d/%m/%Y")} até {p[1].strftime("%d/%m/%Y")}.'
+                descricao += f' desde {p[0].strftime("%d/%m/%Y")} até {p[1].strftime("%d/%m/%Y")}.'
         return descricao
 
     def get_digital_files_hashes(self) -> list[dict]:

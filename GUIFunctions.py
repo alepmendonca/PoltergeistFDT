@@ -17,7 +17,8 @@ def popup_ok(texto: str, titulo=GeneralFunctions.project_name):
                         sg.Push()]], modal=True).read(close=True)
 
 
-def popup_sim_nao(texto: str, titulo='Atenção'):
-    sg.Window(titulo, [[sg.Text('\n'.join(textwrap.wrap(texto, 100)))],
+def popup_sim_nao(texto: str, titulo='Atenção') -> str:
+    botao = sg.Window(titulo, [[sg.Text('\n'.join(textwrap.wrap(texto, 100)))],
                        [sg.Push(), sg.Button('Sim', s=10), sg.Button('Não', s=10),
                         sg.Push()]], disable_close=True, modal=True).read(close=True)
+    return botao[0] if botao else None

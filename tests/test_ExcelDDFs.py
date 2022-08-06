@@ -10,6 +10,7 @@ import pandas as pd
 from tika import parser
 
 import Audit
+from ConfigFiles import Infraction
 from ExcelDDFs import ExcelArrazoadoIncompletoException, ExcelArrazoadoCriticalException
 from tests.test_Audit import AuditTestSetup
 
@@ -57,6 +58,8 @@ class ExcelDDFsTest(AuditTestSetup):
                              resultado['Mes'].tolist())
         self.assertListEqual([2022, 2022, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021, 2021],
                              resultado['Ano'].tolist())
+        datas = [t.date() for t in pd.date_range('2/1/2021', '2/1/2022', freq='MS').sort_values(ascending=False)]
+        self.assertListEqual(datas, resultado.index.tolist())
         self.assertListEqual(['317.019.158,71', '294.531.750,63', '303.732.994,99', '325.268.407,73', '285.257.651,94',
                               '255.123.857,59', '285.477.452,18', '276.445.191,91', '313.171.355,82', '316.672.689,54',
                               '303.077.942,56', '313.859.083,41', '296.753.854,64'],
@@ -85,6 +88,8 @@ class ExcelDDFsTest(AuditTestSetup):
                              resultado['Mes'].tolist())
         self.assertListEqual([2022, 2022, 2022, 2022, 2022, 2022, 2021, 2021, 2021, 2021, 2021, 2021, 2021],
                              resultado['Ano'].tolist())
+        datas = [t.date() for t in pd.date_range('6/1/2021', '6/1/2022', freq='MS').sort_values(ascending=False)]
+        self.assertListEqual(datas, resultado.index.tolist())
         self.assertListEqual(['168.524,29', '164.055,94', '179.554,15', '276.304,36', '289.298,44',
                               '293.562,28', '426.965,64', '194.553,62', '128.981,42', '104.222,81',
                               '91.875,42', '206.516,29', '348.674,27'],
@@ -96,6 +101,8 @@ class ExcelDDFsTest(AuditTestSetup):
                              resultado2['Mes'].tolist())
         self.assertListEqual([2022, 2022, 2022, 2022, 2022, 2022, 2021, 2021, 2021, 2021, 2021, 2021, 2021],
                              resultado2['Ano'].tolist())
+        datas = [t.date() for t in pd.date_range('6/1/2021', '6/1/2022', freq='MS').sort_values(ascending=False)]
+        self.assertListEqual(datas, resultado.index.tolist())
         self.assertListEqual(['168.524,29', '164.055,94', '179.554,15', '276.304,36', '289.298,44',
                               '293.562,28', '426.965,64', '194.553,62', '128.981,42', '104.222,81',
                               '91.875,42', '206.516,29', '348.674,27'],
@@ -116,6 +123,8 @@ class ExcelDDFsTest(AuditTestSetup):
                              resultado['Mes'].tolist())
         self.assertListEqual([2022, 2022, 2022, 2022, 2022, 2022, 2021, 2021, 2021, 2021, 2021, 2021, 2021],
                              resultado['Ano'].tolist())
+        datas = [t.date() for t in pd.date_range('6/1/2021', '6/1/2022', freq='MS').sort_values(ascending=False)]
+        self.assertListEqual(datas, resultado.index.tolist())
         self.assertListEqual(['168.524,29', '164.055,94', '179.554,15', '276.304,36', '289.298,44',
                               '293.562,28', '426.965,64', '194.553,62', '128.981,42', '104.222,81',
                               '91.875,42', '206.516,29', '348.674,27'],
@@ -136,6 +145,8 @@ class ExcelDDFsTest(AuditTestSetup):
                              resultado['Mes'].tolist())
         self.assertListEqual([2022, 2022, 2022, 2022, 2022, 2022, 2021, 2021, 2021, 2021, 2021, 2021, 2021],
                              resultado['Ano'].tolist())
+        datas = [t.date() for t in pd.date_range('6/1/2021', '6/1/2022', freq='MS').sort_values(ascending=False)]
+        self.assertListEqual(datas, resultado.index.tolist())
         self.assertListEqual(['300.000,00' for _ in range(0, 13)],
                              resultado['Valor Contabil - CFOP'].tolist())
 
@@ -164,6 +175,8 @@ class ExcelDDFsTest(AuditTestSetup):
         self.assertListEqual([2022, 2022, 2022, 2022, 2022, 2022, 2021, 2021, 2021, 2021, 2021, 2021, 2021,
                               2021, 2021, 2021, 2021],
                              resultado['Ano'].tolist())
+        datas = [t.date() for t in pd.date_range('2/1/2021', '6/1/2022', freq='MS').sort_values(ascending=False)]
+        self.assertListEqual(datas, resultado.index.tolist())
         valores = ['300.000,00' for _ in range(0, 13)]
         valores.extend(['316.672.689,54', '303.077.942,56', '313.859.083,41', '296.753.854,64'])
         self.assertListEqual(valores, resultado['Valor Contabil - CFOP'].tolist())
@@ -182,6 +195,15 @@ class ExcelDDFsTest(AuditTestSetup):
                                   ['371854654656666556', datetime.date(2022, 4, 2), 300, datetime.date(2022, 4, 30)],
                                   ['Total Subitem 1.2', None, 300, datetime.date(2022, 4, 30)],
                                   ['TOTAL ITEM 1', None, 400, 'Total Geral']])
+
+    @staticmethod
+    def _vencimentos_gia():
+        gia = pd.DataFrame(columns=['referencia', 'vencimento', 'saldo'],
+                           data=[[datetime.date(2022, 1, 31), datetime.date(2022, 2, 20), 150.2],
+                                 [datetime.date(2022, 2, 28), datetime.date(2022, 3, 20), 300.5],
+                                 [datetime.date(2022, 3, 31), datetime.date(2022, 4, 20), 500.6],
+                                 [datetime.date(2022, 4, 30), datetime.date(2022, 5, 20), 180.3]])
+        return gia.astype({'referencia': np.datetime64, 'vencimento': np.datetime64, 'saldo': float})
 
     def test_get_periodos_referencia_sem_agrupamento_sem_periodo(self):
         df = pd.DataFrame(columns=['Chave', 'Horario', 'Valor'],
@@ -222,19 +244,29 @@ class ExcelDDFsTest(AuditTestSetup):
         self.assertEqual(['31/01/22', '30/04/22'], ddf['ddf']['referencia'].tolist())
         self.assertEqual(['100,00', '300,00'], ddf['ddf']['valor'].tolist())
 
+    def test_all_infractions_no_exception(self):
+        Audit.get_current_audit().inicio_auditoria = None
+        Audit.get_current_audit().fim_auditoria = None
+        Audit.get_current_audit().inicio_auditoria = datetime.date(2022, 1, 1)
+        Audit.get_current_audit().fim_auditoria = datetime.date(2022, 4, 30)
+        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_sem_agrupamento()):
+            with mock.patch('ExcelDDFs.ExcelDDFs.get_vencimentos_GIA', return_value=self._vencimentos_gia()):
+                with self.assertRaises(ExcelArrazoadoIncompletoException):
+                    for infraction in Infraction.all_default_infractions():
+                        Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha',
+                                                                                 infraction.inciso, infraction.alinea)
+
     def test_get_ddf_I_a(self):
         with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_com_agrupamento()):
-            with self.assertRaises(ExcelArrazoadoCriticalException) as cm:
-                Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'I', 'a')
-        self.assertEqual('Inciso/alinea não mapeados: I, a', str(cm.exception))
+            ddf = Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'I', 'a')
+        self.assertIsInstance(ddf, dict)
+        self.assertIsInstance(ddf['ddf'], pd.DataFrame)
+        self.assertEqual(['31/01/22', '30/04/22'], ddf['ddf']['referencia'].tolist())
+        self.assertEqual(['100,00', '300,00'], ddf['ddf']['valor'].tolist())
 
     def test_get_ddf_I_b_agrupado(self):
-        gia = pd.DataFrame(columns=['referencia', 'vencimento', 'saldo'],
-                           data=[[datetime.date(2022, 1, 31), datetime.date(2022, 2, 20), 150.2],
-                                 [datetime.date(2022, 4, 30), datetime.date(2022, 5, 20), 180.3]])
-        gia = gia.astype({'referencia': np.datetime64, 'vencimento': np.datetime64, 'saldo': float})
         with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_com_agrupamento()):
-            with mock.patch('ExcelDDFs.ExcelDDFs.get_vencimentos_GIA', return_value=gia):
+            with mock.patch('ExcelDDFs.ExcelDDFs.get_vencimentos_GIA', return_value=self._vencimentos_gia()):
                 ddf = Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'I', 'b')
         self.assertIsInstance(ddf, dict)
         self.assertIsInstance(ddf['ddf'], pd.DataFrame)

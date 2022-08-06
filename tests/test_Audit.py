@@ -55,7 +55,7 @@ class AuditTest(AuditTestSetup):
         self.assertEqual(audit.cep, '01.234-000')
         self.assertEqual(audit.cidade, 'SAO PAULO')
         self.assertEqual(audit.uf, 'SP')
-        self.assertEqual('AVENIDA BAGACA FRANCO, 334 FUNDOS - CENTRO - SAO PAULO/SP - CEP 01.234-000',
+        self.assertEqual('AVENIDA BAGACA FRANCO, 334 - FUNDOS - CENTRO - SAO PAULO/SP - CEP 01.234-000',
                          audit.endereco_completo())
         self.assertEqual(audit.cnpj_only_digits(), '10203040000150')
         self.assertEqual(audit.ie_only_digits(), '012345678910')

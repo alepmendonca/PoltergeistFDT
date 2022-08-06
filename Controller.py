@@ -296,10 +296,8 @@ def get_possible_infractions_osf() -> list[PossibleInfraction]:
         return []
 
 
-def add_analysis_to_audit(analysis: Analysis, planilha=None, df=None):
-    notificacao = Audit.PossibleInfraction(analysis.name, planilha,
-                                           GeneralFunctions.set_df_from_list(
-                                               [item for row in df.values.tolist() for item in row]) if df else None)
+def add_analysis_to_audit(analysis: Analysis, planilha=None, df: pd.DataFrame = None):
+    notificacao = Audit.PossibleInfraction(analysis, planilha, df)
     get_current_audit().notificacoes.append(notificacao)
     get_current_audit().save()
     resultado = analysis.choose_between_notification_and_infraction()
@@ -320,8 +318,9 @@ def move_analysis_from_notification_to_aiim(notification: PossibleInfraction, nu
                 planilha = notification.planilha
             # apenas cria itens na auditoria se forem criadas planilhas
             # isso porque filtros podem ter gerado listagens vazias
-            if planilha and planilha in get_current_audit().get_sheet().get_sheet_names():
-                aiim_item = Audit.AiimItem(infraction.filename, notification.verificacao.name, 0, num_dec, None,
+            if notification.df is not None or \
+                    (planilha and planilha in get_current_audit().get_sheet().get_sheet_names()):
+                aiim_item = Audit.AiimItem(infraction.filename, notification.verificacao, 0, num_dec, None,
                                            planilha, notification.df)
                 full_path = aiim_item.notification_response_path()
                 get_current_audit().aiim_itens.append(aiim_item)
@@ -396,6 +395,8 @@ def update_aiim_item_notification_response(aiim_item: AiimItem, response: str):
 
 def update_aiim_item_number(aiim_item: AiimItem, new_number: int = 0):
     aiim_item.item = new_number
+    if new_number > 0:
+        get_current_audit().get_sheet().update_number_in_subtotals(aiim_item.planilha, aiim_item.item)
     get_current_audit().save()
 
 
@@ -446,7 +447,7 @@ def get_ddf_for_infraction(infraction: Infraction):
     else:
         return {'inciso': infraction.inciso, 'alinea': infraction.alinea,
                 'mensal': True,
-                'ddf': aiim_item.verificacao.function_ddf(aiim_item.df)}
+                'ddf': aiim_item.verificacao.function_ddf(infraction, aiim_item.df)}
 
 
 def send_notification_with_files_digital_receipt():
@@ -524,8 +525,6 @@ def print_aiim_reports():
     __update_selic_on_aiim2003()
     aiim_number = get_current_audit().aiim_number
     numero_sem_serie = get_current_audit().aiim_number_no_digit()
-    logger.info('Atualizando relatório circunstanciado...')
-    get_current_audit().update_report()
     declare_observations_in_aiim()
     aiim2003 = AIIMAutoIt()
     aiim2003.gera_relatorios(aiim_number, __get_aiim_position_in_aiim2003(aiim_number))
@@ -538,6 +537,33 @@ def print_aiim_reports():
     GeneralFunctions.move_downloaded_file(aiim2003.get_reports_path(), f'Quadro2_A{numero_sem_serie}.pdf',
                                           aiim_path, 30, replace=True)
     get_current_audit().get_sheet().gera_quadro_3(aiim_path / f'Quadro1_A{numero_sem_serie}.pdf')
+
+
+def generate_custom_report():
+    logger.info('Atualizando relatório circunstanciado...')
+    get_current_audit().update_report()
+
+
+def generate_general_proofs_attachment():
+    logger.info('Atualizando anexo de Provas Gerais...')
+    get_current_audit().update_general_proofs()
+
+
+def print_efd(book: str, refs: list[date]):
+    with EFDPVAReversed() as pva:
+        for ref in refs:
+            filename = get_current_audit().aiim_path() / f'{book}{ref.year}{str(ref.month).zfill(2)}.pdf'
+            match book:
+                case 'lre':
+                    pva.print_LRE(ref, filename)
+                case 'lrs':
+                    pva.print_LRS(ref, filename)
+                case 'lri':
+                    pva.print_LRI(ref, filename)
+                case 'lraicms':
+                    pva.print_LRAICMS(ref, filename)
+                case _:
+                    raise Exception(f'Não implementada impressão deste tipo de EFD: {book}')
 
 
 def reopen_aiim():
@@ -737,6 +763,12 @@ def efd_populate_database(window: sg.Window, result: list[dict], evento: threadi
         efd_files_import_SGBD(pva, window, evento)
         efd_generate_unified_tables(window, evento)
     efd_populate_table_with_file_delivery(result, window, evento)
+
+
+def efd_references_imported_PVA() -> list[datetime.date]:
+    with EFDPVAReversed() as pva:
+        arquivos = pva.list_imported_files(get_current_audit().cnpj)
+    return sorted([date(int(t[-44:-40]), int(t[-40:-38]), 1) for t in arquivos])
 
 
 def efd_files_import_PVA(pva: EFDPVAReversed, window: sg.Window, evento: threading.Event) -> bool:

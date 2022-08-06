@@ -215,25 +215,26 @@ class AIIMAutoIt:
         self.__click_and_wait("[CLASS:ThunderRT6CommandButton; INSTANCE:11]")
 
     def preenche_ddf_tipo_operacao(self, dcm, valor, atraso):
+        valor_number = float(valor.replace(',', '.'))
         if atraso:
-            if valor > 0:
-                if atraso <= 15:
+            if valor_number > 0:
+                if int(atraso) <= 15:
                     self.__wait_dialog_and_select_item(self.titulo_janela, '[CLASS:ThunderRT6ComboBox; INSTANCE:5]',
                                                        'Tipo de Operação', 2)
                     self.__click_and_wait("[CLASS:ThunderRT6CommandButton; INSTANCE:11]")
                 else:
                     self.__wait_dialog_and_select_item(self.titulo_janela, '[CLASS:ThunderRT6ComboBox; INSTANCE:5]',
                                                        'Tipo de Operação', 3)
-                    self.preenche_ddf_valor_basico(dcm, '{:.2f}'.format(float(valor)).replace('.', ','), dcm)
+                    self.preenche_ddf_valor_basico(dcm, valor, dcm)
             else:
                 self.__wait_dialog_and_select_item(self.titulo_janela, '[CLASS:ThunderRT6ComboBox; INSTANCE:5]',
                                                    'Tipo de Operação', 5)
                 self.__click_and_wait("[CLASS:ThunderRT6CommandButton; INSTANCE:11]")
         else:
-            if valor > 0:
+            if valor_number > 0:
                 self.__wait_dialog_and_select_item(self.titulo_janela, '[CLASS:ThunderRT6ComboBox; INSTANCE:5]',
                                                    'Tipo de Operação', 1)
-                self.preenche_ddf_valor_basico(dcm, '{:.2f}'.format(float(valor)).replace('.', ','), dcm)
+                self.preenche_ddf_valor_basico(dcm, valor, dcm)
             else:
                 self.__wait_dialog_and_select_item(self.titulo_janela, '[CLASS:ThunderRT6ComboBox; INSTANCE:5]',
                                                    'Tipo de Operação', 4)
@@ -384,7 +385,10 @@ class AIIMAutoIt:
         logger.info('Preenchendo DDF do item no AIIM2003')
         inciso = dicionario['inciso']
         alinea = dicionario['alinea']
-        if inciso == 'I' and alinea in ['b', 'c', 'd', 'i', 'j', 'l', 'm']:
+        if inciso == 'I' and alinea == 'a':
+            for index, row in dicionario['ddf'].iterrows():
+                self.preenche_ddf_dci_davb(row['valor'], row['referencia'], row['dia_seguinte'])
+        elif inciso == 'I' and alinea in ['b', 'c', 'd', 'i', 'j', 'l', 'm']:
             for index, row in dicionario['ddf'].iterrows():
                 self.preenche_ddf_com_dij(row['valor'], row['referencia'], row['vencimento'], row['vencimento'])
         elif inciso == 'I' and alinea == 'e':
@@ -397,7 +401,7 @@ class AIIMAutoIt:
         elif inciso == 'IV' and alinea == 'b':
             for index, row in dicionario['ddf'].iterrows():
                 self.preenche_ddf_valor_basico(row['referencia'], row['valor'], row['referencia'])
-        elif inciso == 'V' and alinea in ['a', 'c', 'm']:
+        elif inciso == 'V' and alinea in ['a', 'c']:
             for index, row in dicionario['ddf'].iterrows():
                 if len(row) == 1:
                     self.preenche_ddf_com_qtd(row['valor'])
@@ -406,6 +410,9 @@ class AIIMAutoIt:
         elif inciso == 'V' and alinea == 'j':
             for index, row in dicionario['ddf'].iterrows():
                 self.preenche_ddf_com_livros_meses(row['Livros'], row['Meses'])
+        elif inciso == 'V' and alinea == 'm':
+            for index, row in dicionario['ddf'].iterrows():
+                self.preenche_ddf_com_qtd(row['Meses'])
         elif inciso == 'VII' and alinea == 'a':
             for index, row in dicionario['ddf'].iterrows():
                 self.preenche_ddf_tipo_operacao(row['referencia'], row['valor'], row['atraso'])
@@ -468,6 +475,7 @@ class AIIMAutoIt:
         except AutoItError:
             pass
 
+        time.sleep(1)
         if item_anterior == self._get_item_number():
             raise Exception('Ocorreu uma falha na criação de item no AIIM2003, não conseguiu criar um novo...')
 

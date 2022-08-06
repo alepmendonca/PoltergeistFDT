@@ -1,11 +1,15 @@
 import datetime
 import re
+import sys
 import threading
+import time
 from json import JSONDecodeError
 from zipfile import BadZipFile
 
+import PyInstaller.__main__
 import PySimpleGUI as sg
 import numpy as np
+import pandas as pd
 
 import Controller
 import GUIFunctions
@@ -215,6 +219,46 @@ def open_audit(pasta: Path):
     __refresh_tabs(pasta)
 
 
+def print_efd(book: str):
+    referencias = Controller.efd_references_imported_PVA()
+    referencias_txt = [f'{GeneralFunctions.meses[d.month-1]} de {d.year}' for d in referencias]
+    layout = [
+        [sg.VPush()],
+        [sg.Text('Selecione as referências que deseja gerar PDFs.')],
+        [sg.Text('As referências que aparecem são as já importadas.')],
+        [sg.Text(f'Os arquivos gerados serão salvos na subpasta {get_current_audit().aiim_path().name}.')],
+        [sg.Push(), sg.Listbox(values=referencias_txt, key='-EFD-PRINT-',
+                               size=(30, 10),
+                               select_mode=sg.LISTBOX_SELECT_MODE_MULTIPLE), sg.Push()],
+        [sg.Push(), sg.Button('Gerar Livros'), sg.Push()],
+        [sg.VPush()]
+    ]
+    match book:
+        case 'lrs':
+            titulo = 'Livro de Saídas'
+        case 'lre':
+            titulo = 'Livro de Entradas'
+        case 'lri':
+            titulo = 'Livro de Inventário'
+        case 'lraicms':
+            titulo = 'Livro de Apuração de ICMS'
+        case _:
+            titulo = 'EFD'
+    window = sg.Window(titulo, layout=layout,
+                       size=(350, 300),
+                       auto_size_text=True, auto_size_buttons=True,
+                       text_justification='c',
+                       resizable=False, finalize=True,
+                       default_element_size=(15, 1),
+                       modal=True)
+    event, values = window.read()
+    window.close()
+    if event == 'Gerar Livros':
+        referencias_selecionadas = [referencias[referencias_txt.index(data_txt)] for data_txt in values['-EFD-PRINT-']]
+        WaitWindow.open_wait_window(Controller.print_efd, 'Impressão de EFD',
+                                    book, referencias_selecionadas)
+
+
 def populate_database(groups: list, progress: dict, eventoThread: threading.Event):
     refresh_data_tab()
     progress.clear()
@@ -222,6 +266,8 @@ def populate_database(groups: list, progress: dict, eventoThread: threading.Even
 
 
 def analysis_chosen(analysis: Analysis):
+    if get_current_audit() is None:
+        return
     if analysis.is_query_based():
         window['query_title'].update(value='Consulta em SQL:')
         window['-SQL-'].update(value=analysis.query, disabled=True)
@@ -250,7 +296,7 @@ def run_query(analysis: Analysis):
             GUIFunctions.popup_ok(erroSGBD[0], titulo='Erro na consulta')
         else:
             GeneralFunctions.logger.exception('Erro em consulta ao BD de query para análise')
-            GUIFunctions.popup_erro(str(e), title='Erro na consulta')
+            GUIFunctions.popup_erro(str(e), titulo='Erro na consulta')
     else:
         if total == 0:
             GUIFunctions.popup_ok('Não foram encontrados resultados para esta consulta.',
@@ -747,12 +793,18 @@ def menu_layout(tipo_menu: str):
                 ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
                              'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
                              'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
+                ['E&FD', ['Imprimir LRE::-MENU-PRINT-LRE-',
+                          'Imprimir LRS::-MENU-PRINT-LRS-',
+                          'Imprimir LRI::-MENU-PRINT-LRI-',
+                          'Imprimir LRAICMS::-MENU-PRINT-LRAICMS-']],
                 ['A&IIM', ['Cria AIIM (gera número e AIIM2003)::-MENU-CREATE-AIIM-']],
                 ['A&juda', ['Sobre::-MENU-ABOUT-']]
             ]
         case 'AUDITORIA_COM_AIIM':
             recibo_key = 'Envia Recibo de Arquivos Digitais::-MENU-AIIM-RECEIPT-'
-            aiim_submenu = ['Gera Relato, Quadros e Relatório::-MENU-AIIM-REPORTS-',
+            aiim_submenu = ['Gera Relato e Quadros 1 a 3::-MENU-AIIM-REPORTS-',
+                            'Atualiza Relatório Circunstanciado::-MENU-AIIM-CUSTOM-REPORT-',
+                            'Gera Provas Gerais::-MENU-AIIM-GENERAL-PROOFS-',
                             'Atualiza Quadro de Operações::-MENU-AIIM-OPERATIONS-',
                             'Gera Arquivo Backup AIIM2003::-MENU-AIIM-EXPORT-',
                             'Gera Arquivo Transmissão AIIM2003::-MENU-AIIM-UPLOAD-']
@@ -769,6 +821,10 @@ def menu_layout(tipo_menu: str):
                 ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
                              'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
                              'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
+                ['E&FD', ['Imprimir LRE::-MENU-PRINT-LRE-',
+                          'Imprimir LRS::-MENU-PRINT-LRS-',
+                          'Imprimir LRI::-MENU-PRINT-LRI-',
+                          'Imprimir LRAICMS::-MENU-PRINT-LRAICMS-']],
                 ['A&IIM', aiim_submenu],
                 ['A&juda', ['Sobre::-MENU-ABOUT-']]
             ]
@@ -857,7 +913,41 @@ def data_extraction_progress_update(evento_progresso: str, tipo_progresso: str):
             )
 
 
+def generate_release():
+    PyInstaller.__main__.run([
+        __file__,
+        '--onedir', '--nowindowed', '--noconfirm',
+        f'--name={GeneralFunctions.project_name}',
+        f'--icon=resources/ghost.ico',
+        '--add-data=resources;resources',
+        '--add-data=mysqldump;mysqldump',
+        '--add-data=wkhtmltopdf;wkhtmltopdf',
+        '--add-data=efd-pva-inspector;efd-pva-inspector',
+        '--add-data=venv/Lib/site-packages/autoit/lib/*;autoit/lib',
+        '--add-binary=venv/share/py4j/*;share/py4j',
+        '--hidden-import=py4j.java_collections',
+        '--hidden-import=AiimProofGenerator',
+        f'--splash={InitialConfigurationWizard.splash_image_path()}'
+    ])
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 0 and sys.argv[-1].endswith('release'):
+        generate_release()
+        sys.exit()
+
+    try:
+        import pyi_splash
+        while not pyi_splash.is_alive():
+            GeneralFunctions.logger.debug('Esperando splash screen ficar habilitada')
+            time.sleep(1)
+        pyi_splash.update_text(f'{GeneralFunctions.project_name} v{GeneralFunctions.project_version}')
+        GeneralFunctions.logger.debug('Realizado update da splash screen')
+    except ModuleNotFoundError:
+        pass
+    except Exception as e:
+        GeneralFunctions.logger.exception('Falha ao fazer update na splashscreen')
+        pass
 
     # tenta excluir diretorio tmp no início
     GeneralFunctions.clean_tmp_folder()
@@ -875,6 +965,16 @@ if __name__ == "__main__":
     window.set_min_size((800, 500))
     window_layout_fix()
     refresh_data_tab()
+
+    try:
+        import pyi_splash
+        pyi_splash.close()
+        GeneralFunctions.logger.debug('Fechada janela splash')
+    except ModuleNotFoundError:
+        pass
+    except Exception as e:
+        GeneralFunctions.logger.exception('Falha ao fechar splashscreen')
+        pass
 
     aiims = []
     extracoes = {}
@@ -1002,9 +1102,10 @@ if __name__ == "__main__":
                                                     aiim_existing)
             refresh_aiim_tab()
         elif event == '-AIIM-CREATE-ITEM-':
-            WaitWindow.open_wait_window(Controller.create_aiim_item, 'Criar Item no AIIM',
-                                        values['-INFRACTION-CHOSEN-'][0])
-            verification_chosen_for_infraction(values['-INFRACTION-CHOSEN-'][0])
+            aiim_item = values['-INFRACTION-CHOSEN-'][0]
+            WaitWindow.open_wait_window(Controller.create_aiim_item, 'Criar Item no AIIM', aiim_item)
+            refresh_aiim_tab()
+            verification_chosen_for_infraction(aiim_item)
         elif event == '-AIIM-UPDATE-ITEM-':
             WaitWindow.open_wait_window(Controller.cria_ddf, 'Atualizar DDF de Item no AIIM',
                                         values['-INFRACTION-CHOSEN-'][0])
@@ -1043,8 +1144,20 @@ if __name__ == "__main__":
             __refresh_tabs(get_current_audit().path())
         elif event.endswith('-MENU-PROPERTIES-'):
             GeneralConfiguration.configuration_window()
+        elif event.endswith('-MENU-PRINT-LRE-'):
+            print_efd('lre')
+        elif event.endswith('-MENU-PRINT-LRS-'):
+            print_efd('lrs')
+        elif event.endswith('-MENU-PRINT-LRI-'):
+            print_efd('lri')
+        elif event.endswith('-MENU-PRINT-LRAICMS-'):
+            print_efd('lraicms')
         elif event.endswith('-MENU-AIIM-REPORTS-'):
             WaitWindow.open_wait_window(Controller.print_aiim_reports, 'Gerar Relatórios do AIIM')
+        elif event.endswith('-MENU-AIIM-CUSTOM-REPORT-'):
+            WaitWindow.open_wait_window(Controller.generate_custom_report, 'Gerar Relatório Circunstanciado')
+        elif event.endswith('-MENU-AIIM-GENERAL-PROOFS-'):
+            WaitWindow.open_wait_window(Controller.generate_general_proofs_attachment, 'Gerar Provas Gerais')
         elif event.endswith('-MENU-AIIM-OPERATIONS-'):
             WaitWindow.open_wait_window(Controller.declare_operations_in_aiim, 'Cadastrar Operações no AIIM2003')
         elif event.endswith('-MENU-AIIM-RECEIPT-'):

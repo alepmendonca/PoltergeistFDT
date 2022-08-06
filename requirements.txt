@@ -19,3 +19,5 @@ pillow
 tkhtmlview
 mysql-connector-python
 python-docx
+pyinstaller
+wincertstore

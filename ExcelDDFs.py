@@ -92,6 +92,27 @@ def _dataframe_to_rows(df: pd.DataFrame, header=True):
         yield row
 
 
+template_row = 0
+
+
+def _get_template_row(wb: Workbook = None, planilha_path: Path = None) -> int:
+    global template_row
+    if template_row > 0:
+        return template_row
+
+    if wb is not None:
+        template_row = wb['template'].max_row
+    else:
+        if planilha_path is None:
+            raise ValueError('Não foi passado nenhum argumento pra encontrar a planilha!')
+        try:
+            wb = openpyxl.load_workbook(planilha_path)
+            template_row = wb['template'].max_row
+        finally:
+            wb.close()
+    return template_row
+
+
 def _exporta_relatorio_para_planilha(sheet_name: str, analysis: Analysis, df: pd.DataFrame,
                                      wb: Workbook, infraction: Infraction = None):
     try:
@@ -101,7 +122,7 @@ def _exporta_relatorio_para_planilha(sheet_name: str, analysis: Analysis, df: pd
         else:
             ws.title = sheet_name
         celula_cabecalho_template = ws[f'A{ws.max_row}']
-        template_row = ws.max_row
+        template_row = _get_template_row(wb)
         columns_to_drop = []
         if infraction:
             columns_to_drop = infraction.analysis.filter_columns()
@@ -308,7 +329,8 @@ class ExcelDDFs:
     def planilha(self, sheet_name: str) -> pd.DataFrame:
         if self._planilha.get(sheet_name) is None:
             try:
-                self._planilha[sheet_name] = pd.read_excel(self.planilha_path, sheet_name=sheet_name, header=9)
+                self._planilha[sheet_name] = pd.read_excel(self.planilha_path, sheet_name=sheet_name,
+                                                           header=_get_template_row(planilha_path=self.planilha_path)-1)
             except ValueError as ex:
                 if str(ex) == f"Worksheet named '{sheet_name}' not found":
                     raise ExcelArrazoadoAbaInexistenteException(f'Aba {sheet_name} não existe mais na planilha!')
@@ -350,7 +372,7 @@ class ExcelDDFs:
 
                 linha_saldo = 2
                 for _, referencia in saldos.iterrows():
-                    if mes_referencia != referencia['referencia']:
+                    if mes_referencia != referencia['referencia'].date():
                         raise ExcelArrazoadoCriticalException(f'Não foi encontrada na Conta Fiscal ICMS saldo para '
                                                               f'referência {mes_referencia}! '
                                                               f'Talvez precise editar arquivo cficms.json manualmente...')
@@ -444,20 +466,30 @@ class ExcelDDFs:
         return PDFExtractor.vencimentos_de_PDF_CFICMS(self.conta_fiscal_path(), self.main_path,
                                                       audit.get_periodos_da_fiscalizacao(rpa=True))
 
+    def update_number_in_subtotals(self, sheet_name: str, item: int):
+        wb = openpyxl.load_workbook(self.planilha_path, keep_vba=True)
+        ws = wb[sheet_name]
+        subitem = 1
+        for row in ws.iter_rows(min_row=_get_template_row(wb) + 1, max_row=ws.max_row, max_col=1):
+            for cell in row:
+                if isinstance(cell.value, str):
+                    if cell.value.startswith('Total Subitem'):
+                        cell.value = f'Total Subitem {item}.{subitem}'
+                    elif cell.value.startswith('TOTAL ITEM'):
+                        cell.value = f'TOTAL ITEM {item}'
+        self.salva_planilha(wb)
+
     def get_ddf_from_sheet(self, sheet_name: str, inciso: str, alinea: str):
         sheet = self.planilha(sheet_name)
         is_monthly_grouped = len(list(filter(lambda k: k.upper() == 'MÊS', sheet.keys()))) > 0
         titulos_planilha = sheet.keys().tolist()
         if not is_monthly_grouped and any([titulo in titulos_planilha for titulo in ['Referência', 'Período']]):
             # se a planilha não é agrupada, vou supor que última coluna tem os valores
-            #titulo_index = int(sheet[sheet[sheet.keys()[0]].isin(titulos_planilha)].index[0])
             titulo = [titulo for titulo in titulos_planilha if titulo in ['Referência', 'Período']][0]
-            #aba = sheet[titulo_index+1:]
             aba = sheet.dropna(axis=0, how='all')
             aba['item'] = aba.index
             aba = aba.iloc[:, [-1, -2, titulos_planilha.index(titulo)]]
-            aba['numero'] = aba.index
-            aba.columns = ['item', 'valor', 'referencia', 'numero']
+            aba.columns = ['item', 'valor', 'referencia']
             aba['referencia'] = aba['referencia'].apply(lambda r: GeneralFunctions.last_day_of_month(r))
         else:
             aba = sheet[
@@ -479,7 +511,13 @@ class ExcelDDFs:
 
         aba['referencia'] = aba['referencia'].astype('datetime64[ns]')
 
-        if inciso == 'I' and alinea in ['b', 'c', 'd', 'i', 'j', 'l', 'm']:
+        if inciso == 'I' and alinea == 'a':
+            aba['valor'] = aba['valor'].apply(lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
+            ddf = aba[['valor', 'referencia']]
+            ddf['dia_seguinte'] = ddf['referencia'].apply(
+                lambda d: f'{(d + datetime.timedelta(days=1)).strftime("%d/%m/%y")}'
+            )
+        elif inciso == 'I' and alinea in ['b', 'c', 'd', 'i', 'j', 'l']:
             if is_monthly_grouped:
                 vencimentos = self.get_vencimentos_GIA()
                 aba['valor'] = aba['valor'].apply(lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
@@ -578,7 +616,7 @@ class ExcelDDFs:
     def periodos_de_referencia(self, sheet_name, freq='M'):
         aba = self.planilha(sheet_name)
         if type(aba.iloc[-2, -1]) in (datetime.datetime, datetime.date):
-            aba = aba.iloc[:-1, -1]
+            aba = aba.iloc[:-1, -1].dropna(axis=0)
         else:
             # considera que a última coluna de data (não timestamp preenchido) encontrada é a referência
             colunas_data = [idx for idx, vlw in enumerate(aba.iloc[-1].tolist())
@@ -760,8 +798,8 @@ class ExcelDDFs:
                 data.append([int(str(ref)[4:]), int(str(ref)[:4]), valor])
                 refs.append(periodo)
                 row += 1
-            refs.sort()
             new_df = pd.DataFrame(data, columns=['Mes', 'Ano', 'Valor Contabil - CFOP'], index=pd.to_datetime(refs))
+            refs.sort()
             if self.operacoes_csv.is_file() and refs[0] < GeneralFunctions.first_day_of_month_before(datetime.date.today()):
                 ops_df = pd.concat([csv_df, new_df])
             else:

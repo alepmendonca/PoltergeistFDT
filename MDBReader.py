@@ -43,7 +43,8 @@ class MDBReader:
 
     def insert_selics(self, df: pd.DataFrame):
         for mes, valor in df.iterrows():
-            self.cur.execute('insert into selic (AnoMes, Valor) values (?,?);', f'{mes.year}{mes.month:02}', valor['selic'])
+            self.cur.execute('insert into selic (AnoMes, Valor) values (?,?);',
+                             f'{mes.year}{mes.month:02}', valor['selic'])
             logger.info(f'Cadastrada SELIC de {mes.strftime("%m/%Y")}: {valor["selic"]}')
         self.cur.commit()
 
@@ -90,6 +91,8 @@ class MDBReader:
 
     def insert_operations(self, aiim_number: int, operations: pd.DataFrame):
         auto_id = self.cur.execute('select id_auto from Auto where numero = ?;', aiim_number).fetchone()[0]
+        # precisa setar este valor na tabela auto pra os cálculos do AIIM2003 considerarem as operações
+        self.cur.execute('update Auto set opcao_VTO = 22 where id_auto = ?;', auto_id)
         self.cur.execute('delete from valor_total_operacoes where id_auto = ?;', auto_id)
         i = 0
         for index, op in operations.iterrows():
