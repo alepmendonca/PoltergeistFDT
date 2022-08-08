@@ -4,8 +4,7 @@ import queue
 from collections.abc import Callable
 
 import GUIFunctions
-from GeneralFunctions import logger, ThreadWithReturnValue
-from LogWindow import QueueHandler, QueueFormatter
+from GeneralFunctions import logger, ThreadWithReturnValue, QueueHandler, QueueFormatter
 
 
 def open_wait_window(funcao_batch: Callable, funcao_desc: str, *parametros_funcao_batch):

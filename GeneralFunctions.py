@@ -605,3 +605,22 @@ warning_img = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x1e\x00\x00\x00\
               b'\x14=\xf0\xa7\x11\x03\xbc\x07\xd0\x03\x9c\x04\xaa@\r\x88?\xa6\xab\xd6\xe08\x0e\xdc\xfa\x1fy\x07E' \
               b'\x99v\xc8\xafg\x00\x00\x00\x00IEND\xaeB`\x82 '
 app_icon = r'resources/ghost.ico'
+
+
+class QueueHandler(logging.Handler):
+    def __init__(self, log_queue):
+        super().__init__()
+        self.log_queue = log_queue
+        self.setLevel('INFO')
+
+    def emit(self, record):
+        self.log_queue.put(record)
+
+
+class QueueFormatter(logging.Formatter):
+    def format(self, record) -> str:
+        if record.exc_info:
+            record.exc_info = None
+            record.exc_text = None
+            record.stack_info = None
+        return super().format(record)
