@@ -610,6 +610,8 @@ def menu_layout(tipo_menu: str):
                               'Sair::-MENU-EXIT-']],
                 ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
                              'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
+                             '---',
+                             'Abrir Planilha::-MENU-OPEN-SHEET-',
                              'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
                 ['E&FD', ['Imprimir LRE::-MENU-PRINT-LRE-',
                           'Imprimir LRS::-MENU-PRINT-LRS-',
@@ -639,6 +641,8 @@ def menu_layout(tipo_menu: str):
                               'Sair::-MENU-EXIT-']],
                 ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
                              'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
+                             '---',
+                             'Abrir Planilha::-MENU-OPEN-SHEET-',
                              'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
                 ['E&FD', ['Imprimir LRE::-MENU-PRINT-LRE-',
                           'Imprimir LRS::-MENU-PRINT-LRS-',
@@ -930,6 +934,9 @@ if __name__ == "__main__":
             WaitWindow.open_wait_window(Controller.update_dados_osf, 'Atualizar Dados do Contribuinte',
                                         get_current_audit().osf)
             __refresh_tabs(get_current_audit().path())
+        elif event.endswith('-MENU-OPEN-SHEET-'):
+            subprocess.Popen(f"{GeneralFunctions.get_default_windows_app('.xlsx')} "
+                             f'"{get_current_audit().get_sheet().planilha_path.absolute()}"')
         elif event.endswith('-MENU-RELOAD-SHEET-'):
             get_current_audit().clear_cache()
             __refresh_tabs(get_current_audit().path())
