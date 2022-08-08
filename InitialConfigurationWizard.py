@@ -13,7 +13,8 @@ from PIL import Image
 
 def __create_wizard_window(layout: list) -> sg.Window:
     return sg.Window(GeneralFunctions.project_name, layout, size=(600, 550),
-                     resizable=False, finalize=True, text_justification='center', element_justification='center')
+                     resizable=False, finalize=True, text_justification='center',
+                     element_justification='center', icon=GeneralFunctions.app_icon)
 
 
 def __get_dados_from_web(config):
