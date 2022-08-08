@@ -309,7 +309,7 @@ class ExcelDDFs:
                 wb = openpyxl.load_workbook(self.planilha_path, keep_vba=True)
                 ws = wb['EFDs']
                 ws['A4'].value = f"{GeneralConfiguration.get().drt_nome} - {GeneralConfiguration.get().drt_sigla}"
-                ws['A5'].value = f"NÚCLEO DE FISCALIZAÇÃO - NF {GeneralConfiguration.get().nucleo_fiscal} - " \
+                ws['A5'].value = f"NÚCLEO DE FISCALIZAÇÃO - NF {GeneralConfiguration.get().nucleo_fiscal()} - " \
                                  f"EQUIPE FISCAL {GeneralConfiguration.get().equipe_fiscal}"
                 ws['A8'].value = f'{Audit.get_current_audit().empresa} - IE {Audit.get_current_audit().ie}'
                 self.salva_planilha(wb)
