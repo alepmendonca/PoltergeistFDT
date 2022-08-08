@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<classpath>
+	<classpathentry kind="src" path="src"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-13">
+		<attributes>
+			<attribute name="module" value="true"/>
+		</attributes>
+	</classpathentry>
+	<classpathentry kind="lib" path="C:/Sefaz/EFD ICMS IPI/fiscalpva.jar"/>
+	<classpathentry kind="output" path="bin"/>
+	<referencedentry kind="lib" path="D:/Sefaz/EFD ICMS IPI/lib/br.gov.serpro.sped.fiscalpva/fiscalpva-nucleo.jar" sourcepath="/fiscalpva-nucleo"/>
+	<referencedentry kind="lib" path="D:/Sefaz/EFD ICMS IPI/lib/br.gov.serpro.ppgd/ppgd-infraestrutura.jar" sourcepath="/ppgd-infraestrutura"/>
+	<referencedentry kind="lib" path="C:/Sefaz/EFD ICMS IPI/lib/br.gov.serpro.sped.fiscalpva/fiscalpva-nucleo.jar" sourcepath="/fiscalpva-nucleo"/>
+</classpath>

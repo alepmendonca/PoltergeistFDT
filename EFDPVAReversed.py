@@ -83,7 +83,7 @@ class EFDPVAReversed:
     def __exit__(self, exc_type, exc_val, exc_tb):
         if self._gateway is not None:
             try:
-                self._gateway.jvm.br.gov.sp.aiimgenerator.EFDComprehension.encerramentoBD()
+                self._gateway.jvm.br.gov.sp.efdpvainspector.EFDComprehension.encerramentoBD()
                 self._gateway.shutdown()
                 self._processoJVM.kill()
                 self._gateway = None
@@ -98,7 +98,7 @@ class EFDPVAReversed:
                     gateway_parameters=GatewayParameters(port=self._porta_gateway),
                     java_process=self._processoJVM)
                 logger.info('Iniciando banco de dados do EFD PVA ICMS IPI')
-                self._gateway.jvm.br.gov.sp.aiimgenerator.EFDComprehension.inicializacaoSimplesBD()
+                self._gateway.jvm.br.gov.sp.efdpvainspector.EFDComprehension.inicializacaoSimplesBD()
             except py4j.java_gateway.Py4JJavaError as e:
                 self._gateway = None
                 logger.exception(
@@ -114,7 +114,7 @@ class EFDPVAReversed:
                 return
             window.write_event_value('-DATA-EXTRACTION-STATUS-', ['EFD-PVA', 'BEGIN'])
             logger.info(f'Importando arquivo {efd_file} no EFD PVA ICMS IPI...')
-            self.__gateway().jvm.br.gov.sp.aiimgenerator.EFDImporter.importaEFD(
+            self.__gateway().jvm.br.gov.sp.efdpvainspector.EFDImporter.importaEFD(
                 str(efd_file), str(self._efds_json_path))
             window.write_event_value('-DATA-EXTRACTION-STATUS-', ['EFD-PVA', 'END'])
         except Exception as e:
@@ -128,7 +128,7 @@ class EFDPVAReversed:
         logger.info(f'Imprimindo LRAICMS de {referencia.strftime("%m/%Y")}...')
         referencia = f"01/{referencia.strftime('%m/%Y')}"
         try:
-            self.__gateway().jvm.br.gov.sp.aiimgenerator.EFDPrinter.imprimeApuracao(cnpj_sem_digitos, ie, referencia,
+            self.__gateway().jvm.br.gov.sp.efdpvainspector.EFDPrinter.imprimeApuracao(cnpj_sem_digitos, ie, referencia,
                                                                                     str(arquivo.absolute()))
         except py4j.java_gateway.Py4JJavaError as e:
             logger.exception(f'Ocorreu uma falha na impressão do LRAICMS referencia {referencia}.')
@@ -140,7 +140,7 @@ class EFDPVAReversed:
         logger.info(f'Imprimindo LRI de {referencia.strftime("%m/%Y")}...')
         referencia = f"01/{referencia.strftime('%m/%Y')}"
         try:
-            self.__gateway().jvm.br.gov.sp.aiimgenerator.EFDPrinter.imprimeInventario(cnpj_sem_digitos, ie, referencia,
+            self.__gateway().jvm.br.gov.sp.efdpvainspector.EFDPrinter.imprimeInventario(cnpj_sem_digitos, ie, referencia,
                                                                                       str(arquivo.absolute()))
         except py4j.java_gateway.Py4JJavaError as e:
             logger.exception(f'Ocorreu uma falha na impressão do LRI referencia {referencia}.')
@@ -152,7 +152,7 @@ class EFDPVAReversed:
         logger.info(f'Imprimindo LRE de {referencia.strftime("%m/%Y")}...')
         referencia = f"01/{referencia.strftime('%m/%Y')}"
         try:
-            self.__gateway().jvm.br.gov.sp.aiimgenerator.EFDPrinter.imprimeEntradas(cnpj_sem_digitos, ie, referencia,
+            self.__gateway().jvm.br.gov.sp.efdpvainspector.EFDPrinter.imprimeEntradas(cnpj_sem_digitos, ie, referencia,
                                                                                     str(arquivo.absolute()))
         except py4j.java_gateway.Py4JJavaError as e:
             logger.exception(f'Ocorreu uma falha na impressão do LRE referencia {referencia}.')
@@ -164,7 +164,7 @@ class EFDPVAReversed:
         logger.info(f'Imprimindo LRS de {referencia.strftime("%m/%Y")}...')
         referencia = f"01/{referencia.strftime('%m/%Y')}"
         try:
-            self.__gateway().jvm.br.gov.sp.aiimgenerator.EFDPrinter.imprimeSaidas(cnpj_sem_digitos, ie, referencia,
+            self.__gateway().jvm.br.gov.sp.efdpvainspector.EFDPrinter.imprimeSaidas(cnpj_sem_digitos, ie, referencia,
                                                                                   str(arquivo.absolute()))
         except py4j.java_gateway.Py4JJavaError as e:
             logger.exception(f'Ocorreu uma falha na impressão do LRE referencia {referencia}.')
