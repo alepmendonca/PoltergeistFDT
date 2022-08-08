@@ -4,7 +4,7 @@ import PySimpleGUI as sg
 import logging
 import threading
 import time
-from GeneralFunctions import logger
+from GeneralFunctions import logger, QueueFormatter
 
 """
     Código originalmente tirado de
@@ -47,16 +47,6 @@ class ThreadedApp(threading.Thread):
         self._stop_event.set()
 
 
-class QueueHandler(logging.Handler):
-    def __init__(self, log_queue):
-        super().__init__()
-        self.log_queue = log_queue
-        self.setLevel('INFO')
-
-    def emit(self, record):
-        self.log_queue.put(record)
-
-
 class WindowEventHandler(logging.Handler):
     def __init__(self, window: sg.Window):
         super().__init__()
@@ -65,15 +55,6 @@ class WindowEventHandler(logging.Handler):
 
     def emit(self, record):
         self.window.write_event_value('-LOG-WINDOW-EVENT-', self.format(record))
-
-
-class QueueFormatter(logging.Formatter):
-    def format(self, record) -> str:
-        if record.exc_info:
-            record.exc_info = None
-            record.exc_text = None
-            record.stack_info = None
-        return super().format(record)
 
 
 class LogWindow(sg.Window):

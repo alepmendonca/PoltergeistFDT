@@ -1,5 +1,7 @@
 import datetime
+import os
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -218,7 +220,7 @@ def open_audit(pasta: Path):
 
 
 def print_efd(book: str):
-    referencias = Controller.efd_references_imported_PVA()
+    referencias = WaitWindow.open_wait_window(Controller.efd_references_imported_PVA, '')
     referencias_txt = [f'{GeneralFunctions.meses[d.month-1]} de {d.year}' for d in referencias]
     layout = [
         [sg.VPush()],
@@ -598,12 +600,13 @@ def menu_layout(tipo_menu: str):
                               'Abrir Auditoria::-MENU-OPEN-AUDIT-',
                               'Sair::-MENU-EXIT-']],
                 ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-']],
-                ['A&juda', ['Sobre::-MENU-ABOUT-']]
+                ['A&juda', ['Abrir Pasta do Usuário::-MENU-USER-FOLDER-', 'Sobre::-MENU-ABOUT-']]
             ]
         case 'AUDITORIA_SEM_AIIM':
             return [
                 ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
                               'Abrir Auditoria::-MENU-OPEN-AUDIT-',
+                              'Abrir Pasta da Auditoria::-MENU-AUDIT-FOLDER-',
                               'Sair::-MENU-EXIT-']],
                 ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
                              'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
@@ -613,7 +616,7 @@ def menu_layout(tipo_menu: str):
                           'Imprimir LRI::-MENU-PRINT-LRI-',
                           'Imprimir LRAICMS::-MENU-PRINT-LRAICMS-']],
                 ['A&IIM', ['Cria AIIM (gera número e AIIM2003)::-MENU-CREATE-AIIM-']],
-                ['A&juda', ['Sobre::-MENU-ABOUT-']]
+                ['A&juda', ['Abrir Pasta do Usuário::-MENU-USER-FOLDER-', 'Sobre::-MENU-ABOUT-']]
             ]
         case 'AUDITORIA_COM_AIIM':
             recibo_key = 'Envia Recibo de Arquivos Digitais::-MENU-AIIM-RECEIPT-'
@@ -632,6 +635,7 @@ def menu_layout(tipo_menu: str):
             return [
                 ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
                               'Abrir Auditoria::-MENU-OPEN-AUDIT-',
+                              'Abrir Pasta da Auditoria::-MENU-AUDIT-FOLDER-',
                               'Sair::-MENU-EXIT-']],
                 ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
                              'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
@@ -641,7 +645,7 @@ def menu_layout(tipo_menu: str):
                           'Imprimir LRI::-MENU-PRINT-LRI-',
                           'Imprimir LRAICMS::-MENU-PRINT-LRAICMS-']],
                 ['A&IIM', aiim_submenu],
-                ['A&juda', ['Sobre::-MENU-ABOUT-']]
+                ['A&juda', ['Abrir Pasta do Usuário::-MENU-USER-FOLDER-', 'Sobre::-MENU-ABOUT-']]
             ]
         case unknown_command:
             raise Exception(f'Menu inválido: {unknown_command}')
@@ -957,6 +961,12 @@ if __name__ == "__main__":
             refresh_aiim_tab()
         elif event.endswith('-MENU-AIIM-UPLOAD-'):
             WaitWindow.open_wait_window(Controller.upload_aiim, 'Transmitir AIIM')
+        elif event.endswith('-MENU-USER-FOLDER-'):
+            subprocess.run([os.path.join(os.getenv('WINDIR'), 'explorer.exe'),
+                            GeneralFunctions.get_user_path().absolute()])
+        elif event.endswith('-MENU-AUDIT-FOLDER-'):
+            subprocess.run([os.path.join(os.getenv('WINDIR'), 'explorer.exe'),
+                            get_current_audit().path().absolute()])
         elif event.endswith('-MENU-ABOUT-'):
             sg.Window(GeneralFunctions.project_name,
                       [
