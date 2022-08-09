@@ -1,5 +1,6 @@
 import json
 import re
+import keyring
 from pathlib import Path
 import PySimpleGUI as sg
 import GeneralFunctions
@@ -42,19 +43,47 @@ class Configuration:
         self.funcional = self._dicionario.get('funcional')
         self.email = self._dicionario.get('email')
         self.intranet_login = self._dicionario.get('intranet_login')
-        self.intranet_pass = self._dicionario.get('intranet_pass')
         self.certificado = self._dicionario.get('certificado')
-        self.certificado_pass = self._dicionario.get('certificado_pass')
         self.sigadoc_login = self._dicionario.get('sigadoc_login')
-        self.sigadoc_pass = self._dicionario.get('sigadoc_pass')
         self.postgres_address = self._dicionario.get('postgres_address', 'localhost')
         self._postgres_port = self._dicionario.get('postgres_port', 5432)
         self.postgres_dbname = self._dicionario.get('postgres_dbname', 'postgres')
         self.postgres_user = self._dicionario.get('postgres_user', 'postgres')
-        self.postgres_pass = self._dicionario.get('postgres_pass')
         self.ultima_pasta = Path(self._dicionario.get('ultima_pasta', str(GeneralFunctions.get_user_path().absolute())))
         self._efd_path = Path(self._dicionario['efd_path']) if self._dicionario.get('efd_path') else Path.home()
         self.max_epat_attachment_size = 8
+
+    @property
+    def intranet_pass(self) -> str:
+        return keyring.get_password(GeneralFunctions.project_name, 'intranet')
+
+    @intranet_pass.setter
+    def intranet_pass(self, password: str):
+        keyring.set_password(GeneralFunctions.project_name, 'intranet', password)
+
+    @property
+    def certificado_pass(self) -> str:
+        return keyring.get_password(GeneralFunctions.project_name, 'certificate')
+
+    @certificado_pass.setter
+    def certificado_pass(self, password: str):
+        keyring.set_password(GeneralFunctions.project_name, 'certificate', password)
+
+    @property
+    def sigadoc_pass(self) -> str:
+        return keyring.get_password(GeneralFunctions.project_name, 'sigadoc')
+
+    @sigadoc_pass.setter
+    def sigadoc_pass(self, password: str):
+        keyring.set_password(GeneralFunctions.project_name, 'sigadoc', password)
+
+    @property
+    def postgres_pass(self) -> str:
+        return keyring.get_password(GeneralFunctions.project_name, 'postgres')
+
+    @postgres_pass.setter
+    def postgres_pass(self, password: str):
+        keyring.set_password(GeneralFunctions.project_name, 'postgres', password)
 
     @property
     def drt_sigla(self) -> str:
