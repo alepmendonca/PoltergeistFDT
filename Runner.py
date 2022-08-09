@@ -454,10 +454,10 @@ def notification_send(notification: PossibleInfraction, title: str, content: str
             if pasta_notificacao:
                 sg.popup_ok(f'Foi enviada notificação DEC! Os arquivos recebidos'
                             f'em resposta devem ser guardados na pasta {pasta_notificacao}')
-                refresh_notifications_tab()
+            refresh_notifications_tab()
         except Exception as e:
             GUIFunctions.popup_erro('Houve um erro no envio da notificação, '
-                                    f'verifique se os arquivos anexos estão fechados: {str}')
+                                    f'verifique se os arquivos anexos estão fechados: {e}')
 
 
 def update_gifs():

@@ -213,7 +213,8 @@ def get_cnpj_data(cnpj: str):
             }, timeout=10)
             resposta.raise_for_status()
         else:
-            raise payerr
+            logger.exception('Falha no acesso ao ReceitaWS')
+            raise WebScraperException(f'Falha no acesso ao ReceitaWS: {payerr}')
     return resposta.json()
 
 
@@ -240,7 +241,7 @@ def choose_right_client_certificate(parte_titulo: str, nome_procurado: str):
         nome_encontrado = autoit.control_get_text(window_cert, '[CLASS:RICHEDIT50W;INSTANCE:1]')
         if ultimo_nome_encontrado == nome_encontrado:
             autoit.control_click(window_cert, '[CLASS:Button;INSTANCE:5]')
-            raise Exception(f'Não encontrei o certificado de {nome_procurado}!')
+            raise WebScraperException(f'Não encontrei o certificado de {nome_procurado}!')
         if nome_procurado == nome_encontrado:
             ultimo_texto = ''
             texto_encontrado = '1'
@@ -293,9 +294,9 @@ def set_password_for_certificate_in_browser(password: str):
     texto = autoit.control_get_text(popup_senha, '[CLASS:Static; INSTANCE:2]')
     autoit.control_click(popup_senha, '[CLASS:Button; INSTANCE:2]')
     if texto == 'PIN incorreto':
-        raise Exception('Senha incorreta para certificado!')
+        raise WebScraperException('Senha incorreta para certificado!')
     else:
-        raise Exception("O pop-up de senha do smartcard não foi fechado! Verificar manualmente!")
+        raise WebScraperException("O pop-up de senha do smartcard não foi fechado! Verificar manualmente!")
 
 
 def set_password_in_browser(parte_titulo: str, username: str, password: str):
@@ -312,9 +313,14 @@ def set_password_in_browser(parte_titulo: str, username: str, password: str):
         autoit.win_wait(navegador, 1)
         time.sleep(2)
         autoit.win_wait(navegador, 1)
-        raise Exception("O pop-up de login/senha do Chrome não foi fechado! Talvez usuário e senha estejam incorretos!")
+        raise WebScraperException("O pop-up de login/senha do Chrome não foi fechado! "
+                                  "Talvez usuário e senha estejam incorretos!")
     except AutoItError:
         pass
+
+
+class WebScraperException(Exception):
+    pass
 
 
 class SeleniumWebScraper:
@@ -503,8 +509,8 @@ class SeleniumWebScraper:
             self.__get_driver().get(pgsf_url)
         except WebDriverException as we:
             if we.msg.find('ERR_NAME_NOT_RESOLVED') >= 0:
-                raise Exception('Não foi possível acessar o site do PGSF! '
-                                'Verifique se o computador está conectado na rede da Sefaz.')
+                raise WebScraperException('Não foi possível acessar o site do PGSF! '
+                                          'Verifique se o computador está conectado na rede da Sefaz.')
 
         input_username = self.__get_driver().find_element(By.ID, "userID2")
         input_username.clear()
@@ -518,7 +524,7 @@ class SeleniumWebScraper:
         except TimeoutException:
             try:
                 msg = self.__get_driver().find_element(By.CLASS_NAME, 'wpsFieldErrorText').text
-                raise Exception(f'Falha no acesso ao PGSF: {msg}')
+                raise WebScraperException(f'Falha no acesso ao PGSF: {msg}')
             except NoSuchElementException:
                 pass
 
@@ -548,7 +554,8 @@ class SeleniumWebScraper:
             if str(ex).find('network error') > 0 and download_path.is_file():
                 pass
             else:
-                raise ex
+                logger.exception('Falha ao salvar PDF a partir de HTML')
+                raise WebScraperException(f'Falha no salvamento de {download_path.name}: {ex}')
 
     def __sigadoc_login(self, config=GeneralConfiguration.get()):
         self.__get_driver().get(sem_papel_url)
@@ -565,7 +572,7 @@ class SeleniumWebScraper:
         except TimeoutException:
             try:
                 msg = self.__get_driver().find_element(By.CLASS_NAME, 'alert-danger').text
-                raise Exception(f'Falha no acesso ao Sem Papel: {msg}')
+                raise WebScraperException(f'Falha no acesso ao Sem Papel: {msg}')
             except NoSuchElementException:
                 pass
 
@@ -615,7 +622,7 @@ class SeleniumWebScraper:
 
         except Exception as e:
             logger.exception("Erro ao baixar PDF da OSF " + osf + " no PGSF")
-            raise e
+            raise WebScraperException(f"Erro ao baixar PDF da OSF {osf} no PGSF: {e}")
 
     def create_aiim_for_osf(self, osf: str) -> str:
         logger.info(f'Acessando PGSF para criar número de AIIM relacionado à OSF {osf}')
@@ -636,13 +643,13 @@ class SeleniumWebScraper:
             bs = BeautifulSoup(self.__get_driver().page_source, 'html.parser')
             linhas = [re.sub(r'[\s\n]', '', td.text) for td in bs.find_all('td', {'class': 'texto1'})]
             if linhas[-1] == '' and len(bs.find_all('td', {'class': 'mensErro'})) > 1:
-                raise Exception(bs.find_all('td', {'class': 'mensErro'})[1].text.replace('\n', ''))
+                raise WebScraperException(bs.find_all('td', {'class': 'mensErro'})[1].text.replace('\n', ''))
             else:
                 logger.warning(f'Número novo de AIIM {linhas[-1]} obtido!')
                 return linhas[-1]
         except Exception as e:
             logger.exception("Erro ao gerar AIIM para OSF " + osf + " no PGSF")
-            raise e
+            raise WebScraperException(f"Erro ao gerar AIIM para OSF {osf} no PGSF: {e}")
 
     def get_aiims_for_osf(self, osf: str) -> list:
         logger.info(f'Acessando PGSF para verificar AIIMs gerados para OSF {osf}')
@@ -666,7 +673,7 @@ class SeleniumWebScraper:
             return valores
         except Exception as e:
             logger.exception("Erro ao consultar AIIMs da OSF " + osf + " no PGSF")
-            raise e
+            raise WebScraperException(f"Erro ao consultar AIIMs da OSF {osf} no PGSF: {e}")
 
     def print_sat_cupom(self, cupons: list) -> list[Path]:
         logger.info("Consultando cupons SAT")
@@ -692,8 +699,8 @@ class SeleniumWebScraper:
                             EC.visibility_of_element_located((By.CLASS_NAME, "recaptcha-checkbox-checked")))
                     self.__get_driver().switch_to.parent_frame()
                 except TimeoutException:
-                    raise Exception('Você não clicou no captcha do site do SAT, '
-                                    'não consigo fazer tudo sozinho...')
+                    raise WebScraperException('Você não clicou no captcha do site do SAT, '
+                                              'não consigo fazer tudo sozinho...')
                 try:
                     element = self.__get_driver().find_element(By.ID, 'dialog-modal')
                     if element.text.startswith('As consultas a partir de sua faixa de IP estão bloqueadas'):
@@ -711,7 +718,7 @@ class SeleniumWebScraper:
             return paths
         except Exception as e:
             logger.exception("Erro ao consultar cupons SAT na consulta pública")
-            raise e
+            raise WebScraperException(f"Erro ao consultar cupons SAT na consulta pública: {e}")
 
     def get_nfe_inutilizacoes(self, cnpj: str, ano_inicial: int, ano_final: int) -> list[dict]:
         logger.info("Consultando NF-e Inutilizações")
@@ -733,8 +740,8 @@ class SeleniumWebScraper:
                         EC.visibility_of_element_located((By.CLASS_NAME, "recaptcha-checkbox-checked")))
                     self.__get_driver().switch_to.parent_frame()
                 except TimeoutException:
-                    raise Exception('Você não clicou no captcha do site NF-e Inutilizações, '
-                                    'não consigo fazer tudo sozinho...')
+                    raise WebScraperException('Você não clicou no captcha do site NF-e Inutilizações, '
+                                              'não consigo fazer tudo sozinho...')
                 self.__get_driver().find_element(By.ID, "btConsultaInut").click()
 
                 tabela = self.__get_driver().find_element(By.CLASS_NAME, "gridViewTable")
@@ -765,7 +772,8 @@ class SeleniumWebScraper:
             return inutilizacoes
         except Exception as e:
             logger.exception("Erro ao consultar inutilizações de NF-e do CNPJ " + cnpj + " na consulta pública")
-            raise e
+            raise WebScraperException(f"Erro ao consultar inutilizações de NF-e do CNPJ {cnpj} "
+                                      f"na consulta pública: {e}")
 
     # Além de imprimir Cadesp, aproveita pra pegar os dados mais atuais de endereço e histórico de regime
     def get_full_cadesp(self, ie: str, filename: Path):
@@ -924,10 +932,10 @@ class SeleniumWebScraper:
 
         except Exception as e:
             if isinstance(e, IOError) and 'QPainter::begin(): Returned false' in str(e):
-                raise Exception('Arquivo Cadesp.pdf está aberto, feche-o e tente novamente!')
+                raise WebScraperException('Arquivo Cadesp.pdf está aberto, feche-o e tente novamente!')
             else:
-                logger.error("Erro ao baixar Cadesp da IE " + ie, exc_info=e)
-                raise e
+                logger.exception("Erro ao baixar Cadesp da IE " + ie)
+                raise WebScraperException(f"Erro ao baixar Cadesp da IE {ie}: {e}")
 
     def get_conta_fiscal(self, ie: str, ano_inicio: int, ano_fim: int, filename: Path):
         tmp_files = []
@@ -969,7 +977,7 @@ class SeleniumWebScraper:
                     # pode ser que o período não tenha informações. A confirmar
                     erro = self.__get_driver().find_element(By.ID, "MainContent_lblMensagemDeErro").text
                     if not erro.startswith("Contribuinte sem informações"):
-                        raise Exception(erro)
+                        raise WebScraperException(erro)
                     else:
                         continue
                 time.sleep(1)
@@ -982,8 +990,8 @@ class SeleniumWebScraper:
             PDFExtractor.merge_pdfs(filename, tmp_files)
 
         except Exception as e:
-            logger.error("Erro ao baixar Conta Fiscal da IE " + ie, exc_info=e)
-            raise e
+            logger.exception("Erro ao baixar Conta Fiscal da IE " + ie)
+            raise WebScraperException(f"Erro ao baixar Conta Fiscal da IE {ie}: {e}")
 
     def get_gias_apuracao(self, ie: str, inicio: datetime.date, fim: datetime.date, evento: threading.Event) \
             -> list[dict]:
@@ -1008,7 +1016,6 @@ class SeleniumWebScraper:
                                                                      "ConteudoPagina_btn_Login_Certificado_WebForms")
                 t.start()
                 input_certificado.click()
-            t.start()
             t.join()
 
             WebDriverWait(self.__get_driver(), 10).until(EC.visibility_of_element_located((By.LINK_TEXT, "Nova GIA")))
@@ -1067,8 +1074,8 @@ class SeleniumWebScraper:
                 self.__get_driver().back()
             return dados_gias
         except Exception as e:
-            logger.error("Erro ao coletar dados de apuração da GIA da IE " + ie, exc_info=e)
-            raise e
+            logger.exception("Erro ao coletar dados de apuração da GIA da IE " + ie)
+            raise WebScraperException(f"Erro ao coletar dados de apuração da GIA da IE {ie}: {e}")
 
     def __print_gia_apuracao_subpage(self, ie: str, apuracoes: list[datetime.date],
                                      detail_name: str, codes: list[str]) -> list[Path]:
@@ -1152,8 +1159,8 @@ class SeleniumWebScraper:
                                              '/html/body/div[2]/section/div/div/div/div[2]/div/div[2]/a[3]').click()
             return [pdf for k in sorted(paths.keys()) for pdf in paths[k]]
         except Exception as e:
-            logger.error("Erro ao coletar dados de apuração da GIA da IE " + ie, exc_info=e)
-            raise e
+            logger.exception("Erro ao coletar dados de apuração da GIA da IE " + ie)
+            raise WebScraperException(f"Erro ao coletar dados de apuração da GIA da IE {ie}: {e}")
 
     def print_gia_outros_debitos(self, ie: str, apuracoes: list[datetime.date]) -> list[Path]:
         return self.__print_gia_apuracao_subpage(ie, apuracoes, 'Ajustes de Débitos', ['052', '053'])
@@ -1168,8 +1175,8 @@ class SeleniumWebScraper:
             self.__get_driver().get(dec_url)
         except WebDriverException as we:
             if we.msg.find('ERR_NAME_NOT_RESOLVED') >= 0:
-                raise Exception('Não foi possível acessar o site do PGSF Produtividade! '
-                                'Verifique se o computador está conectado na rede da Sefaz.')
+                raise WebScraperException('Não foi possível acessar o site do PGSF Produtividade! '
+                                          'Verifique se o computador está conectado na rede da Sefaz.')
 
         # Click on "Certificado Digital"
         # Cria thread para preencher popup de senha, pois essa página trava thread do Selenium
@@ -1225,8 +1232,8 @@ class SeleniumWebScraper:
             resposta = self.__get_driver().find_element(By.ID, "ConteudoPagina_lblSituacaoDEC").text
             return resposta.find("ESTABELECIMENTO EST") >= 0
         except Exception as e:
-            logger.error("Erro ao verificar habilitacao no DEC do CNPJ " + cnpj, exc_info=e)
-            raise e
+            logger.exception("Erro ao verificar habilitacao no DEC do CNPJ " + cnpj)
+            raise WebScraperException(f"Erro ao verificar habilitacao no DEC do CNPJ {cnpj}: {e}")
 
     def send_notification(self, cnpj: str, titulo: str, conteudo: str, anexos_paths: list[Path] = [],
                           assunto="Notificação para a prestação de informações e entrega de documentos fiscais",
@@ -1237,8 +1244,8 @@ class SeleniumWebScraper:
             self.__get_driver().get(dec_url)
         except WebDriverException as we:
             if we.msg.find('ERR_NAME_NOT_RESOLVED') >= 0:
-                raise Exception('Não foi possível acessar o site do DEC! '
-                                'Verifique se o computador está conectado na rede da Sefaz.')
+                raise WebScraperException('Não foi possível acessar o site do DEC! '
+                                          'Verifique se o computador está conectado na rede da Sefaz.')
         try:
             janela_principal = self.__get_driver().current_window_handle
             # Click on "Certificado Digital"
@@ -1257,7 +1264,6 @@ class SeleniumWebScraper:
                                                                      )
                 t.start()
                 input_certificado.click()
-            t.start()
             t.join()
 
             if len(self.__get_driver().window_handles) > 1:
@@ -1286,8 +1292,12 @@ class SeleniumWebScraper:
             else:
                 Select(self.__get_driver().find_element(By.ID, "ConteudoPagina_lstTipoMensagem")) \
                     .select_by_visible_text("Fiscalização")
-                Select(self.__get_driver().find_element(By.ID, "ConteudoPagina_lstAssunto")) \
-                    .select_by_visible_text(assunto)
+                try:
+                    Select(self.__get_driver().find_element(By.ID, "ConteudoPagina_lstAssunto")) \
+                        .select_by_visible_text(assunto)
+                except NoSuchElementException:
+                    raise WebScraperException(f'Assunto {assunto} não foi encontrado no DEC. '
+                                              f'Verifique a configuração da análise.')
 
             Select(self.__get_driver().find_element(By.ID, "ConteudoPagina_lstTipoDestinatario")) \
                 .select_by_visible_text("Pessoa Jurídica")
@@ -1349,15 +1359,15 @@ class SeleniumWebScraper:
                     except WebDriverException:
                         pass
                 except NoSuchWindowException:
-                    raise Exception('Envio de notificação cancelada pelo usuário! '
-                                    'A notificação ficará como rascunho no DEC, se você não tiver apagado!')
+                    raise WebScraperException('Envio de notificação cancelada pelo usuário! '
+                                              'A notificação ficará como rascunho no DEC, se você não tiver apagado!')
             mensagem = self.__get_driver().find_element(By.ID, "ConteudoPagina_lblSucessoEnvio").text
             notificacao = re.match(r'.*(IC.*\d)', mensagem).group(1)
             logger.info(f'Notificação {notificacao} enviada!')
             return notificacao
         except Exception as e:
             logger.exception(f"Erro ao enviar notificação DEC para CNPJ {cnpj}, título '{titulo}'")
-            raise e
+            raise WebScraperException(f"Erro ao enviar notificação DEC para CNPJ {cnpj}, título '{titulo}': {e}")
         finally:
             if janela_principal and self.__get_driver().current_window_handle != janela_principal:
                 self.__get_driver().close()
@@ -1376,8 +1386,8 @@ class SeleniumWebScraper:
             self.__get_driver().get(dec_url)
         except WebDriverException as we:
             if we.msg.find('ERR_NAME_NOT_RESOLVED') >= 0:
-                raise Exception('Não foi possível acessar o site do DEC! '
-                                'Verifique se o computador está conectado na rede da Sefaz.')
+                raise WebScraperException('Não foi possível acessar o site do DEC! '
+                                          'Verifique se o computador está conectado na rede da Sefaz.')
         try:
             janela_principal = self.__get_driver().current_window_handle
             # Click on "Certificado Digital"
@@ -1449,8 +1459,8 @@ class SeleniumWebScraper:
             logger.info(f'PDF da Notificação DEC {numero_dec} e anexos baixados!')
             return True
         except Exception as e:
-            logger.error("Erro ao baixar PDF da notificação DEC " + numero_dec, exc_info=e)
-            raise e
+            logger.exception("Erro ao baixar PDF da notificação DEC " + numero_dec)
+            raise WebScraperException(f"Erro ao baixar PDF da notificação DEC {numero_dec}: {e}")
         finally:
             if janela_principal is not None and self.__get_driver().current_window_handle != janela_principal:
                 self.__get_driver().close()
@@ -1597,7 +1607,8 @@ class SeleniumWebScraper:
         except Exception as e:
             logger.exception(
                 f"Erro ao baixar EFDs da OSF {osf} entre {inicio.strftime('%m/%Y')} e {fim.strftime('%m/%Y')}")
-            raise e
+            raise WebScraperException(f"Erro ao baixar EFDs da OSF {osf} entre {inicio.strftime('%m/%Y')} e "
+                                      f"{fim.strftime('%m/%Y')}: {e}")
         finally:
             try:
                 if path.isfile(path.join(self.tmp_path, "Base_de_Arquivos_Digitais.zip")):
@@ -1686,8 +1697,8 @@ class SeleniumWebScraper:
                             if window:
                                 window.write_event_value('-DATA-EXTRACTION-STATUS-',
                                                          [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
-                            raise Exception('Não foi possível acessar o site do Launchpad! '
-                                            'Verifique se o computador está conectado na rede da Sefaz.')
+                            raise WebScraperException('Não foi possível acessar o site do Launchpad! '
+                                                      'Verifique se o computador está conectado na rede da Sefaz.')
                     self.__get_driver().switch_to.frame("servletBridgeIframe")
                     self.__get_driver().find_element(By.ID, "_id0:logon:USERNAME").send_keys(
                         GeneralConfiguration.get().intranet_login)
@@ -1785,7 +1796,8 @@ class SeleniumWebScraper:
                                                  [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
                     logger.exception(f"Ocorreu um problema ao solicitar relatório {report_name} no Launchpad, "
                                      f"usando os seguintes parametros: {parametros}")
-                    raise e
+                    raise WebScraperException(f"Ocorreu um problema ao solicitar relatório {report_name} no "
+                                              f"Launchpad: {e}")
 
             # tempo máximo de espera para um relatório ficar pronto
             tempo_maximo = time.time() + LAUNCHPAD_MAX_TIME_WAIT_SECONDS
@@ -1808,10 +1820,10 @@ class SeleniumWebScraper:
                         try:
                             msg = self.__get_driver().find_element(By.ID, 'dlg_txt_alertDlg').text
                             if msg.find('não pode se conectar') >= 0 or msg.find('erro de banco de dados') >= 0:
-                                raise Exception(f'Launchpad desconectou do servidor: {msg}')
+                                raise WebScraperException(f'Launchpad desconectou do servidor: {msg}')
                             if msg.find('Controle Acesso OSF') >= 0:
-                                raise Exception('OSF não liberada no Launchpad para download de relatório. '
-                                                'Talvez entrou em execução hoje mesmo?')
+                                raise WebScraperException('OSF não liberada no Launchpad para download de relatório. '
+                                                          'Talvez entrou em execução hoje mesmo?')
                         except NoSuchElementException:
                             pass
 
@@ -1869,8 +1881,9 @@ class SeleniumWebScraper:
                         self.__get_driver().find_element(By.ID, label.get_attribute("for")).click()
                         dados_ticados += 1
                 if dados_ticados < len(modo_exportacao['Relatorios']):
-                    raise Exception(f'Não foram encontradas nas opções de exportação do relatório {report_name}'
-                                    f' todas as opções cadastradas para seleção. Verifique as opções no Launchpad!')
+                    raise WebScraperException(
+                        f'Não foram encontradas nas opções de exportação do relatório {report_name}'
+                        f' todas as opções cadastradas para seleção. Verifique as opções no Launchpad!')
 
                 if modo_exportacao.get('Formato', None) is not None:
                     Select(self.__get_driver().find_element(By.ID, "fileTypeList")) \
@@ -1897,8 +1910,8 @@ class SeleniumWebScraper:
                 if window:
                     window.write_event_value('-DATA-EXTRACTION-STATUS-',
                                              [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
-                logger.exception(f"Ocorreu um problema ao baixar relatório {report_name} no Launchpad: {e}")
-                raise e
+                logger.exception(f"Ocorreu um problema ao baixar relatório {report_name} no Launchpad")
+                raise WebScraperException(f"Ocorreu um problema ao baixar relatório {report_name} no Launchpad: {e}")
             finally:
                 if not self.launchpad_lock.locked():
                     self.launchpad_lock.acquire()
@@ -1912,8 +1925,8 @@ class SeleniumWebScraper:
                     pass
                 self.launchpad_lock.release()
         except Exception as e:
-            logger.exception(f'Ocorreu um problema na execução de relatório {report_name} no Launchpad: {e}')
-            raise e
+            logger.exception(f'Ocorreu um problema na execução de relatório {report_name} no Launchpad')
+            raise WebScraperException(f'Ocorreu um problema na execução de relatório {report_name} no Launchpad: {e}')
 
     def get_expediente_sem_papel(self, expediente: str):
         try:
@@ -1927,7 +1940,7 @@ class SeleniumWebScraper:
             try:
                 WebDriverWait(self.__get_driver(), 30).until(EC.visibility_of_element_located((By.ID, "download")))
             except TimeoutException:
-                raise Exception(f'Demora excessiva para fazer download do expediente {expediente}')
+                raise WebScraperException(f'Demora excessiva para fazer download do expediente {expediente}')
 
             self.driver.find_element(By.ID, 'download').click()
             file_name = self.download_path / f'{expediente_limpo}.pdf'
@@ -1935,8 +1948,8 @@ class SeleniumWebScraper:
             logger.info(f'Expediente {expediente} baixado com sucesso!')
             return file_name
         except Exception as e:
-            logger.exception(f'Ocorreu um problema no download do expediente {expediente} no Sem Papel: {e}')
-            raise e
+            logger.exception(f'Ocorreu um problema no download do expediente {expediente} no Sem Papel')
+            raise WebScraperException(f'Ocorreu um problema no download do expediente {expediente} no Sem Papel: {e}')
 
     def print_efd_obrigatoriedade(self, cnpj: str, download_path: Path):
         resposta = requests.get(f'https://www.fazenda.sp.gov.br/sped/obrigados/obrigados.asp?CNPJLimpo={cnpj}'
@@ -1979,5 +1992,5 @@ class SeleniumWebScraper:
             html = html.replace("../", "https://www10.fazenda.sp.gov.br/ArquivosDigitais/")
             self.__save_html_as_pdf(html, download_path, encoding='UTF-8')
         except Exception as e:
-            logger.exception(f'Ocorreu um problema no download do extrato de entrega de EFD: {e}')
-            raise e
+            logger.exception(f'Ocorreu um problema no download do extrato de entrega de EFD')
+            raise WebScraperException(f'Ocorreu um problema no download do extrato de entrega de EFD: {e}')
