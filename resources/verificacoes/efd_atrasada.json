@@ -4,7 +4,7 @@
   "planilha_nome": "EFDs atrasadas",
   "manda_notificacao_ou_gera_infracao": "verifica_notificacao_atraso_efd",
   "notificacao": {
-    "assunto": "Notificação de Advertência para Escrituração Fiscal Digital (EFD)",
+    "assunto": "Advertência para Escrituração Fiscal Digital (EFD)",
     "titulo": "Atraso na entrega da Escrituração Fiscal Digital (EFD)",
     "corpo": "Fica o contribuinte acima identificado advertido a entregar a Escrituração Fiscal Digital - EFD dentro do prazo regulamentar, sob pena de aplicação das penalidades previstas no RICMS de São Paulo, artigo 527, inciso V, nas seguintes alíneas:<br><p><i>\"g) atraso de escrituração do livro fiscal destinado à escrituração das operações de entrada de mercadoria ou recebimento de serviço e/ou do livro fiscal destinado à escrituração das operações de saída de mercadoria ou de prestação de serviço-multa equivalente a 1% (um por cento) do valor das operações ou prestações não escrituradas, em relação a cada livro; do livro fiscal destinado à escrituração do inventário de mercadorias-multa equivalente a 1% (um por cento) do valor do estoque não escriturado;</i></p><br><p><i>h) atraso de escrituração do livro fiscal não mencionado na alínea anterior-multa equivalente ao valor de 6 (seis) UFESPs por livro, por mês ou fração;\"</i></p>"
   },
