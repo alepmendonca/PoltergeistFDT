@@ -9,7 +9,7 @@
   },
   "infracoes": {
     "Ic-nao_tributado": {
-      "relato": "Deixou de pagar o ICMS no montante de @CRI, referente a<periodo>, por emissão de documentos fiscais <modelos> relativos a operações tributadas como não tributadas, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas. As mercadorias saídas com mercadorias foram classificadas com CFOP de substituição tributária por antecipação, sendo que não há amparo legal para tanto.\""
+      "relato": "Deixou de pagar o ICMS no montante de @CRI, referente a<periodo>, por emissão de documentos fiscais <modelos> relativos a operações tributadas como não tributadas, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas. As mercadorias saídas com mercadorias foram classificadas com CFOP de substituição tributária por antecipação, sendo que não há amparo legal para tanto."
     }
   }
 }

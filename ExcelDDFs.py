@@ -16,7 +16,6 @@ from copy import copy
 
 from pathlib import Path
 
-from openpyxl.worksheet.worksheet import Worksheet
 from pandas._libs.missing import NAType
 
 import Audit
@@ -115,6 +114,7 @@ def _get_template_row(wb: Workbook = None, planilha_path: Path = None) -> int:
 
 def _exporta_relatorio_para_planilha(sheet_name: str, analysis: Analysis, df: pd.DataFrame,
                                      wb: Workbook, infraction: Infraction = None):
+    ws = None
     try:
         ws = wb.copy_worksheet(wb['template'])
         if infraction and infraction.has_filtro():
@@ -165,7 +165,6 @@ def _exporta_relatorio_para_planilha(sheet_name: str, analysis: Analysis, df: pd
         # formata valores
         df = df.convert_dtypes()
         for idx in range(1, len(df.dtypes) + 1):
-            column = openpyxl.utils.get_column_letter(idx)
             col_type = df.dtypes.tolist()[idx - 1]
             if col_type == 'datetime64[ns]':
                 for row in ws.iter_rows(min_row=template_row + 1, max_row=ws.max_row, min_col=idx, max_col=idx):
@@ -303,16 +302,16 @@ class ExcelDDFs:
 
         Audit.get_current_audit().findings_path().mkdir(exist_ok=True)
         self.planilha_path = Audit.get_current_audit().findings_path() / f'Arrazoado - {empresa}.xlsm'
+        self._workbook = None
         if not self.planilha_path.is_file():
             try:
                 shutil.copyfile(os.path.join('resources', 'template.xlsm'), self.planilha_path)
-                wb = openpyxl.load_workbook(self.planilha_path, keep_vba=True)
-                ws = wb['EFDs']
+                ws = self.workbook()['EFDs']
                 ws['A4'].value = f"{GeneralConfiguration.get().drt_nome} - {GeneralConfiguration.get().drt_sigla}"
                 ws['A5'].value = f"NÚCLEO DE FISCALIZAÇÃO - NF {GeneralConfiguration.get().nucleo_fiscal()} - " \
                                  f"EQUIPE FISCAL {GeneralConfiguration.get().equipe_fiscal}"
                 ws['A8'].value = f'{Audit.get_current_audit().empresa} - IE {Audit.get_current_audit().ie}'
-                self.salva_planilha(wb)
+                self.salva_planilha()
             except Exception as e:
                 logger.exception('Ocorreu uma falha ao copiar a planilha template para a pasta da fiscalização')
                 try:
@@ -326,11 +325,20 @@ class ExcelDDFs:
         self.quadro3_path = Audit.get_current_audit().aiim_path() / 'Quadro 3.xlsm'
         self.operacoes_csv = Audit.get_current_audit().reports_path() / 'valor_operacoes.csv'
 
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.clear_cache()
+
+    def workbook(self) -> Workbook:
+        if self._workbook is None:
+            self._workbook = openpyxl.load_workbook(self.planilha_path, keep_vba=True)
+        return self._workbook
+
     def planilha(self, sheet_name: str) -> pd.DataFrame:
         if self._planilha.get(sheet_name) is None:
             try:
                 self._planilha[sheet_name] = pd.read_excel(self.planilha_path, sheet_name=sheet_name,
-                                                           header=_get_template_row(planilha_path=self.planilha_path)-1)
+                                                           header=_get_template_row(
+                                                               planilha_path=self.planilha_path) - 1)
             except ValueError as ex:
                 if str(ex) == f"Worksheet named '{sheet_name}' not found":
                     raise ExcelArrazoadoAbaInexistenteException(f'Aba {sheet_name} não existe mais na planilha!')
@@ -375,7 +383,8 @@ class ExcelDDFs:
                     if mes_referencia != referencia['referencia'].date():
                         raise ExcelArrazoadoCriticalException(f'Não foi encontrada na Conta Fiscal ICMS saldo para '
                                                               f'referência {mes_referencia}! '
-                                                              f'Talvez precise editar arquivo cficms.json manualmente...')
+                                                              f'Talvez precise editar arquivo cficms.json '
+                                                              f'manualmente...')
                     ws.cell(linha_saldo, 8).value = referencia['saldo']
                     linha_saldo += 1
                     mes_referencia = GeneralFunctions.last_day_of_month(mes_referencia + datetime.timedelta(days=1))
@@ -412,7 +421,7 @@ class ExcelDDFs:
             glosas = pd.read_excel(self.glosas_item_path, sheet_name='Subitens')
             glosas = glosas[glosas['subitem'] > 0]
             glosas = glosas.iloc[:, [1, 11, 17, 18, 19]]
-            glosas['referencia'] = glosas.iloc[:, 0].map(lambda dt: GeneralFunctions.last_day_of_month(dt))\
+            glosas['referencia'] = glosas.iloc[:, 0].map(lambda dt: GeneralFunctions.last_day_of_month(dt)) \
                 .astype(np.datetime64)
             resultado = ddf.merge(glosas, on='referencia')
             if 'valor_basico' in resultado.columns:
@@ -446,13 +455,7 @@ class ExcelDDFs:
                 wb.close()
 
     def get_sheet_names(self) -> list:
-        wb = None
-        try:
-            wb = openpyxl.load_workbook(self.planilha_path, read_only=True)
-            return wb.sheetnames
-        finally:
-            if wb:
-                wb.close()
+        return self.workbook().sheetnames
 
     def conta_fiscal_path(self) -> Path:
         return self.main_path / 'Conta Fiscal.pdf'
@@ -467,17 +470,17 @@ class ExcelDDFs:
                                                       audit.get_periodos_da_fiscalizacao(rpa=True))
 
     def update_number_in_subtotals(self, sheet_name: str, item: int):
-        wb = openpyxl.load_workbook(self.planilha_path, keep_vba=True)
-        ws = wb[sheet_name]
+        ws = self.workbook()[sheet_name]
         subitem = 1
-        for row in ws.iter_rows(min_row=_get_template_row(wb) + 1, max_row=ws.max_row, max_col=1):
+        for row in ws.iter_rows(min_row=_get_template_row() + 1, max_row=ws.max_row, max_col=1):
             for cell in row:
                 if isinstance(cell.value, str):
-                    if cell.value.startswith('Total Subitem'):
+                    if cell.value.find('Total Subitem') >= 0:
                         cell.value = f'Total Subitem {item}.{subitem}'
-                    elif cell.value.startswith('TOTAL ITEM'):
+                        subitem += 1
+                    elif cell.value.find('TOTAL ITEM') >= 0:
                         cell.value = f'TOTAL ITEM {item}'
-        self.salva_planilha(wb)
+        self.salva_planilha()
 
     def get_ddf_from_sheet(self, sheet_name: str, inciso: str, alinea: str):
         sheet = self.planilha(sheet_name)
@@ -497,11 +500,12 @@ class ExcelDDFs:
             aba = aba.dropna(axis=1)
             if aba.empty:
                 # pode ser que seja um caso de não totalização - cada linha é uma referência
-                raise ExcelArrazoadoIncompletoException(f'Planilha {sheet_name} não tem coluna "Referência" ou "Período" '
-                                                        f'(quando itens já estão agrupados) ou ela tem vários itens '
-                                                        f'da mesma referência, mas está sem totalizadores!\n'
-                                                        f'No segundo caso, execute a macro com CTRL+SHIFT+E, '
-                                                        f'salve, feche a planilha e tente novamente!')
+                raise ExcelArrazoadoIncompletoException(
+                    f'Planilha {sheet_name} não tem coluna "Referência" ou "Período" '
+                    f'(quando itens já estão agrupados) ou ela tem vários itens '
+                    f'da mesma referência, mas está sem totalizadores!\n'
+                    f'No segundo caso, execute a macro com CTRL+SHIFT+E, '
+                    f'salve, feche a planilha e tente novamente!')
             if len(aba.columns) == 4:
                 aba.columns = ['item', 'valor_basico', 'valor', 'referencia']
             elif len(aba.columns) == 3:
@@ -583,8 +587,7 @@ class ExcelDDFs:
 
     def generate_dados_efds_e_imprime(self, path: Path):
         logger.info('Gerando listagem de EFDs...')
-        wb = openpyxl.load_workbook(self.planilha_path, keep_vba=True)
-        ws = wb['EFDs']
+        ws = self.workbook()['EFDs']
         try:
             if ws.max_row <= 10:
                 with SQLReader(Audit.get_current_audit().schema) as postgres:
@@ -607,7 +610,7 @@ class ExcelDDFs:
                 for row in ws.iter_rows(min_row=11, max_row=ws.max_row, max_col=5):
                     for cell in row:
                         cell.border = thin_border
-                self.salva_planilha(wb)
+                self.salva_planilha()
             self.imprime_planilha('EFDs', path)
         except Exception as e:
             logger.exception('Erro no preenchimento de dados de EFD na planilha de arrazoado')
@@ -650,32 +653,32 @@ class ExcelDDFs:
             aba = self.planilha(sheet_name)
         except KeyError:
             raise ExcelArrazoadoAbaInexistenteException(f'Aba {sheet_name} não existe mais na planilha!')
-        colunas = aba.loc[:, (aba == 'Modelo').any()].columns
-        if len(colunas) == 0:
-            if 'Chave' in aba.keys():
-                aba = aba[aba['Chave'].str.get(0) <= '9']
-                modelos = pd.to_numeric(aba['Chave'].str[20:22])
+        colunas_modelo = [nome for nome in aba.keys().tolist() if 'MODELO' in nome.upper()]
+        if len(colunas_modelo) == 0:
+            colunas_chave = [nome for nome in aba.keys().tolist() if 'CHAVE' in nome.upper()]
+            if len(colunas_chave) > 0:
+                aba = aba[aba[colunas_chave[0]].str.get(0) <= '9']
+                modelos = pd.to_numeric(aba[colunas_chave[0]].str[20:22])
             else:
-                raise Exception(f'Não achei 1 coluna com um campo escrito "Modelo", achei {len(colunas)}')
+                raise Exception(f'Não achei coluna na aba {sheet_name} com um campo contendo "Modelo" ou "Chave"')
         else:
-            modelos = aba[colunas[0]][aba[colunas[0]].map(lambda v: type(v) == int)]
+            modelos = aba[colunas_modelo[0]][aba[colunas_modelo[0]].map(lambda v: np.isfinite(v) and
+                                                                                  round(v - int(v), 2) == 0)]
         return modelos.sort_values().unique()
 
     def imprime_planilha(self, sheet, report_full_path: Path, path: Path = None, item: int = None) -> Path:
         if item:
             # coloca número do anexo na planilha e mostra detalhes, caso subtotais estejam fechados
-            openpyxlwb = openpyxl.load_workbook(self.planilha_path, keep_vba=True)
-            openpyxlws: Worksheet = openpyxlwb[sheet]
 
-            openpyxlws.cell(row=10,
-                            column=len([x.value for x in openpyxlws[10] if isinstance(x.value, str)]) + 1).value = item
+            self.update_number_in_subtotals(sheet, item)
+            openpyxlws = self.workbook()[sheet]
             is_grouped = any(x > 0 for x in
                              [v.outline_level for v in [openpyxlws.row_dimensions[idx]
-                                                        for idx in range(10, openpyxlws.max_row)]])
+                                                        for idx in range(_get_template_row(), openpyxlws.max_row)]])
             if is_grouped:
-                for idx in range(10, openpyxlws.max_row):
+                for idx in range(_get_template_row(), openpyxlws.max_row):
                     openpyxlws.row_dimensions[idx].hidden = False
-            self.salva_planilha(openpyxlwb)
+            self.salva_planilha()
 
         wb_path = self.planilha_path if path is None else path
         if type(sheet) == str:
@@ -684,30 +687,27 @@ class ExcelDDFs:
             sheet_number = sheet
         return print_workbook_as_pdf(wb_path, report_full_path, sheet_number=sheet_number)
 
-    def salva_planilha(self, wb: Workbook, path=None):
+    def salva_planilha(self, wb: Workbook = None, path: Path = None):
         caminho = self.planilha_path if path is None else path
-        if wb:
-            try:
-                wb.save(caminho)
-            except PermissionError as pe:
-                raise ExcelArrazoadoCriticalException(
-                    f'Arquivo Excel {caminho} está aberto, feche-o e tente novamente.')
-            finally:
+        workbook = self.workbook() if wb is None else wb
+        try:
+            workbook.save(caminho)
+        except PermissionError as pe:
+            raise ExcelArrazoadoCriticalException(
+                f'Arquivo Excel {caminho} está aberto, feche-o e tente novamente.')
+        finally:
+            if wb is not None:
                 wb.close()
-        # if not path:
-            # self.refresh_sheet()
-        # else:
         if path:
             # refresh via com, para salvar os valores calculados
             refresh_planilha_creditos(caminho)
 
     def exporta_relatorio_para_planilha(self, sheet_name: str, analysis: Analysis, df: pd.DataFrame):
-        wb = openpyxl.load_workbook(self.planilha_path, keep_vba=True)
-        _exporta_relatorio_para_planilha(sheet_name, analysis, df, wb)
+        _exporta_relatorio_para_planilha(sheet_name, analysis, df, self.workbook())
         if len(analysis.filter_columns()) > 0:
             for infraction in analysis.infractions:
-                _exporta_relatorio_para_planilha(sheet_name, analysis, df, wb, infraction=infraction)
-        self.salva_planilha(wb)
+                _exporta_relatorio_para_planilha(sheet_name, analysis, df, self.workbook(), infraction=infraction)
+        self.salva_planilha()
 
     def gera_quadro_3(self, quadro_1: Path):
         logger.info('Extraindo informações do Quadro 1 do AIIM para gerar Quadro 3...')
@@ -800,7 +800,8 @@ class ExcelDDFs:
                 row += 1
             new_df = pd.DataFrame(data, columns=['Mes', 'Ano', 'Valor Contabil - CFOP'], index=pd.to_datetime(refs))
             refs.sort()
-            if self.operacoes_csv.is_file() and refs[0] < GeneralFunctions.first_day_of_month_before(datetime.date.today()):
+            if self.operacoes_csv.is_file() and refs[0] < GeneralFunctions.first_day_of_month_before(
+                    datetime.date.today()):
                 ops_df = pd.concat([csv_df, new_df])
             else:
                 ops_df = new_df
@@ -816,4 +817,6 @@ class ExcelDDFs:
 
     def clear_cache(self):
         self._planilha = {}
-
+        if self._workbook is not None:
+            self._workbook.close()
+            self._workbook = None
