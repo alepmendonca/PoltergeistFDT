@@ -61,12 +61,15 @@ class PossibleInfraction:
             if relato.find('<modelos>') > 0:
                 # levanta os modelos de documentos fiscais existentes na planilha
                 modelos = planilha.modelos_documento_fiscal(nome_aba)
-                texto = 'modelos ' if len(modelos) > 1 else 'modelo '
-                for i in range(len(modelos)):
-                    if i + 1 == len(modelos) and i > 0:
-                        texto = texto[:-2] + ' e '
-                    texto += str(modelos[i]) + ', '
-                texto = texto[:-2]
+                if modelos is not None:
+                    texto = 'modelos ' if len(modelos) > 1 else 'modelo '
+                    for i in range(len(modelos)):
+                        if i + 1 == len(modelos) and i > 0:
+                            texto = texto[:-2] + ' e '
+                        texto += str(int(modelos[i])) + ', '
+                    texto = texto[:-2]
+                else:
+                    texto = ''
                 relato = relato.replace('<modelos>', texto)
         except ExcelArrazoadoAbaInexistenteException:
             raise
