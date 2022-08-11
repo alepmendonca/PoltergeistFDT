@@ -8,6 +8,8 @@
             <path value="file://$PROJECT_DIR$/resources" />
             <path value="file://$PROJECT_DIR$/wkhtmltopdf" />
             <path value="file://$PROJECT_DIR$/efd-pva-inspector" />
+            <path value="file://$PROJECT_DIR$/tika-server" />
+            <path value="file://$PROJECT_DIR$/mysqldump" />
           </resourceRoots>
         </entryData>
       </entry>
