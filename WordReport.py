@@ -125,6 +125,8 @@ def cria_recibo_entrega_arquivos_digitais(cnpj: str, ie: str, razao_social: str,
         doc.add_paragraph('')
         paragraph = doc.add_paragraph(GeneralConfiguration.get().nome)
         paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+        paragraph = doc.add_paragraph('AUDITOR FISCAL DA RECEITA ESTADUAL')
+        paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
         paragraph = doc.add_paragraph(f'IF {GeneralConfiguration.get().funcional}')
         paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
         doc.save(str(docx_path.absolute()))

@@ -3,7 +3,9 @@ import hashlib
 import json
 import logging
 import ssl
+import subprocess
 import threading
+from io import TextIOWrapper
 from logging.handlers import RotatingFileHandler
 import os
 import re
@@ -26,6 +28,26 @@ project_version = '0.1.1'
 meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho',
          'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 infractions = {}
+
+
+class PopenWindows(subprocess.Popen):
+    # serve pra fazer monkey patch, de forma que no modo release não abra um shell
+    def __init__(self, command, **popen_kwargs):
+        executable = command[0] if isinstance(command, list) else command
+        if executable.find('explorer.exe') >= 0 or executable.find('tika-server') >= 0:
+            super().__init__(command, **popen_kwargs)
+        else:
+            startupinfo_windows = subprocess.STARTUPINFO()
+            startupinfo_windows.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            if popen_kwargs.get('stdout', None) is None:
+                popen_kwargs['stdout'] = subprocess.PIPE
+            elif isinstance(popen_kwargs['stdout'], TextIOWrapper) and not Path(popen_kwargs['stdout'].name).is_file():
+                popen_kwargs['stdout'] = subprocess.PIPE
+            popen_kwargs['stdin'] = subprocess.PIPE
+            popen_kwargs['stderr'] = subprocess.PIPE
+            popen_kwargs['startupinfo'] = startupinfo_windows
+#            popen_kwargs['shell'] = False
+            super().__init__(command, **popen_kwargs)
 
 
 class ThreadWithReturnValue(threading.Thread):
@@ -413,10 +435,12 @@ def get_project_special_files():
             get_conta_fiscal_json_path(get_tmp_path()).name,
             get_folders_history_json_path().name]
 
+
 def is_empty_directory(path: Path) -> bool:
     if not path.is_dir():
         raise ValueError(f'{path} não é um diretório, para verificar se está vazio!')
     return not any(path.iterdir())
+
 
 bar_striped = b'R0lGODlhoAAUAIAAAAQCBP7+/iH/C05FVFNDQVBFMi4wAwEAAAAh+QQJCQABACwAAAAAoAAUAAAC' \
               b'/oSPFsu9CYGbISbqLMJNH854CliJnUeWKClKrPmuYJvSp1XDs87Zu9zjYXwhXEyTAw6FFOJS2WSqLkfjD1mNJLFXaxD6gGy9T' \

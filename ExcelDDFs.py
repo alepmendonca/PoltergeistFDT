@@ -91,146 +91,7 @@ def _dataframe_to_rows(df: pd.DataFrame, header=True):
         yield row
 
 
-template_row = 0
-
-
-def _get_template_row(wb: Workbook = None, planilha_path: Path = None) -> int:
-    global template_row
-    if template_row > 0:
-        return template_row
-
-    if wb is not None:
-        template_row = wb['template'].max_row
-    else:
-        if planilha_path is None:
-            raise ValueError('Não foi passado nenhum argumento pra encontrar a planilha!')
-        try:
-            wb = openpyxl.load_workbook(planilha_path)
-            template_row = wb['template'].max_row
-        finally:
-            wb.close()
-    return template_row
-
-
-def _exporta_relatorio_para_planilha(sheet_name: str, analysis: Analysis, df: pd.DataFrame,
-                                     wb: Workbook, infraction: Infraction = None):
-    ws = None
-    try:
-        ws = wb.copy_worksheet(wb['template'])
-        if infraction and infraction.has_filtro():
-            ws.title = infraction.sheet_extended_name(sheet_name)
-        else:
-            ws.title = sheet_name
-        celula_cabecalho_template = ws[f'A{ws.max_row}']
-        template_row = _get_template_row(wb)
-        columns_to_drop = []
-        if infraction:
-            columns_to_drop = infraction.analysis.filter_columns()
-            columns_to_drop.remove(infraction.filtro_coluna)
-
-        cabecalhos = [c for c in df.keys().tolist() if c not in columns_to_drop]
-
-        ws['A7'] = analysis.name if infraction is None else infraction.planilha_titulo
-        # faz merge das primeiras linhas, até a última linha antes do cabeçalho
-        coluna_A = [row[0] for row in ws[f'A{ws.min_row}:A{ws.max_row}']]
-        coluna_A.reverse()
-        for cell in coluna_A:
-            if cell.fill.bgColor.value == '00000000':
-                ws.merge_cells(start_row=cell.row, end_row=cell.row,
-                               start_column=1, end_column=len(cabecalhos))
-
-        # adiciona a imagem do brasao na planilha
-        img = Image(r'resources/brasao.png')
-        img.anchor = 'A1'
-        # fazendo resize da imagem na mao
-        img.height *= 0.556
-        img.width *= 0.556
-        ws.add_image(img)
-
-        # faz um subconjunto do dataframe, caso tenha filtro
-        if infraction and infraction.has_filtro():
-            df = df.drop(labels=columns_to_drop, axis=1)
-            if infraction.is_positive_filter():
-                df = df[df[infraction.filtro_coluna] >= 0]
-            else:
-                df = df[df[infraction.filtro_coluna] <= 0]
-            if len(df) == 0:
-                wb.remove(ws)
-                return
-
-        # joga valores do dataframe na planilha
-        for linha in _dataframe_to_rows(df):
-            ws.append(linha)
-
-        # formata valores
-        df = df.convert_dtypes()
-        for idx in range(1, len(df.dtypes) + 1):
-            col_type = df.dtypes.tolist()[idx - 1]
-            if col_type == 'datetime64[ns]':
-                for row in ws.iter_rows(min_row=template_row + 1, max_row=ws.max_row, min_col=idx, max_col=idx):
-                    if cabecalhos[idx - 1] in ('Período', 'Referência'):
-                        row[0].number_format = 'mm/yyyy'
-                    else:
-                        row[0].number_format = 'dd/mm/yyyy'
-                    row[0].alignment = Alignment(horizontal='center', vertical='center')
-            elif col_type == 'Float64':
-                for row in ws.iter_rows(min_row=template_row + 1, max_row=ws.max_row, min_col=idx, max_col=idx):
-                    row[0].number_format = r'_-\R$ * #,##0.00_-'
-            elif col_type == 'Int64':
-                for row in ws.iter_rows(min_row=template_row + 1, max_row=ws.max_row, min_col=idx, max_col=idx):
-                    row[0].number_format = '@'
-                    row[0].alignment = Alignment(horizontal='center', vertical='center')
-
-        # entende que o formato do cabeçalho da tabela é igual da última linha da coluna A do template
-        # como fez append do dataframe, a linha template precisa ser removida depois
-        for i in range(1, len(cabecalhos) + 1):
-            ws.cell(row=template_row + 1, column=i)._style = copy(celula_cabecalho_template._style)
-        ws.delete_rows(template_row)
-
-        # coloca bordas nos dados
-        thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
-                             top=Side(style='thin'), bottom=Side(style='thin'))
-        for row in ws.iter_rows(min_row=template_row + 1, max_row=ws.max_row, max_col=len(cabecalhos)):
-            for cell in row:
-                cell.border = thin_border
-
-        # tenta fazer autosize das colunas
-        for column_cells in ws.columns:
-            if column_cells[-1].number_format.endswith('yyyy'):
-                length = max(len(column_cells[template_row - 1].value), len(column_cells[-1].number_format)) + 1
-            else:
-                length = max(len(str(cell.value) or "") + 1 for cell in column_cells[template_row - 1:])
-
-            if column_cells[-1].number_format == r'_-\R$ * #,##0.00_-':
-                # adiciona os caracteres de formatacao de moeda
-                length += int((length - 2) / 3) + 4
-            logger.debug(f'Coluna {column_cells[-1].column_letter} terá largura {length}')
-            ws.column_dimensions[column_cells[-1].column_letter].width = length
-
-        # opcoes de impressao
-        ws.print_options.horizontalCentered = True
-        ws.print_title_rows = f'{template_row}:{template_row}'
-        ws.page_margins.top = 1
-        ws.page_margins.bottom = 1
-        ws.page_margins.left = 0.5
-        ws.page_margins.right = 0.5
-        ws.page_margins.header = 0.5
-        ws.page_margins.footer = 0.5
-        if len(cabecalhos) >= 10:
-            ws.page_setup.orientation = 'landscape'
-        else:
-            ws.page_setup.orientation = 'portrait'
-        ws.page_setup.fitToWidth = True
-        ws.evenFooter.center.text = "Página &[Page] de &N"
-        ws.oddFooter.center.text = "Página &[Page] de &N"
-    except Exception as e:
-        logger.exception('Falha na exportação de tabela para Excel')
-        if ws:
-            wb.remove(ws)
-        raise ExcelArrazoadoCriticalException(str(e))
-
-
-def refresh_planilha_creditos(path: Path):
+def refresh_planilha(path: Path):
     excel = win32com.client.Dispatch("Excel.Application")
     excel.Visible = False
     excel.ScreenUpdating = False
@@ -324,21 +185,30 @@ class ExcelDDFs:
         self.glosas_item_path = Audit.get_current_audit().findings_path() / 'Glosa - Item.xlsx'
         self.quadro3_path = Audit.get_current_audit().aiim_path() / 'Quadro 3.xlsm'
         self.operacoes_csv = Audit.get_current_audit().reports_path() / 'valor_operacoes.csv'
+        self._template_row = 0
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.clear_cache()
 
+    def _get_template_row(self) -> int:
+        if self._template_row == 0:
+            self._template_row = self.workbook()['template'].max_row
+        return self._template_row
+
     def workbook(self) -> Workbook:
         if self._workbook is None:
+            logger.info('Abrindo planilha da auditoria...')
             self._workbook = openpyxl.load_workbook(self.planilha_path, keep_vba=True)
         return self._workbook
 
     def planilha(self, sheet_name: str) -> pd.DataFrame:
+        if not self._planilha:
+            logger.info('Recalculando fórmulas da planilha...')
+            refresh_planilha(self.planilha_path)
         if self._planilha.get(sheet_name) is None:
             try:
                 self._planilha[sheet_name] = pd.read_excel(self.planilha_path, sheet_name=sheet_name,
-                                                           header=_get_template_row(
-                                                               planilha_path=self.planilha_path) - 1)
+                                                           header=self._get_template_row() - 1)
             except ValueError as ex:
                 if str(ex) == f"Worksheet named '{sheet_name}' not found":
                     raise ExcelArrazoadoAbaInexistenteException(f'Aba {sheet_name} não existe mais na planilha!')
@@ -471,8 +341,9 @@ class ExcelDDFs:
 
     def update_number_in_subtotals(self, sheet_name: str, item: int):
         ws = self.workbook()[sheet_name]
+        logger.info(f'Atualizando número dos itens e subitens da aba {sheet_name}...')
         subitem = 1
-        for row in ws.iter_rows(min_row=_get_template_row() + 1, max_row=ws.max_row, max_col=1):
+        for row in ws.iter_rows(min_row=self._get_template_row() + 1, max_row=ws.max_row, max_col=1):
             for cell in row:
                 if isinstance(cell.value, str):
                     if cell.value.find('Total Subitem') >= 0:
@@ -674,9 +545,10 @@ class ExcelDDFs:
             openpyxlws = self.workbook()[sheet]
             is_grouped = any(x > 0 for x in
                              [v.outline_level for v in [openpyxlws.row_dimensions[idx]
-                                                        for idx in range(_get_template_row(), openpyxlws.max_row)]])
+                                                        for idx in range(self._get_template_row(),
+                                                                         openpyxlws.max_row)]])
             if is_grouped:
-                for idx in range(_get_template_row(), openpyxlws.max_row):
+                for idx in range(self._get_template_row(), openpyxlws.max_row):
                     openpyxlws.row_dimensions[idx].hidden = False
             self.salva_planilha()
 
@@ -696,18 +568,136 @@ class ExcelDDFs:
             raise ExcelArrazoadoCriticalException(
                 f'Arquivo Excel {caminho} está aberto, feche-o e tente novamente.')
         finally:
-            if wb is not None:
-                wb.close()
-        if path:
-            # refresh via com, para salvar os valores calculados
-            refresh_planilha_creditos(caminho)
+            workbook.close()
+            if wb is None:
+                del self._workbook
+                self._workbook = None
+        # refresh via com, para salvar os valores calculados
+        refresh_planilha(caminho)
 
     def exporta_relatorio_para_planilha(self, sheet_name: str, analysis: Analysis, df: pd.DataFrame):
-        _exporta_relatorio_para_planilha(sheet_name, analysis, df, self.workbook())
+        self._exporta_relatorio_para_planilha(sheet_name, analysis, df)
         if len(analysis.filter_columns()) > 0:
             for infraction in analysis.infractions:
-                _exporta_relatorio_para_planilha(sheet_name, analysis, df, self.workbook(), infraction=infraction)
+                self._exporta_relatorio_para_planilha(sheet_name, analysis, df, infraction=infraction)
         self.salva_planilha()
+
+    def _exporta_relatorio_para_planilha(self, sheet_name: str, analysis: Analysis, df: pd.DataFrame,
+                                         infraction: Infraction = None):
+        ws = None
+        try:
+            ws = self.workbook().copy_worksheet(self.workbook()['template'])
+            if infraction and infraction.has_filtro():
+                ws.title = infraction.sheet_extended_name(sheet_name)
+            else:
+                ws.title = sheet_name
+            celula_cabecalho_template = ws[f'A{ws.max_row}']
+            template_row = self._get_template_row()
+            columns_to_drop = []
+            if infraction:
+                columns_to_drop = infraction.analysis.filter_columns()
+                columns_to_drop.remove(infraction.filtro_coluna)
+
+            cabecalhos = [c for c in df.keys().tolist() if c not in columns_to_drop]
+
+            ws['A7'] = analysis.name if infraction is None else infraction.planilha_titulo
+            # faz merge das primeiras linhas, até a última linha antes do cabeçalho
+            coluna_A = [row[0] for row in ws[f'A{ws.min_row}:A{ws.max_row}']]
+            coluna_A.reverse()
+            for cell in coluna_A:
+                if cell.fill.bgColor.value == '00000000':
+                    ws.merge_cells(start_row=cell.row, end_row=cell.row,
+                                   start_column=1, end_column=len(cabecalhos))
+
+            # adiciona a imagem do brasao na planilha
+            img = Image(r'resources/brasao.png')
+            img.anchor = 'A1'
+            # fazendo resize da imagem na mao
+            img.height *= 0.556
+            img.width *= 0.556
+            ws.add_image(img)
+
+            # faz um subconjunto do dataframe, caso tenha filtro
+            if infraction and infraction.has_filtro():
+                df = df.drop(labels=columns_to_drop, axis=1)
+                if infraction.is_positive_filter():
+                    df = df[df[infraction.filtro_coluna] >= 0]
+                else:
+                    df = df[df[infraction.filtro_coluna] <= 0]
+                if len(df) == 0:
+                    self.workbook().remove(ws)
+                    return
+
+            # joga valores do dataframe na planilha
+            for linha in _dataframe_to_rows(df):
+                ws.append(linha)
+
+            # formata valores
+            df = df.convert_dtypes()
+            for idx in range(1, len(df.dtypes) + 1):
+                col_type = df.dtypes.tolist()[idx - 1]
+                if col_type == 'datetime64[ns]':
+                    for row in ws.iter_rows(min_row=template_row + 1, max_row=ws.max_row, min_col=idx, max_col=idx):
+                        if cabecalhos[idx - 1] in ('Período', 'Referência'):
+                            row[0].number_format = 'mm/yyyy'
+                        else:
+                            row[0].number_format = 'dd/mm/yyyy'
+                        row[0].alignment = Alignment(horizontal='center', vertical='center')
+                elif col_type == 'Float64':
+                    for row in ws.iter_rows(min_row=template_row + 1, max_row=ws.max_row, min_col=idx, max_col=idx):
+                        row[0].number_format = r'_-\R$ * #,##0.00_-'
+                elif col_type == 'Int64':
+                    for row in ws.iter_rows(min_row=template_row + 1, max_row=ws.max_row, min_col=idx, max_col=idx):
+                        row[0].number_format = '@'
+                        row[0].alignment = Alignment(horizontal='center', vertical='center')
+
+            # entende que o formato do cabeçalho da tabela é igual da última linha da coluna A do template
+            # como fez append do dataframe, a linha template precisa ser removida depois
+            for i in range(1, len(cabecalhos) + 1):
+                ws.cell(row=template_row + 1, column=i)._style = copy(celula_cabecalho_template._style)
+            ws.delete_rows(template_row)
+
+            # coloca bordas nos dados
+            thin_border = Border(left=Side(style='thin'), right=Side(style='thin'),
+                                 top=Side(style='thin'), bottom=Side(style='thin'))
+            for row in ws.iter_rows(min_row=template_row + 1, max_row=ws.max_row, max_col=len(cabecalhos)):
+                for cell in row:
+                    cell.border = thin_border
+
+            # tenta fazer autosize das colunas
+            for column_cells in ws.columns:
+                if column_cells[-1].number_format.endswith('yyyy'):
+                    length = max(len(column_cells[template_row - 1].value), len(column_cells[-1].number_format)) + 1
+                else:
+                    length = max(len(str(cell.value) or "") + 1 for cell in column_cells[template_row - 1:])
+
+                if column_cells[-1].number_format == r'_-\R$ * #,##0.00_-':
+                    # adiciona os caracteres de formatacao de moeda
+                    length += int((length - 2) / 3) + 4
+                logger.debug(f'Coluna {column_cells[-1].column_letter} terá largura {length}')
+                ws.column_dimensions[column_cells[-1].column_letter].width = length
+
+            # opcoes de impressao
+            ws.print_options.horizontalCentered = True
+            ws.print_title_rows = f'{template_row}:{template_row}'
+            ws.page_margins.top = 1
+            ws.page_margins.bottom = 1
+            ws.page_margins.left = 0.5
+            ws.page_margins.right = 0.5
+            ws.page_margins.header = 0.5
+            ws.page_margins.footer = 0.5
+            if len(cabecalhos) >= 10:
+                ws.page_setup.orientation = 'landscape'
+            else:
+                ws.page_setup.orientation = 'portrait'
+            ws.page_setup.fitToWidth = True
+            ws.evenFooter.center.text = "Página &[Page] de &N"
+            ws.oddFooter.center.text = "Página &[Page] de &N"
+        except Exception as e:
+            logger.exception('Falha na exportação de tabela para Excel')
+            if ws:
+                self.workbook().remove(ws)
+            raise ExcelArrazoadoCriticalException(str(e))
 
     def gera_quadro_3(self, quadro_1: Path):
         logger.info('Extraindo informações do Quadro 1 do AIIM para gerar Quadro 3...')
@@ -819,4 +809,5 @@ class ExcelDDFs:
         self._planilha = {}
         if self._workbook is not None:
             self._workbook.close()
+            del self._workbook
             self._workbook = None

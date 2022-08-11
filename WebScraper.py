@@ -3,6 +3,7 @@ import datetime
 import gzip
 import os
 import re
+import signal
 import sys
 import threading
 import time
@@ -17,6 +18,7 @@ import PySimpleGUI as sg
 import pdfkit
 import requests
 import autoit
+import selenium
 from autoit import AutoItError
 from bs4 import BeautifulSoup
 from pathlib import Path
@@ -37,6 +39,9 @@ import GeneralConfiguration
 import GeneralFunctions
 import PDFExtractor
 from GeneralFunctions import logger, wait_downloaded_file, move_downloaded_file
+
+# Monkey Patching para não abrir shell em modo release!
+selenium.webdriver.common.service.subprocess.Popen = GeneralFunctions.PopenWindows
 
 LAUNCHPAD_MAX_TIME_WAIT_SECONDS = 1800
 LAUNCHPAD_TIME_WAIT_SECONDS = 30

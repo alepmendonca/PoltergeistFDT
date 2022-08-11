@@ -1,5 +1,7 @@
 import datetime
 import re
+import socket
+
 import pandas as pd
 import psycopg2
 from psycopg2 import sql
@@ -39,20 +41,39 @@ def _get_dtypes_from_oids(oids: list) -> list:
                                      f' para o {oids.index(ex.args[0])}º argumento: {ex.args[0]}')
 
 
+def check_if_port_is_open(remoteServerHost: str, port: int):
+    remoteServerIP = socket.gethostbyname(remoteServerHost)
+    sock = None
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex((remoteServerIP, port))
+        return result == 0
+    except socket.gaierror:
+        raise QueryAnalysisException(f'Não consegui descobrir que endereço é esse: {remoteServerHost}')
+    except socket.error:
+        raise QueryAnalysisException(f'Não consegui conectar no Postgres em {remoteServerHost}:{port}')
+    finally:
+        if sock is not None:
+            sock.close()
+
+
 class SQLReader:
     def __init__(self, schema: str = None, config=GeneralConfiguration.get()):
         try:
             self._conn = psycopg2.connect(host=config.postgres_address, port=config.postgres_port,
                                           dbname=config.postgres_dbname,
                                           user=config.postgres_user, password=config.postgres_pass)
-            # self._conn.set_client_encoding("LATIN1")
             self._cursor = self._conn.cursor()
             if schema:
                 self._schema = schema.lower()
                 self._cursor.execute(f"SET search_path = '{self._schema}', public;")
         except Exception as e:
-            GeneralFunctions.logger.exception(f'Erro no acesso ao banco de dados Postgres: {e}')
-            raise e
+            if str(e).find('Connection refused') >= 0:
+                raise QueryAnalysisException('Conexão ao Postgres recusada. Verifique se ele está funcionando, '
+                                             'usando as configurações definidas nas Propriedades.')
+            else:
+                GeneralFunctions.logger.exception(f'Erro no acesso ao banco de dados Postgres: {e}')
+                raise e
 
     def __enter__(self):
         return self

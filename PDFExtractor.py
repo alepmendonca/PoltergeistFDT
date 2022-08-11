@@ -1,13 +1,24 @@
-from io import BytesIO
-from pathlib import Path
-from PyPDF2 import PdfFileMerger, PdfFileReader, PdfFileWriter
-from tika import parser
+import signal
+
 import pandas as pd
 import re
 import datetime
 
-import GeneralFunctions
+from psutil import NoSuchProcess
 
+import GeneralConfiguration
+import GeneralFunctions
+from io import BytesIO
+from pathlib import Path
+from PyPDF2 import PdfFileMerger, PdfFileReader, PdfFileWriter
+import os
+import psutil
+os.environ['TIKA_SERVER_JAR'] = Path('tika-server/tika-server-1.24.jar').resolve().as_uri()
+from tika import tika
+from tika import parser
+
+# Monkey patching!
+tika.Popen = GeneralFunctions.PopenWindows
 
 # workaround for PyPDF4 issue #24
 # https://github.com/claird/PyPDF4/issues/24
@@ -32,6 +43,29 @@ def __fix_pdf_removing_trailing_scripts(pdf_file: Path):
             p.seek(0)
             p.truncate()
             p.writelines(txtx)
+
+
+def parse_pdf(file: Path) -> list[str]:
+    try:
+        tika.TikaJava = f'"{(GeneralConfiguration.get().efd_java_path() / "java.exe").resolve()}"'
+        raw = parser.from_file(str(file.resolve()))
+    except RuntimeError as e:
+        raise e
+    finally:
+        _close_tika_server()
+    texto = str(raw['content'])
+    return texto.splitlines()
+
+
+def _close_tika_server():
+    if tika.TikaServerProcess:
+        try:
+            process = psutil.Process(tika.TikaServerProcess.pid)
+            for child in process.children(recursive=True):
+                child.kill()
+            process.kill()
+        except NoSuchProcess:
+            pass
 
 
 def merge_pdfs(filename: Path, pdfs: list[Path], remove_original_pdfs: bool = True):
@@ -59,7 +93,7 @@ def split_pdf(filename: Path, max_size: int) -> list[Path]:
     if not filename.is_file():
         return []
 
-    if int(filename.stat().st_size/1024/1024) < max_size:
+    if int(filename.stat().st_size / 1024 / 1024) < max_size:
         return [filename]
 
     GeneralFunctions.logger.info(f'Dividindo arquivo {filename.name} em arquivos de no máximo {max_size}Mb...')
@@ -77,12 +111,12 @@ def split_pdf(filename: Path, max_size: int) -> list[Path]:
         with tmp_pdf_path.open('wb') as tmp_parte:
             tmp_pdf.write(tmp_parte)
         page_number += 1
-        if tmp_pdf_path.stat().st_size/1024/1024 > max_size:
+        if tmp_pdf_path.stat().st_size / 1024 / 1024 > max_size:
             # achei a qtd de paginas maxima, monta o PDF parcial
             tmp_pdf_path.unlink()
             new_pdf_path = Path(str(filename.parent.absolute() / filename.stem) + f' - Parte {len(pdf_list) + 1}.pdf')
             new_pdf = PdfFileWriterWithStreamAttribute()
-            for rpagenum in range(first_page, page_number-1):
+            for rpagenum in range(first_page, page_number - 1):
                 new_pdf.addPage(original_pdf.getPage(rpagenum))
             with new_pdf_path.open('wb') as file_parte:
                 new_pdf.write(file_parte)
@@ -113,8 +147,6 @@ def vencimentos_de_PDF_CFICMS(file_cficms: Path, path_name: Path,
         return pd.read_json(cficms_json, orient='records',
                             dtype={'referencia': 'datetime64[D]', 'vencimento': 'datetime64[D]', 'saldo': 'Float64'})
 
-    raw = parser.from_file(str(file_cficms.absolute()))
-    texto = str(raw['content'])
     referencias = []
     vencimentos = []
     saldos = []
@@ -122,7 +154,7 @@ def vencimentos_de_PDF_CFICMS(file_cficms: Path, path_name: Path,
     vencimento: datetime.date = None
     saldo: float = None
     buscar_vencimento = False
-    for linha in texto.splitlines():
+    for linha in parse_pdf(file_cficms):
         if len(linha) == 0:
             continue
         match = re.match(r'^([A-ZÇ]+)\s+(\d{4})$', linha)
@@ -161,7 +193,7 @@ def vencimentos_de_PDF_CFICMS(file_cficms: Path, path_name: Path,
                     matchgia = re.match(r'^GIA\s+\d+.*\s+([\d.,]+)\s+1\d+.*SALDO CREDOR.*', linha)
                     if matchgia:
                         buscar_vencimento = True
-                        saldo = -1*float(matchgia.group(1).replace('.', '').replace(',', '.'))
+                        saldo = -1 * float(matchgia.group(1).replace('.', '').replace(',', '.'))
                     else:
                         matchgia = re.match(r'^GIA\s+\d+.*\s+-([\d.,]+)\s\d+.*', linha)
                         if matchgia:
@@ -188,9 +220,7 @@ def vencimentos_de_PDF_CFICMS(file_cficms: Path, path_name: Path,
 
 
 def get_quadro_1_data(quadro1_file: Path):
-    raw = parser.from_file(str(quadro1_file))
-    texto = str(raw['content'])
-    linhas = texto.splitlines()
+    linhas = parse_pdf(quadro1_file)
     linhas = [linha for linha in linhas[linhas.index('18') + 1:] if re.match(r'^\d+\.?\s', linha)]
     df = []
     item = 1

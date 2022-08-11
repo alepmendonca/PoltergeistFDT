@@ -5,6 +5,7 @@ import textwrap
 import GUIFunctions
 import GeneralConfiguration
 import GeneralFunctions
+import WaitWindow
 from SQLReader import SQLReader
 from WebScraper import SeleniumWebScraper
 import PySimpleGUI as sg
@@ -92,7 +93,7 @@ def create_config_file():
     text1 = f'Agora {certificado_escolhido.split()[0].capitalize()}, ' \
             f'preciso que você me diga quais são suas senhas, pra eu poder acessar os ' \
             f'sistemas fazendários e baixar informações dos contribuintes. As senhas não vão ' \
-            f'ficar fáceis de serem copiadas por alguém.'
+            f'ficar fáceis de serem copiadas por alguém, sendo gravadas no cofre do Windows.'
     text2 = 'Ao confirmar os dados abaixo, vou fazer umas pesquisas para pegar dados seus, ' \
             'então não mexa nas janelas que aparecerem no computador, para não dar nenhum problema.' \
             ' Você saberá que acabaram as pesquisas quando o navegador fechar e surgir uma nova ' \
@@ -122,8 +123,8 @@ def create_config_file():
             config.certificado_pass = values['-WIZ-CERTIFICATE-PASS-']
             config.sigadoc_login = values['-WIZ-SIGADOC-USER-']
             config.sigadoc_pass = values['-WIZ-SIGADOC-PASS-']
-            # if WaitWindow.open_wait_window(__get_dados_from_web, 'Carregar dados do AFRE', config):
-            window.close()
+            if WaitWindow.open_wait_window(__get_dados_from_web, 'Carregar dados do AFRE', config):
+                window.close()
             break
 
     layout = [
