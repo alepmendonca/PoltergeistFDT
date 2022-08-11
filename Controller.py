@@ -3,6 +3,7 @@ import concurrent.futures
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 
@@ -15,7 +16,6 @@ from datetime import date
 from datetime import timedelta
 
 from dateutil.relativedelta import relativedelta
-from tika import parser
 from pathlib import Path
 
 import Audit
@@ -124,9 +124,8 @@ def update_dados_osf(osf: str):
             ws.get_full_OSF(osf, 'OSF Completa.pdf')
 
     logger.info('Capturando dados da Ordem de Serviço Fiscal...')
-    raw = parser.from_file(str(osf_file))
-    texto = str(raw['content'])
-    linhas = texto.splitlines()
+    linhas = PDFExtractor.parse_pdf(osf_file)
+
     # inicio e fim fiscalizacao podem simplesmente não estar na OSF
     inicio_auditoria = fim_auditoria = None
     for linha in linhas[150:]:
@@ -172,9 +171,7 @@ def update_dados_osf(osf: str):
             ws.get_full_cadesp(get_current_audit().ie, cadesp_file)
 
     logger.info('Capturando dados do PDF com extrato do Cadesp...')
-    raw = parser.from_file(str(cadesp_file))
-    texto = str(raw['content'])
-    linhas = texto.splitlines()
+    linhas = PDFExtractor.parse_pdf(cadesp_file)
 
     audit = get_current_audit()
     audit.inicio_situacao = [s for s in linhas if 'Início da Situação' in s][0][-10:]
@@ -215,6 +212,20 @@ def update_dados_osf(osf: str):
     audit.historico_regime = historicos
     get_current_audit().save()
     logger.info('Dados da fiscalização extraídos dos sistemas com sucesso!')
+
+    if get_current_audit().is_aiim_open and is_aiim_on_AIIM2003():
+        logger.info('Atualizando dados do contribuinte no AIIM...')
+        AIIMAutoIt().atualiza_aiim(get_current_audit().aiim_number,
+                                   __get_aiim_position_in_aiim2003(get_current_audit().aiim_number),
+                                   get_current_audit())
+
+
+def is_aiim_on_AIIM2003() -> bool:
+    try:
+        __get_aiim_position_in_aiim2003(get_current_audit().aiim_number)
+    except AIIMNotExistsException:
+        return False
+    return True
 
 
 def get_aiims_for_osf() -> list:
@@ -354,8 +365,7 @@ def __get_open_aiim_data_from_aiim2003() -> (str, int):
         numero_sem_serie = get_current_audit().aiim_number_no_digit()
         if not aiim2003.is_aiim_open_to_edition(numero_sem_serie):
             raise Exception(f'Não é possível alterar o AIIM {aiim_number}, reabra-o primeiro!')
-        posicao = aiim2003.get_aiim_position(numero_sem_serie)
-    return aiim_number, posicao
+    return aiim_number, __get_aiim_position_in_aiim2003(aiim_number)
 
 
 def cria_ddf(aiim_item: AiimItem):
@@ -395,7 +405,7 @@ def update_aiim_item_notification_response(aiim_item: AiimItem, response: str):
 
 def update_aiim_item_number(aiim_item: AiimItem, new_number: int = 0):
     aiim_item.item = new_number
-    if new_number > 0:
+    if new_number > 0 and aiim_item.planilha is not None:
         get_current_audit().get_sheet().update_number_in_subtotals(aiim_item.planilha, aiim_item.item)
     get_current_audit().save()
 

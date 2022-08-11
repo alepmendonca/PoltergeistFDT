@@ -6,6 +6,7 @@ import time
 import autoit
 from pathlib import Path
 
+import psutil
 import win32api
 import win32con
 
@@ -172,7 +173,6 @@ class AIIMAutoIt:
             autoit.control_send(dialogo, handle, '{DOWN}')
         time.sleep(1)
 
-
     def __wait_dialog_and_click(self, dialogo, button, wait=True):
         if wait:
             autoit.win_wait(dialogo, 5)
@@ -293,7 +293,7 @@ class AIIMAutoIt:
     def __abre_aiim(self, numero: str, posicao: int):
         # verifica se AIIM ja esta aberto, se não, abre
         logger.info(f'Abrindo AIIM {numero} no AIIM2003...')
-        parser = re.compile(r'[^\d]')
+        parser = re.compile(r'\D')
         try:
             autoit.win_activate(self.titulo_janela)
             # num_tela é o número do AIIM na tela
@@ -328,7 +328,7 @@ class AIIMAutoIt:
     def cria_aiim(self, numero, audit: Audit):
         logger.info(f'Criando AIIM {numero} no AIIM2003...')
         self.__open_menu('NOVO_AIIM')
-        numero_so_digitos = re.sub(r'[^\d]', '', numero)
+        numero_so_digitos = re.sub(r'\D', '', numero)
         self.__focus_and_set_text('[CLASS:ThunderRT6TextBox; INSTANCE:35]', 'Número AIIM', numero_so_digitos)
         # a janela está aberta, então dá pra mandar posicao=0 sem problemas
         self.atualiza_aiim(numero, 0, audit)
@@ -422,19 +422,19 @@ class AIIMAutoIt:
         self.__save_and_exit()
 
     def _get_item_number(self):
+        try:
+            return int(autoit.control_get_text(
+                self.titulo_janela, "[CLASS:ThunderRT6ComboBox; INSTANCE:6]"))
+        except (ValueError, AutoItError):
             try:
                 return int(autoit.control_get_text(
-                    self.titulo_janela, "[CLASS:ThunderRT6ComboBox; INSTANCE:6]"))
+                    self.titulo_janela, "[CLASS:ThunderRT6ComboBox; INSTANCE:7]"))
             except (ValueError, AutoItError):
                 try:
                     return int(autoit.control_get_text(
-                        self.titulo_janela, "[CLASS:ThunderRT6ComboBox; INSTANCE:7]"))
+                        self.titulo_janela, "[CLASS:ThunderRT6ComboBox; INSTANCE:8]"))
                 except (ValueError, AutoItError):
-                    try:
-                        return int(autoit.control_get_text(
-                            self.titulo_janela, "[CLASS:ThunderRT6ComboBox; INSTANCE:8]"))
-                    except (ValueError, AutoItError):
-                        return 0
+                    return 0
 
     def cadastra_ufesp(self, ano: int, valor: float):
         self.__open_menu('UFESP')
@@ -589,21 +589,65 @@ class AIIMAutoIt:
         self.__save_and_exit()
 
     def gera_relatorios(self, aiim_number: str, aiim_posicao: int):
+        numero_sem_serie = int(re.sub(r'\D', '', aiim_number)[:-1])
+        (self.reports_path / f'Relato_A{numero_sem_serie}.pdf').unlink(missing_ok=True)
+        (self.reports_path / f'Quadro1_A{numero_sem_serie}.pdf').unlink(missing_ok=True)
+        (self.reports_path / f'Quadro2_A{numero_sem_serie}.pdf').unlink(missing_ok=True)
+
         self.__open_menu("RELATORIOS", aiim_posicao)
+        logger.info('Gerando relatórios no AIIM2003...')
         self.__check_and_wait('[CLASS:ThunderRT6CheckBox; INSTANCE:1]', True)
         self.__check_and_wait('[CLASS:ThunderRT6CheckBox; INSTANCE:4]', True)
         self.__check_and_wait('[CLASS:ThunderRT6CheckBox; INSTANCE:5]', True)
         self.__click_and_wait('[CLASS:ThunderRT6CommandButton; INSTANCE:2]', wait=False)
-        # verifica tela de erro por não achar Adobe Reader
-        pdf_app = GeneralFunctions.get_default_windows_app('.pdf')
-        # TODO tem que ver o que acontece numa maquina que tem adobe...
-        if pdf_app.find('adobe') == -1 or pdf_app.find('acrobat') == -1:
+
+        # Aguarda os 3 arquivos gerados aparecerem
+        max_espera = 60
+        GeneralFunctions.wait_downloaded_file(self.reports_path, f'Relato_A{numero_sem_serie}.pdf', max_espera)
+        GeneralFunctions.wait_downloaded_file(self.reports_path, f'Quadro1_A{numero_sem_serie}.pdf', max_espera)
+        GeneralFunctions.wait_downloaded_file(self.reports_path, f'Quadro2_A{numero_sem_serie}.pdf', max_espera)
+        logger.info('Relatórios do AIIM2003 gerados!')
+
+        pdf_app = GeneralFunctions.get_default_windows_app('.pdf').lower()
+        if any([pdf_app.find(name) >= 0 for name in ['adobe', 'acrobat', 'acrord']]):
+            # caso o AIIM2003 abra o Acrobat Reader
+            try:
+                autoit.win_wait("[REGEXPTITLE:(?i)(.*- Adobe.*)]", 5)
+                autoit.win_close("[REGEXPTITLE:(?i)(.*- Adobe.*)]")
+            except AutoItError as e:
+                logger.exception('Falha ao fechar janelas do Acrobat Reader')
+                raise e
+            # fecha todos os popups do Acrobat
+            while True:
+                popup_acrobat = '[CLASS:#32770;TITLE:Acrobat Reader]'
+                try:
+                    autoit.win_wait(popup_acrobat, 2)
+                    logger.error('Achei popup')
+                    autoit.win_activate(popup_acrobat)
+                    botao = autoit.control_get_text(popup_acrobat, '[CLASS:Button;INSTANCE:2]')
+                    logger.error(f'Botão encontrado: {botao}')
+                    if botao.startswith('Fechar todas'):
+                        # não está setada opção pra sempre fechar todas
+                        autoit.control_click(popup_acrobat, '[CLASS:Button;INSTANCE:2]')
+                    elif botao == 'Sim':
+                        # fala que não quer salvar alterações
+                        autoit.control_click(popup_acrobat, '[CLASS:Button;INSTANCE:3]')
+                    else:
+                        logger.error('Botao desconhecido: ' + botao)
+                except AutoItError as e:
+                    if str(e).find('timeout on wait') >= 0:
+                        logger.info('Fechados todos os popups do Acrobat Reader')
+                        break
+                    else:
+                        raise e
+
+        else:
+            # verifica tela de erro do AIIM2003 por não achar Acrobat Reader, determina fim da geração
             autoit.win_wait('[CLASS:ThunderRT6FormDC;TITLE:Erro de ambiente]', 5)
             autoit.win_activate('[CLASS:ThunderRT6FormDC;TITLE:Erro de ambiente]')
             autoit.control_send('[CLASS:ThunderRT6FormDC;TITLE:Erro de ambiente]',
                                 '[CLASS:ThunderRT6CommandButton; INSTANCE:1]', '{ENTER}')
-        numero_sem_serie = int(re.sub(r'[^\d]', '', aiim_number)[:-1])
-        GeneralFunctions.wait_downloaded_file(self.reports_path, f'Relato_A{numero_sem_serie}.pdf', 30)
+
         self.__click_and_wait('[CLASS:ThunderRT6CommandButton; INSTANCE:3]', wait=True)
 
     def exclui_aiim(self, aiim_number: str, aiim_posicao: int):
@@ -641,10 +685,10 @@ class AIIMAutoIt:
         logger.info('Importação de AIIM realizada com sucesso')
 
     def exporta(self, aiim_number: str, aiim_posicao: int, aex_path: Path):
-        logger.info(f'Realizando exportação do AIIM {aiim_number} em {aex_path}')
         (aex_path / f'{aiim_number.replace(".", "")}.aex').unlink(missing_ok=True)
 
         self.__open_menu("EXPORTAR", aiim_posicao)
+        logger.info(f'Realizando exportação do AIIM {aiim_number} em {aex_path}')
         popup = '[CLASS:ThunderRT6FormDC;TITLE:Exportar para...]'
         autoit.control_send(popup, '[CLASS:ThunderRT6DriveListBox; INSTANCE:1]', aex_path.drive)
         for subnivel in range(1, len(aex_path.parts)):
@@ -686,11 +730,11 @@ class AIIMAutoIt:
     def gera_transmissao(self, aiim_number: str, aiim_posicao: int, sfz_path: Path,
                          data_lavratura: datetime.date = None):
 
-        logger.info(f'Realizando transmissão do AIIM {aiim_number} em {sfz_path}')
         numero_sem_serie = int(re.sub(r'[^\d]', '', aiim_number)[:-1])
         (sfz_path / f'A{numero_sem_serie}.sfz').unlink(missing_ok=True)
 
         self.__open_menu("TRANSMITIR")
+        logger.info(f'Realizando transmissão do AIIM {aiim_number} em {sfz_path}')
         popup = '[CLASS:ThunderRT6FormDC;TITLE:Exportação para Entrega]'
         autoit.win_wait(popup, 5)
         self.__click_and_wait('[CLASS:ListView20WndClass; INSTANCE:1]',

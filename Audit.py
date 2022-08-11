@@ -175,7 +175,9 @@ class AiimItem(PossibleInfraction):
         return dic
 
     def __lt__(self, other):
-        return self.infracao < other.infracao
+        return (self.has_aiim_item_number() and
+                (not other.has_aiim_item_number() or self.item < other.item)) \
+               or self.infracao < other.infracao
 
     def __str__(self):
         return f'{self.infracao}' if not self.has_aiim_item_number() else f'{self.item} - {self.infracao}'
@@ -568,7 +570,7 @@ def get_current_audit() -> Audit:
     return _singleton
 
 
-def set_audit(path: Path):
+def set_audit(path: Path = None):
     global _singleton
     if path and path.is_dir() and Audit.has_local_dados_osf(path):
         _singleton = Audit(path)

@@ -2,7 +2,6 @@ import datetime
 import os
 import re
 import subprocess
-import sys
 import threading
 import time
 from json import JSONDecodeError
@@ -31,6 +30,7 @@ from LogWindow import LogWindow
 from SQLReader import QueryAnalysisException
 
 window: sg.Window
+extracoes: dict
 
 
 def refresh_data_tab():
@@ -70,7 +70,7 @@ def refresh_analysis_tab():
 
 def refresh_notifications_tab():
     window['-NOTIFICATION-CHOSEN-'].update(Controller.get_possible_infractions_osf())
-    verification_chosen_for_notification(None)
+    verification_chosen_for_notification()
     notification_prettyprint('', '')
 
 
@@ -221,7 +221,7 @@ def open_audit(pasta: Path):
 
 def print_efd(book: str):
     referencias = WaitWindow.open_wait_window(Controller.efd_references_imported_PVA, '')
-    referencias_txt = [f'{GeneralFunctions.meses[d.month-1]} de {d.year}' for d in referencias]
+    referencias_txt = [f'{GeneralFunctions.meses[d.month - 1]} de {d.year}' for d in referencias]
     layout = [
         [sg.VPush()],
         [sg.Text('Selecione as referências que deseja gerar PDFs.')],
@@ -244,15 +244,15 @@ def print_efd(book: str):
             titulo = 'Livro de Apuração de ICMS'
         case _:
             titulo = 'EFD'
-    window = sg.Window(titulo, layout=layout,
-                       size=(350, 300),
-                       auto_size_text=True, auto_size_buttons=True,
-                       text_justification='c',
-                       resizable=False, finalize=True,
-                       default_element_size=(15, 1),
-                       modal=True, icon=GeneralFunctions.app_icon)
-    event, values = window.read()
-    window.close()
+    windowEFD = sg.Window(titulo, layout=layout,
+                          size=(350, 300),
+                          auto_size_text=True, auto_size_buttons=True,
+                          text_justification='c',
+                          resizable=False, finalize=True,
+                          default_element_size=(15, 1),
+                          modal=True, icon=GeneralFunctions.app_icon)
+    event, values = windowEFD.read()
+    windowEFD.close()
     if event == 'Gerar Livros':
         referencias_selecionadas = [referencias[referencias_txt.index(data_txt)] for data_txt in values['-EFD-PRINT-']]
         WaitWindow.open_wait_window(Controller.print_efd, 'Impressão de EFD',
@@ -277,15 +277,15 @@ def analysis_chosen(analysis: Analysis):
     window['-QUERY-'].update(disabled=False)
 
 
-def run_query(analysis: Analysis):
+def run_query(analysis: Analysis, query: str):
     try:
         if not analysis.is_query_based():
             total, resultado_query = analysis.function()
         else:
             if analysis.fix_database_function is not None:
-                _, resultado_query = Controller.executa_consulta_BD(values['-SQL-'])
+                _, resultado_query = Controller.executa_consulta_BD(query)
                 analysis.fix_database_function(resultado_query)
-            total, resultado_query = Controller.executa_consulta_BD(values['-SQL-'], 100)
+            total, resultado_query = Controller.executa_consulta_BD(query, 100)
     except AnalysisFunctionException as e:
         GUIFunctions.popup_erro(str(e), titulo='Erro no levantamento de dados adicionais para a base de dados')
     except QueryAnalysisException as e:
@@ -302,8 +302,7 @@ def run_query(analysis: Analysis):
             GUIFunctions.popup_ok('Não foram encontrados resultados para esta consulta.',
                                   titulo='Consulta ao banco de dados')
         else:
-            dic_query = QueryResultWindow.open_query_result_window(total, resultado_query, values['-SQL-'],
-                                                                   analysis)
+            dic_query = QueryResultWindow.open_query_result_window(total, resultado_query, query, analysis)
             if len(dic_query) > 0:
                 try:
                     Controller.add_analysis_to_audit(
@@ -314,7 +313,7 @@ def run_query(analysis: Analysis):
                 refresh_analysis_tab()
 
 
-def verification_chosen_for_notification(notification: PossibleInfraction):
+def verification_chosen_for_notification(notification: PossibleInfraction = None):
     if notification and notification.verificacao.notification_title:
         window['-NOTIFICATION-EDIT-TITLE-'].update(notification.verificacao.notification_title, disabled=False)
         window['-NOTIFICATION-EDIT-'].update(notification.verificacao.notification_body, disabled=False)
@@ -330,7 +329,7 @@ def verification_chosen_for_notification(notification: PossibleInfraction):
         window['-NOTIFICATION-MANUAL-SEND-'].update(disabled=True)
 
 
-# ATENÇÃO: Mexendo diretamente no Widget pra fazer negrito em partes do texto
+# ATENÇÃO: Mexendo diretamente no Widget para fazer negrito em partes do texto
 def verification_chosen_for_infraction(aiim_item: AiimItem):
     try:
         if aiim_item:
@@ -384,12 +383,12 @@ def verification_chosen_for_infraction(aiim_item: AiimItem):
         GUIFunctions.popup_erro(f'Falha no levantamento de dados da infração: {ex}')
 
 
-def notification_chosen(notification: PossibleInfraction):
+def notification_chosen(notification: PossibleInfraction, title: str, body: str):
     try:
         verification_chosen_for_notification(notification)
         notification_prettyprint(
-            notification.notificacao_titulo(values['-NOTIFICATION-EDIT-TITLE-']),
-            notification.notificacao_corpo(values['-NOTIFICATION-EDIT-'])
+            notification.notificacao_titulo(title),
+            notification.notificacao_corpo(body)
         )
     except ExcelArrazoadoAbaInexistenteException:
         if GUIFunctions.popup_sim_nao(f'A aba da planilha para essa notificação não existe mais. '
@@ -477,7 +476,8 @@ def window_layout():
             ], expand_x=True, expand_y=True),
             sg.Column([
                 [sg.Text(text=progress[1], visible=False, key=f'-{group}-{progress[0]}-TEXT-'),
-                 sg.Image(data=GeneralFunctions.bar_striped, size=(30, 25), visible=False, expand_x=True, expand_y=False,
+                 sg.Image(data=GeneralFunctions.bar_striped, size=(30, 25), visible=False, expand_x=True,
+                          expand_y=False,
                           key=f'-{group}-{progress[0]}-INFINITE-'),
                  sg.ProgressBar(max_value=100, visible=False, size=(30, 25), expand_x=True, expand_y=False,
                                 key=f'-{group}-{progress[0]}-PROGRESS-')]
@@ -628,7 +628,7 @@ def menu_layout(tipo_menu: str):
                             'Atualiza Quadro de Operações::-MENU-AIIM-OPERATIONS-',
                             'Gera Arquivo Backup AIIM2003::-MENU-AIIM-EXPORT-',
                             'Gera Arquivo Transmissão AIIM2003::-MENU-AIIM-UPLOAD-']
-            if not get_current_audit().is_aiim_open:
+            if not get_current_audit().is_aiim_open or not Controller.is_aiim_on_AIIM2003():
                 aiim_submenu = ['!' + item for item in aiim_submenu]
                 aiim_submenu.append('Reabre AIIM2003::-MENU-AIIM-REOPEN-')
             if get_current_audit().receipt_digital_files:
@@ -735,10 +735,11 @@ def data_extraction_progress_update(evento_progresso: str, tipo_progresso: str):
                 visible=True
             )
 
-if __name__ == "__main__":
 
+def initialize_environment():
     try:
         import pyi_splash
+
         while not pyi_splash.is_alive():
             time.sleep(1)
         pyi_splash.update_text(f'{GeneralFunctions.project_name} v{GeneralFunctions.project_version}')
@@ -758,6 +759,7 @@ if __name__ == "__main__":
         InitialConfigurationWizard.create_config_file()
 
     # Criar janela
+    global window
     window = sg.Window(GeneralFunctions.project_name, window_layout(), size=(1024, 768),
                        resizable=True, finalize=True,
                        enable_close_attempted_event=True, icon=GeneralFunctions.app_icon)
@@ -767,14 +769,15 @@ if __name__ == "__main__":
 
     try:
         import pyi_splash
+
         pyi_splash.close()
     except ModuleNotFoundError:
         pass
     except Exception as e:
         pass
 
-    aiims = []
-    extracoes = {}
+
+def window_event_handler():
     log_window: LogWindow = None
     # Event Loop to process "events" and get the "values" of the inputs
     while True:
@@ -797,7 +800,7 @@ if __name__ == "__main__":
             update_gifs()
         # eventos da janela principal
         elif event == sg.WINDOW_CLOSE_ATTEMPTED_EVENT or event == sg.WINDOW_CLOSED or event.endswith('-MENU-EXIT-') \
-                or event == 'Cancel': # if user closes window or clicks cancel
+                or event == 'Cancel':  # if user closes window or clicks cancel
             if GUIFunctions.popup_sim_nao('Deseja realmente sair?') == 'Sim':
                 break
         elif event == '-MAIN-TAB-':
@@ -841,7 +844,7 @@ if __name__ == "__main__":
         elif event == '-NEW-ANALYSIS-':
             AnalysisWizardWindow()
         elif event == '-QUERY-':
-            run_query(values['-ANALYSIS-CHOSEN-'][0])
+            run_query(values['-ANALYSIS-CHOSEN-'][0], values['-SQL-'])
         elif event == '-NOTIFICATION-TAB-':
             if values[event] == '-PREVIEW-TAB-':
                 if len(values['-NOTIFICATION-CHOSEN-']) > 0:
@@ -853,7 +856,8 @@ if __name__ == "__main__":
                     window['-NOTIFICATION-PREVIEW-'].update('')
         elif event == '-NOTIFICATION-CHOSEN-':
             if len(values[event]) > 0:
-                notification_chosen(values[event][0])
+                notification_chosen(values[event][0],
+                                    values['-NOTIFICATION-EDIT-TITLE-'], values['-NOTIFICATION-EDIT-'])
             else:
                 verification_chosen_for_notification(None)
         elif event == '-NOTIFICATION-ATTACHMENTS-':
@@ -909,8 +913,12 @@ if __name__ == "__main__":
             resposta = sg.popup_get_text('Digite o número correto atual do item no AIIM2003',
                                          title='Alteração Manual de Item')
             if resposta and re.match(r'^\d+$', resposta):
-                Controller.update_aiim_item_number(values['-INFRACTION-CHOSEN-'][0], int(resposta))
-                verification_chosen_for_infraction(values['-INFRACTION-CHOSEN-'][0])
+                aiim_item = values['-INFRACTION-CHOSEN-'][0]
+                WaitWindow.open_wait_window(Controller.update_aiim_item_number,
+                                            'Atualizar número do Item',
+                                            aiim_item, int(resposta))
+                refresh_aiim_tab()
+                verification_chosen_for_infraction(aiim_item)
         elif event == '-AIIM-UPDATE-NOTIF-ANSWER-':
             resposta = sg.popup_get_text('Digite o expediente Sem Papel com resposta à notificação',
                                          title='Resposta à Notificação')
@@ -981,3 +989,9 @@ if __name__ == "__main__":
                           [sg.T(f'{GeneralFunctions.project_name} versão {GeneralFunctions.project_version}')],
                           [sg.OK(s=10)]], element_justification='c', icon=GeneralFunctions.app_icon).read(close=True)
     window.close()
+
+
+if __name__ == "__main__":
+    extracoes = {}
+    initialize_environment()
+    window_event_handler()

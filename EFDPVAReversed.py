@@ -2,6 +2,7 @@ import datetime
 import os.path
 import queue
 import re
+import signal
 import subprocess
 import sys
 import threading
@@ -31,21 +32,10 @@ def new_smart_decode(s):
         return unicode(s)
 
 
-class PopenWindows(subprocess.Popen):
-    def __init__(self, command,
-                 stdin=None, stdout=None, stderr=None,
-                 shell=False, cwd=None,
-                 startupinfo=None, creationflags=0, *popen_kwargs):
-        startupinfo = subprocess.STARTUPINFO()
-        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-        super().__init__(command, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE,
-                         cwd=cwd, startupinfo=startupinfo)
-
-
 # Monkey patching!
 py4j.protocol.smart_decode = new_smart_decode
 py4j.java_gateway.smart_decode = new_smart_decode
-py4j.java_gateway.Popen = PopenWindows
+py4j.java_gateway.Popen = GeneralFunctions.PopenWindows
 
 
 class EFDPVAReversed:
@@ -100,6 +90,9 @@ class EFDPVAReversed:
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self._close()
+
+    def _close(self):
         logger.removeHandler(self.queue_handler)
         if self._gateway is not None:
             try:
