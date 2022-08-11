@@ -618,29 +618,31 @@ class AIIMAutoIt:
                 logger.exception('Falha ao fechar janelas do Acrobat Reader')
                 raise e
             # fecha todos os popups do Acrobat
+            fechou_popup1 = False
             while True:
-                popup_acrobat = '[CLASS:#32770;TITLE:Acrobat Reader]'
-                try:
-                    autoit.win_wait(popup_acrobat, 2)
-                    logger.error('Achei popup')
-                    autoit.win_activate(popup_acrobat)
+                if not fechou_popup1:
+                    popup_acrobat = '[CLASS:#32770;TITLE:Adobe Acrobat]'
+                    autoit.win_wait(popup_acrobat, 1)
                     botao = autoit.control_get_text(popup_acrobat, '[CLASS:Button;INSTANCE:2]')
-                    logger.error(f'Botão encontrado: {botao}')
                     if botao.startswith('Fechar todas'):
                         # não está setada opção pra sempre fechar todas
-                        autoit.control_click(popup_acrobat, '[CLASS:Button;INSTANCE:2]')
-                    elif botao == 'Sim':
-                        # fala que não quer salvar alterações
-                        autoit.control_click(popup_acrobat, '[CLASS:Button;INSTANCE:3]')
-                    else:
-                        logger.error('Botao desconhecido: ' + botao)
-                except AutoItError as e:
-                    if str(e).find('timeout on wait') >= 0:
-                        logger.info('Fechados todos os popups do Acrobat Reader')
-                        break
-                    else:
-                        raise e
-
+                        self.__wait_dialog_and_click(popup_acrobat, '[CLASS:Button;INSTANCE:2]')
+                        fechou_popup1 = True
+                else:
+                    try:
+                        popup_acrobat = '[CLASS:#32770;TITLE:Acrobat Reader]'
+                        autoit.win_wait(popup_acrobat, 2)
+                        logger.error('Achei popup de salvar')
+                        botao = autoit.control_get_text(popup_acrobat, '[CLASS:Button;INSTANCE:3]')
+                        if botao == '&Não':
+                            # fala que não quer salvar alterações
+                            self.__wait_dialog_and_click(popup_acrobat, '[CLASS:Button;INSTANCE:3]')
+                    except AutoItError as e2:
+                        if str(e2).find('timeout on wait') >= 0:
+                            logger.info('Fechados todos os popups do Acrobat Reader')
+                            break
+                        else:
+                            raise e2
         else:
             # verifica tela de erro do AIIM2003 por não achar Acrobat Reader, determina fim da geração
             autoit.win_wait('[CLASS:ThunderRT6FormDC;TITLE:Erro de ambiente]', 5)
