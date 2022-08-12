@@ -1,5 +1,14 @@
 {
 	"nome": "Alíquota errada",
 	"ttpa": [1, 1, 1, 3, [1, 1]],
-	"relato": "Deixou de pagar o ICMS no montante de @CRI, referente a<periodo>, por emissão de documentos fiscais <modelos> relativos a operações tributadas com erro na aplicação da alíquota, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas."
+	"capitulacao": {
+		"limpa": false
+	},
+	"relato": "Deixou de pagar o ICMS no montante de @CRI, referente a<periodo>, por emissão de documentos fiscais <modelos> relativos a operações tributadas com erro na aplicação da alíquota, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas.",
+	"relatorio_circunstanciado": "o contribuinte foi autuado por ter destacado em documentos fiscais imposto com alíquota erroneamente aplicada a menor do que o previsto na legislação.",
+	"provas": [
+		{"tipo": "listagem", "descricao": "Listagem de documentos fiscais com erro na aplicação da alíquota"},
+		{"tipo": "DFe", "descricao": "Transcrição de documentos fiscais emitidos pelo contribuinte com erro na alíquota"},
+		{"tipo": "LRS", "descricao": "Transcrição de escrituração em LRS de documentos fiscais com erro na alíquota"}
+	]
 }

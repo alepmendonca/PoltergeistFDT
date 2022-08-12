@@ -1082,48 +1082,53 @@ class SeleniumWebScraper:
             logger.exception("Erro ao coletar dados de apuração da GIA da IE " + ie)
             raise WebScraperException(f"Erro ao coletar dados de apuração da GIA da IE {ie}: {e}")
 
+    def __go_to_pfe_gias_entregues(self, ie: str, inicio: datetime.date, fim: datetime.date) -> str:
+        logger.info("Acessando apuração de GIA")
+        self.__get_driver().get(pfe_url)
+
+        # Select "Fazendário" as user profile
+        radio_fazendario = self.__get_driver().find_element(By.ID, "ConteudoPagina_rdoListPerfil_2")
+        radio_fazendario.click()
+
+        # Click on "Certificado Digital"
+        t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
+                                                   args=[self.__get_driver().title])
+        try:
+            input_certificado = self.__get_driver().find_element(By.ID,
+                                                                 "ConteudoPagina_btn_Login_Certificado_WebForms")
+            t.start()
+            input_certificado.click()
+        except StaleElementReferenceException:
+            input_certificado = self.__get_driver().find_element(By.ID,
+                                                                 "ConteudoPagina_btn_Login_Certificado_WebForms")
+            t.start()
+            input_certificado.click()
+        t.join()
+
+        WebDriverWait(self.__get_driver(), 10).until(
+            EC.visibility_of_element_located((By.LINK_TEXT, "Nova GIA")))
+        home_url = self.__get_driver().current_url
+        self.__get_driver().find_element(By.LINK_TEXT, "Nova GIA").click()
+        self.__get_driver().find_element(By.LINK_TEXT, "Consulta Completa").click()
+
+        logger.info(f"Consultando GIAs da {ie}")
+        self.__get_driver().find_element(By.ID, "ie").send_keys(ie)
+        Select(self.__get_driver().find_element(By.NAME, "refInicialMes")).select_by_value(
+            str(inicio.month))
+        Select(self.__get_driver().find_element(By.NAME, "refInicialAno")).select_by_value(
+            str(inicio.year))
+        Select(self.__get_driver().find_element(By.NAME, "refFinalMes")).select_by_value(
+            str(fim.month))
+        Select(self.__get_driver().find_element(By.NAME, "refFinalAno")).select_by_value(
+            str(fim.year))
+        self.__get_driver().find_element(By.NAME, "botao").click()
+        return home_url
+
     def __print_gia_apuracao_subpage(self, ie: str, apuracoes: list[datetime.date],
                                      detail_name: str, codes: list[str]) -> list[Path]:
+        home_url = None
         try:
-            logger.info("Acessando apuração de GIA")
-            self.__get_driver().get(pfe_url)
-
-            # Select "Fazendário" as user profile
-            radio_fazendario = self.__get_driver().find_element(By.ID, "ConteudoPagina_rdoListPerfil_2")
-            radio_fazendario.click()
-
-            # Click on "Certificado Digital"
-            t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
-                                                       args=[self.__get_driver().title])
-            try:
-                input_certificado = self.__get_driver().find_element(By.ID,
-                                                                     "ConteudoPagina_btn_Login_Certificado_WebForms")
-                t.start()
-                input_certificado.click()
-            except StaleElementReferenceException:
-                input_certificado = self.__get_driver().find_element(By.ID,
-                                                                     "ConteudoPagina_btn_Login_Certificado_WebForms")
-                t.start()
-                input_certificado.click()
-            t.join()
-
-            WebDriverWait(self.__get_driver(), 10).until(
-                EC.visibility_of_element_located((By.LINK_TEXT, "Nova GIA")))
-            home_url = self.__get_driver().current_url
-            self.__get_driver().find_element(By.LINK_TEXT, "Nova GIA").click()
-            self.__get_driver().find_element(By.LINK_TEXT, "Consulta Completa").click()
-
-            logger.info(f"Consultando GIAs da {ie}")
-            self.__get_driver().find_element(By.ID, "ie").send_keys(ie)
-            Select(self.__get_driver().find_element(By.NAME, "refInicialMes")).select_by_value(
-                str(apuracoes[0].month))
-            Select(self.__get_driver().find_element(By.NAME, "refInicialAno")).select_by_value(
-                str(apuracoes[0].year))
-            Select(self.__get_driver().find_element(By.NAME, "refFinalMes")).select_by_value(
-                str(apuracoes[-1].month))
-            Select(self.__get_driver().find_element(By.NAME, "refFinalAno")).select_by_value(
-                str(apuracoes[-1].year))
-            self.__get_driver().find_element(By.NAME, "botao").click()
+            home_url = self.__go_to_pfe_gias_entregues(ie, apuracoes[0], apuracoes[-1])
 
             tabela = self.__get_driver().find_element(By.CLASS_NAME, 'RESULTADO-TABELA')
             linhas = tabela.find_elements(By.CLASS_NAME, 'CORPO-TEXTO-FUNDO')
@@ -1158,14 +1163,37 @@ class SeleniumWebScraper:
                     self.__get_driver().back()
                 self.__get_driver().back()
                 self.__get_driver().back()
-            # encerra sessão, caso alguém entre no PFE na mesma sessão do navegador
-            self.__get_driver().get(home_url)
-            self.__get_driver().find_element(By.XPATH,
-                                             '/html/body/div[2]/section/div/div/div/div[2]/div/div[2]/a[3]').click()
             return [pdf for k in sorted(paths.keys()) for pdf in paths[k]]
         except Exception as e:
             logger.exception("Erro ao coletar dados de apuração da GIA da IE " + ie)
             raise WebScraperException(f"Erro ao coletar dados de apuração da GIA da IE {ie}: {e}")
+        finally:
+            # encerra sessão, caso alguém entre no PFE na mesma sessão do navegador
+            if home_url is not None:
+                self.__get_driver().get(home_url)
+                self.__get_driver().find_element(By.XPATH,
+                                                 '/html/body/div[2]/section/div/div/div/div[2]/div/div[2]/a[3]').click()
+
+    def print_gia_entregas(self, ie: str, inicio: datetime.date, fim: datetime.date) -> list[Path]:
+        home_url = None
+        try:
+            home_url = self.__go_to_pfe_gias_entregues(ie, inicio, fim)
+            logger.info(f'Imprimindo extrato de GIAs entregues pela IE {ie}...')
+            relatorio = self.tmp_path / 'giaentregas.pdf'
+            self.__save_html_as_pdf(self.__get_driver().page_source, relatorio)
+            return [relatorio]
+        except Exception as e:
+            logger.exception("Erro ao levantar GIAs da IE " + ie)
+            raise WebScraperException(f"Erro ao levantar GIAs da IE {ie}: {e}")
+        finally:
+            # encerra sessão, caso alguém entre no PFE na mesma sessão do navegador
+            if home_url:
+                self.__get_driver().get(home_url)
+                self.__get_driver().find_element(By.XPATH,
+                                                 '/html/body/div[2]/section/div/div/div/div[2]/div/div[2]/a[3]').click()
+
+    def print_gia_apuracao(self, ie: str, apuracoes: list[datetime.date]) -> list[Path]:
+        return self.__print_gia_apuracao_subpage(ie, apuracoes, 'Apuração', [])
 
     def print_gia_outros_debitos(self, ie: str, apuracoes: list[datetime.date]) -> list[Path]:
         return self.__print_gia_apuracao_subpage(ie, apuracoes, 'Ajustes de Débitos', ['052', '053'])
@@ -1957,6 +1985,7 @@ class SeleniumWebScraper:
             raise WebScraperException(f'Ocorreu um problema no download do expediente {expediente} no Sem Papel: {e}')
 
     def print_efd_obrigatoriedade(self, cnpj: str, download_path: Path):
+        logger.info('Baixando relatório de obrigatoriedade de EFD')
         resposta = requests.get(f'https://www.fazenda.sp.gov.br/sped/obrigados/obrigados.asp?CNPJLimpo={cnpj}'
                                 f'&Submit=Enviar')
         html = resposta.text
@@ -1965,8 +1994,8 @@ class SeleniumWebScraper:
 
     def print_efd_entregas(self, cnpj: str, inicio: datetime.date, fim: datetime.date, download_path: Path):
         try:
+            logger.info('Baixando lista de entregas de EFDs no portal Arquivos Digitais')
             self.__get_driver().get(arquivos_digitais_url)
-
             # Click on "Certificado Digital"
             t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
                                                        args=[self.__get_driver().title])

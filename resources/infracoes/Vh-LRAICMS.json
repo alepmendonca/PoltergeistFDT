@@ -1,0 +1,21 @@
+{
+	"nome": "LRAICMS",
+	"ttpa": [1, 4],
+	"capitulacao": {
+		"limpa": true,
+		"artigos": [
+		  {"artigo": "223", "paragrafo": "2"},
+			{"artigo": "250A", "inciso": "5", "junta": "C/C"},
+			{"artigo": "250A", "paragrafo": "1", "item": "1"},
+			{"especial": "art. 10 da Portaria CAT 147/2009"}
+		]
+	},
+	"relato": "Atrasou a entrega do Livro Fiscal de Registro de Apuração de ICMS em meio eletrônico (EFD), referente a<periodo>, conforme se comprova pelos documentos juntados no Anexo do item.",
+	"relatorio_circunstanciado": "o contribuinte foi autuado por ter atrasado a entrega de EFDs, mesmo já tendo sido previamente notificado sobre as penalidades previstas a este comportamento.",
+	"provas": [
+		{
+			"tipo": "EFD-Extrato",
+			"descricao": "Extrato das entregas de EFD realizadas pelo contribuinte, demonstrando o atraso"
+		}
+	]
+}

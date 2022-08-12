@@ -9,6 +9,7 @@ from zipfile import BadZipFile
 
 import PySimpleGUI as sg
 import numpy as np
+from win32comext.shell.demos.servers.folder_view import GUID
 
 import Controller
 import GUIFunctions
@@ -158,7 +159,7 @@ def create_audit(pasta: Path):
                          sg.Button('Cancelar', size=(10, 1))]]
         popup = sg.Window(title="Carregar OSF", layout=layout_popup, auto_size_text=True,
                           grab_anywhere=False, finalize=True, modal=True, no_titlebar=False,
-                          element_justification='c', icon=GeneralFunctions.app_icon)
+                          element_justification='c', icon=GUIFunctions.app_icon)
         while True:
             evento, valores = popup.read()
             if evento in (None, 'Cancelar', 'Quit'):
@@ -250,7 +251,7 @@ def print_efd(book: str):
                           text_justification='c',
                           resizable=False, finalize=True,
                           default_element_size=(15, 1),
-                          modal=True, icon=GeneralFunctions.app_icon)
+                          modal=True, icon=GUIFunctions.app_icon)
     event, values = windowEFD.read()
     windowEFD.close()
     if event == 'Gerar Livros':
@@ -330,7 +331,7 @@ def verification_chosen_for_notification(notification: PossibleInfraction = None
 
 
 # ATENÇÃO: Mexendo diretamente no Widget para fazer negrito em partes do texto
-def verification_chosen_for_infraction(aiim_item: AiimItem):
+def aiim_item_chosen(aiim_item: AiimItem):
     try:
         if aiim_item:
             try:
@@ -370,6 +371,19 @@ def verification_chosen_for_infraction(aiim_item: AiimItem):
                     window['-AIIM-ITEM-DATA-'].update(f' (Resposta: {aiim_item.notificacao_resposta})', append=True)
                 window['-AIIM-ITEM-DATA-'].update('\n', append=True)
                 window['-AIIM-UPDATE-NOTIF-ANSWER-'].update(visible=not aiim_item.notificacao_resposta)
+            if aiim_item.relatorio_circunstanciado():
+                window['-AIIM-ITEM-DATA-'].update('Relatório Circunstanciado: ',
+                                                  font_for_value=('Arial', 10, 'bold'), append=True)
+                window['-AIIM-ITEM-DATA-'].update(f'No item {aiim_item.item}, '
+                                                  f'{aiim_item.relatorio_circunstanciado()}\n', append=True)
+            proofs = aiim_item.proofs_for_report()
+            if proofs:
+                window['-AIIM-ITEM-DATA-'].update('Provas que compõem Anexo:\n',
+                                                  font_for_value=('Arial', 10, 'bold'), append=True)
+                for proof in proofs:
+                    window['-AIIM-ITEM-DATA-'].update(f'    - {proof}\n', append=True)
+            else:
+                window['-AIIM-ITEM-PROOFS-'].update(visible=False)
             window['-AIIM-ITEM-DATA-'].update(visible=True)
             window['-AIIM-ITEM-DATA-'].expand(True, True)
             window['-AIIM-REMOVE-ITEM-'].update(visible=True)
@@ -476,7 +490,7 @@ def window_layout():
             ], expand_x=True, expand_y=True),
             sg.Column([
                 [sg.Text(text=progress[1], visible=False, key=f'-{group}-{progress[0]}-TEXT-'),
-                 sg.Image(data=GeneralFunctions.bar_striped, size=(30, 25), visible=False, expand_x=True,
+                 sg.Image(data=GUIFunctions.bar_striped, size=(30, 25), visible=False, expand_x=True,
                           expand_y=False,
                           key=f'-{group}-{progress[0]}-INFINITE-'),
                  sg.ProgressBar(max_value=100, visible=False, size=(30, 25), expand_x=True, expand_y=False,
@@ -484,11 +498,11 @@ def window_layout():
                 for progress in Controller.data_groups[group]['progressos']
             ], element_justification='left', expand_x=True, expand_y=True),
             sg.Column([[
-                sg.Image(source=GeneralFunctions.error_img, size=(30, 30), visible=False,
+                sg.Image(source=GUIFunctions.error_img, size=(30, 30), visible=False,
                          key=f'-{group}-{progress[0]}-ERROR-'),
-                sg.Image(source=GeneralFunctions.check_img, size=(30, 30), visible=False,
+                sg.Image(source=GUIFunctions.check_img, size=(30, 30), visible=False,
                          key=f'-{group}-{progress[0]}-OK-'),
-                sg.Image(source=GeneralFunctions.warning_img, size=(30, 30), visible=False,
+                sg.Image(source=GUIFunctions.warning_img, size=(30, 30), visible=False,
                          key=f'-{group}-{progress[0]}-STOP-')
             ] for progress in Controller.data_groups[group]['progressos']])
         ] for group in groups_part
@@ -626,6 +640,8 @@ def menu_layout(tipo_menu: str):
                             'Atualiza Relatório Circunstanciado::-MENU-AIIM-CUSTOM-REPORT-',
                             'Gera Provas Gerais::-MENU-AIIM-GENERAL-PROOFS-',
                             'Atualiza Quadro de Operações::-MENU-AIIM-OPERATIONS-',
+                            'Gera Capa para Anexo personalizada::-MENU-AIIM-PROOF-COVER-',
+                            '---',
                             'Gera Arquivo Backup AIIM2003::-MENU-AIIM-EXPORT-',
                             'Gera Arquivo Transmissão AIIM2003::-MENU-AIIM-UPLOAD-']
             if not get_current_audit().is_aiim_open or not Controller.is_aiim_on_AIIM2003():
@@ -762,7 +778,7 @@ def initialize_environment():
     global window
     window = sg.Window(GeneralFunctions.project_name, window_layout(), size=(1024, 768),
                        resizable=True, finalize=True,
-                       enable_close_attempted_event=True, icon=GeneralFunctions.app_icon)
+                       enable_close_attempted_event=True, icon=GUIFunctions.app_icon)
     window.set_min_size((800, 500))
     window_layout_fix()
     refresh_data_tab()
@@ -826,7 +842,7 @@ def window_event_handler():
             if folder:
                 try:
                     open_audit(Path(folder))
-                except ConfigFileDecoderException as e:
+                except Exception as e:
                     GUIFunctions.popup_erro(str(e), titulo='Falha na abertura da auditoria')
         elif event == '-DATA-EXTRACTION-':
             grupos = [k[1:-10] for k, v in values.items() if k.endswith('-CHECKBOX-') and v]
@@ -870,7 +886,7 @@ def window_event_handler():
             notification_manual_send(values['-NOTIFICATION-CHOSEN-'][0])
         elif event == '-INFRACTION-CHOSEN-':
             if len(values[event]) > 0:
-                verification_chosen_for_infraction(values[event][0])
+                aiim_item_chosen(values[event][0])
         elif event == '-MENU-AIIM-CREATE-':
             aiims = WaitWindow.open_wait_window(Controller.get_aiims_for_osf, '')
             if aiims is not None:
@@ -889,7 +905,7 @@ def window_event_handler():
                     layout_popup[1].append(sg.Button('Cancelar'))
                     popup = sg.Window(title="Número AIIM", layout=layout_popup, auto_size_text=True,
                                       grab_anywhere=False, finalize=True, modal=True, no_titlebar=False,
-                                      element_justification='c', icon=GeneralFunctions.app_icon)
+                                      element_justification='c', icon=GUIFunctions.app_icon)
                     evento, valores = popup.read()
                     popup.close()
                     del popup
@@ -904,11 +920,11 @@ def window_event_handler():
             aiim_item = values['-INFRACTION-CHOSEN-'][0]
             WaitWindow.open_wait_window(Controller.create_aiim_item, 'Criar Item no AIIM', aiim_item)
             refresh_aiim_tab()
-            verification_chosen_for_infraction(aiim_item)
+            aiim_item_chosen(aiim_item)
         elif event == '-AIIM-UPDATE-ITEM-':
             WaitWindow.open_wait_window(Controller.cria_ddf, 'Atualizar DDF de Item no AIIM',
                                         values['-INFRACTION-CHOSEN-'][0])
-            verification_chosen_for_infraction(values['-INFRACTION-CHOSEN-'][0])
+            aiim_item_chosen(values['-INFRACTION-CHOSEN-'][0])
         elif event == '-AIIM-UPDATE-ITEM-NUMBER-':
             resposta = sg.popup_get_text('Digite o número correto atual do item no AIIM2003',
                                          title='Alteração Manual de Item')
@@ -918,14 +934,14 @@ def window_event_handler():
                                             'Atualizar número do Item',
                                             aiim_item, int(resposta))
                 refresh_aiim_tab()
-                verification_chosen_for_infraction(aiim_item)
+                aiim_item_chosen(aiim_item)
         elif event == '-AIIM-UPDATE-NOTIF-ANSWER-':
             resposta = sg.popup_get_text('Digite o expediente Sem Papel com resposta à notificação',
                                          title='Resposta à Notificação')
             try:
                 aiim_item: AiimItem = values['-INFRACTION-CHOSEN-'][0]
                 Controller.update_aiim_item_notification_response(aiim_item, resposta)
-                verification_chosen_for_infraction(aiim_item)
+                aiim_item_chosen(aiim_item)
             except ValueError:
                 GUIFunctions.popup_erro('Formato inválido para número de expediente Sem Papel '
                                         '(deveria ser algo como SFP-EXP-<ano>/<numero>)')
@@ -966,6 +982,17 @@ def window_event_handler():
             WaitWindow.open_wait_window(Controller.generate_general_proofs_attachment, 'Gerar Provas Gerais')
         elif event.endswith('-MENU-AIIM-OPERATIONS-'):
             WaitWindow.open_wait_window(Controller.declare_operations_in_aiim, 'Cadastrar Operações no AIIM2003')
+        elif event.endswith('-MENU-AIIM-PROOF-COVER-'):
+            texto = sg.popup_get_text('Informe o texto a ser colocado na capa:',
+                                      title='Capa personalizada', icon=GUIFunctions.app_icon)
+            if texto:
+                caminho = sg.popup_get_file('Escolha o local e nome da nova capa', 'Nova capa',
+                                            initial_folder=get_current_audit().path(), save_as=True,
+                                            default_extension='.pdf',
+                                            icon=GUIFunctions.app_icon,
+                                            file_types=(('PDF', '.pdf'),), no_window=True)
+                if caminho:
+                    WaitWindow.open_wait_window(Controller.generate_custom_report_cover, '', texto, Path(caminho))
         elif event.endswith('-MENU-AIIM-RECEIPT-'):
             WaitWindow.open_wait_window(Controller.send_notification_with_files_digital_receipt, 'Enviar Recibo')
             refresh_aiim_tab()
@@ -987,7 +1014,7 @@ def window_event_handler():
                       [
                           [sg.Image(InitialConfigurationWizard.get_splash_image())],
                           [sg.T(f'{GeneralFunctions.project_name} versão {GeneralFunctions.project_version}')],
-                          [sg.OK(s=10)]], element_justification='c', icon=GeneralFunctions.app_icon).read(close=True)
+                          [sg.OK(s=10)]], element_justification='c', icon=GUIFunctions.app_icon).read(close=True)
     window.close()
 
 

@@ -1,3 +1,4 @@
+from __future__ import annotations
 import copy
 import importlib
 import json
@@ -6,6 +7,10 @@ import re
 import sys
 from json import JSONDecodeError
 from pathlib import Path
+
+import jsonschema
+from jsonschema.exceptions import ValidationError
+
 import GeneralFunctions
 
 
@@ -14,7 +19,7 @@ class ConfigFileDecoderException(Exception):
 
 
 class InfractionArticle:
-    def is_special(self):
+    def is_special(self) -> bool:
         return False
 
 
@@ -22,7 +27,7 @@ class InfractionSpecialArticle(InfractionArticle):
     def __init__(self, article_data: dict):
         self.text = article_data['especial']
 
-    def is_special(self):
+    def is_special(self) -> bool:
         return True
 
 
@@ -74,36 +79,36 @@ class Analysis:
     _audit_analysis = {}
 
     @classmethod
-    def __put_analysis_from_path_in_dict(cls, directory: Path, dic: dict):
+    def __put_analysis_from_path_in_dict(cls, directory: Path, dic: dict, validate=True):
         if len(dic) == 0 and directory:
             try:
                 for (path, _, verificacoes) in os.walk(str(directory.absolute())):
                     for verificacao in verificacoes:
                         if verificacao.endswith('.json') and \
                                 verificacao not in GeneralFunctions.get_project_special_files():
-                            a = cls(Path(path) / verificacao)
+                            a = cls(Path(path) / verificacao, validate)
                             dic.update({a.name: a})
             except ConfigFileDecoderException as ce:
                 dic.clear()
                 raise ce
 
     @classmethod
-    def __get_default_analysis_dict(cls) -> dict:
-        cls.__put_analysis_from_path_in_dict(Path(r'resources/verificacoes'), cls._builtin_analysis)
+    def __get_default_analysis_dict(cls, validate=False) -> dict[str, Analysis]:
+        cls.__put_analysis_from_path_in_dict(Path(r'resources/verificacoes'), cls._builtin_analysis, validate)
         return cls._builtin_analysis
 
     @classmethod
-    def __get_user_analysis_dict(cls) -> dict:
+    def __get_user_analysis_dict(cls) -> dict[str, Analysis]:
         cls.__put_analysis_from_path_in_dict(GeneralFunctions.get_user_path(), cls._user_analysis)
         return cls._user_analysis
 
     @classmethod
-    def __get_audit_analysis_dict(cls, audit_path: Path = None) -> dict:
+    def __get_audit_analysis_dict(cls, audit_path: Path = None) -> dict[str, Analysis]:
         cls.__put_analysis_from_path_in_dict(audit_path, cls._audit_analysis)
         return cls._audit_analysis
 
     @classmethod
-    def get_all_analysis(cls, audit_path: Path) -> list:
+    def get_all_analysis(cls, audit_path: Path = None) -> list[Analysis]:
         vls = list(cls.__get_default_analysis_dict().values())
         vls.extend(list(cls.__get_user_analysis_dict().values()))
         vls.extend(list(cls.__get_audit_analysis_dict(audit_path).values()))
@@ -127,11 +132,25 @@ class Analysis:
             name, cls.__get_user_analysis_dict().get(
                 name, cls.__get_audit_analysis_dict(audit_path).get(name)))
 
-    def __init__(self, par: Path | dict):
+    @classmethod
+    def get_json_analysis_schema(cls) -> dict:
+        with Path(r'resources/verificacoes-schema.json').open(mode='r') as outfile:
+            return json.load(outfile)
+
+    def __init__(self, par: Path | dict, validate: bool = True):
         if isinstance(par, Path):
             try:
                 with par.open(mode='r') as outfile:
                     dados = json.load(outfile)
+                # valida dados contra o JSON schema
+                if validate:
+                    try:
+                        jsonschema.validate(dados, self.get_json_analysis_schema(),
+                                            format_checker=jsonschema.draft202012_format_checker)
+                    except ValidationError as ex:
+                        raise ConfigFileDecoderException(f'Arquivo de análise {par.name} com formato inválido. '
+                                                         f'Detalhamento dos erros encontrados:\n'
+                                                         f"{ex.message}")
             except JSONDecodeError as jex:
                 raise ConfigFileDecoderException(f'Falha ao abrir arquivo de análise {par}, '
                                                  f'está com falha no seu conteúdo: {jex}')
@@ -144,10 +163,10 @@ class Analysis:
                 modulo = importlib.import_module("AnalysisFunctions")
             else:
                 modulo = sys.modules["AnalysisFunctions"]
-            self.sheet_default_name = dados.get('planilha_nome', 'Nome da Planilha')
             if dados.get('consulta', None):
                 self.query = dados['consulta']
                 self.query_detail = dados.get('consulta_detalhamento', None)
+                self.sheet_default_name = dados.get('planilha_nome', 'Nome da Planilha')
                 self.function = None
                 self.function_ddf = None
                 if dados.get('funcao_ddf'):
@@ -182,13 +201,13 @@ class Analysis:
             self.notification_title = dados.get('notificacao', {}).get('titulo')
             self.notification_body = dados.get('notificacao', {}).get('corpo')
             self.notification_attachments = dados.get('notificacao', {}).get('anexo')
+            self.infractions: list[Infraction] = []
             infracoes = dados['infracoes']
             if isinstance(infracoes, list):
-                self.infractions = [Infraction.get_by_name(i) for i in infracoes]
+                self.infractions.extend([Infraction.get_by_name(i) for i in infracoes])
                 for i in self.infractions:
                     i.analysis = self
             else:
-                self.infractions = []
                 for i, overriden_data in dict(infracoes).items():
                     infraction = Infraction.get_by_name(i)
                     infraction.analysis = self
@@ -250,6 +269,10 @@ class AiimProof:
                     'nome': 'Livro de Apuração ICMS'},
         'DFe': {'modulo': 'AiimProofGenerator', 'funcao': 'get_dfe', 'allows_sampling': True,
                 'nome': 'Documentos Fiscais'},
+        'GIA-Extrato': {'modulo': 'AiimProofGenerator', 'funcao': 'get_gias_entregues',
+                        'nome': 'GIA - Entregas'},
+        'GIA-Apuracao': {'modulo': 'AiimProofGenerator', 'funcao': 'get_gia_apuracao',
+                         'nome': 'GIA - Apuração'},
         'GIA-OutrosDebitos': {'modulo': 'AiimProofGenerator', 'funcao': 'get_gia_outros_debitos',
                               'allows_sampling': True, 'nome': 'GIA - Outros Débitos'},
         'GIA-OutrosCreditos': {'modulo': 'AiimProofGenerator', 'funcao': 'get_gia_outros_creditos',
@@ -365,6 +388,8 @@ class Infraction:
             self.report = dicionario['relato']
         if dicionario.get('ordem'):
             self.order = dicionario['ordem']
+        if dicionario.get('ttpa'):
+            self.ttpa = dicionario['ttpa']
         if dicionario.get('capitulacao'):
             self.capitulation = InfractionCapitulation(self, dicionario['capitulacao'])
         if dicionario.get('relatorio_circunstanciado'):

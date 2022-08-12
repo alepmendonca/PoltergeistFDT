@@ -1,5 +1,12 @@
 {
 	"nome": "GIA atrasada",
 	"ttpa": [1, 1, 1],
-	"relato": "Entregou guia de informação (GIA) em atraso com relação ao prazo determinado no RICMS/00, n<periodo>, conforme se comprova pelas cópias dos documentos juntadas no Anexo do item."
+	"capitulacao": {
+		"limpa": false
+	},
+	"relato": "Entregou guia de informação (GIA) em atraso com relação ao prazo determinado no RICMS/00, n<periodo>, conforme se comprova pelas cópias dos documentos juntadas no Anexo do item.",
+	"relatorio_circunstanciado": "o contribuinte foi autuado por ter entregue GIAs em atraso, conforme os prazos definidos no RICMS/00.",
+	"provas": [
+		{"tipo": "GIA-Apuracao", "descricao": "Extratos das GIAs entregues em atraso"}
+	]
 }

@@ -11,7 +11,9 @@
     "IIj": {
       "relato": "Creditou-se indevidamente de ICMS, no montante de @CRI n<periodo>, por meio de ajustes de crédito em LRAICMS sem a devida comprovação da origem dos créditos. O contribuinte foi devidamente notificado a apresentar a memória de cálculo de origem dos créditos, sem ter apresentado documentação que os justificassem, conforme comprova-se pelos documentos juntados no Anexo do item.",
       "ttpa": [1, 1, 3],
-      "capitulacao": {},
+      "capitulacao": {
+        "limpa": false
+      },
       "relatorio_circunstanciado": "o contribuinte foi autuado por ter escriturado no livro fiscal próprio, Livro Registro de Apuração de ICMS - LRAICMS, ajustes de crédito em situação não permitida pelo RICMS/00. O contribuinte foi notificado via notificação DEC <notificacao>, não tendo apresentado motivação legal ou informações suficientes para demonstrar a correição dos ajustes promovidos.",
       "provas": [
         {"tipo": "listagem", "descricao": "Listagem contendo os períodos em que foram realizados ajustes de créditos indevidos"},

@@ -74,7 +74,6 @@ def get_aiim_listing_from_sheet(item: AiimItem, ws: SeleniumWebScraper, pva: EFD
     if not item.planilha:
         return []
     logger.info('Gerando listagem inicial a partir da planilha...')
-    get_current_audit().get_sheet().update_number_in_subtotals(item.planilha, item.item)
     return [get_current_audit().get_sheet().imprime_planilha(item.planilha,
                                                              ws.tmp_path / f'lista{item.item}.pdf',
                                                              item=item.item)]
@@ -286,6 +285,21 @@ def get_lrs(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list
         pva.print_LRS(ref, file)
         paths.append(file)
     return paths
+
+
+def get_gias_entregues(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:
+    return ws.print_gia_entregas(get_current_audit().ie,
+                                 get_current_audit().inicio_auditoria,
+                                 get_current_audit().fim_auditoria)
+
+
+def get_gia_apuracao(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:
+    df = item.get_dfs_list_for_proof_generation()
+    date_column = df.keys()[[i for i, x in enumerate(df.dtypes.tolist()) if x == 'datetime64[ns]'][-1]]
+    df.sort_values(by=date_column)
+
+    referencias = [Timestamp(t).date() for t in df[date_column].unique()]
+    return ws.print_gia_apuracao(get_current_audit().ie, referencias)
 
 
 def get_gia_outros_debitos(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:

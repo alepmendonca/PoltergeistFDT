@@ -1,4 +1,12 @@
 {
 	"ttpa": [1, 1],
-	"relato": "Creditou-se indevidamente do ICMS no montante de @CRI, n<periodo>, por meio de escrituração não fundada em documento fiscal e sem correspondente entrada de mercadoria no estabelecimento ou tomada de serviço, conforme se comprova pelas cópias dos documentos juntadas no Anexo do item.\nO contribuinte foi devidamente notificado e não apresentou documentos fiscais <modelos> comprovando a entrada de mercadoria ou tomada de serviços."
+	"relato": "Creditou-se indevidamente do ICMS no montante de @CRI, n<periodo>, por meio de escrituração não fundada em documento fiscal e sem correspondente entrada de mercadoria no estabelecimento ou tomada de serviço, conforme se comprova pelas cópias dos documentos juntadas no Anexo do item.\nO contribuinte foi devidamente notificado e não apresentou documentos fiscais <modelos> comprovando a entrada de mercadoria ou tomada de serviços.",
+	"relatorio_circunstanciado": "o contribuinte foi autuado por creditar-se indevidamente de imposto, ao escriturar em seu livro Registro de Entradas (LRE) em EFD documentos fiscais não apresentados à fiscalização.",
+	"capitulacao": {
+		"limpa": false
+	},
+	"provas": [
+		{"tipo": "listagem", "descricao": "Listagem de documentos fiscais de entrada escriturados em LRE, não localizados pela fiscalização"},
+		{"tipo": "LRE", "descricao": "Escrituração em LRE dos supostos documentos fiscais"}
+	]
 }

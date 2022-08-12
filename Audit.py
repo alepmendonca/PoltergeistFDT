@@ -40,6 +40,8 @@ class PossibleInfraction:
         return str(self.verificacao)
 
     def _personalize_text(self, text: str) -> str:
+        if text is None:
+            return None
         nome_aba = self.planilha
         relato = text
         try:
@@ -221,23 +223,25 @@ class AiimItem(PossibleInfraction):
 
     def relatorio_circunstanciado(self) -> str:
         if not self._relatorio_circunstanciado:
-            self._relatorio_circunstanciado = self._personalize_text(self.infracao.relatorio_circunstanciado)
+            resposta = self._personalize_text(self.infracao.relatorio_circunstanciado)
+            if self.notificacao:
+                resposta += '\nO contribuinte foi notificado por meio da notificação DEC '
+                if self.notificacao_resposta:
+                    resposta += f'{self.notificacao}, com resposta dada no expediente {self.notificacao_resposta}' \
+                                f', mas sem justificativas legais para todos os pontos questionados.'
+                else:
+                    resposta += self.notificacao
+                    if GeneralFunctions.is_empty_directory(self.notification_response_path()):
+                        resposta += ', sem apresentar resposta à fiscalização.'
+                    else:
+                        resposta += f', mas sem justificativas legais para todos os pontos questionados.'
+            self._relatorio_circunstanciado = resposta
         return self._relatorio_circunstanciado
 
     def clear_cache(self):
         super().clear_cache()
         self._relato = ''
         self._relatorio_circunstanciado = ''
-
-    def _personalize_text(self, text: str) -> str:
-        revised_text = super()._personalize_text(text)
-        if revised_text.find('<notificacao>') > 0:
-            if self.notificacao_resposta:
-                resposta = f'{self.notificacao}, com resposta dada no expediente {self.notificacao_resposta}'
-            else:
-                resposta = self.notificacao
-            revised_text = revised_text.replace('<notificacao>', resposta)
-        return revised_text
 
 
 class Audit:

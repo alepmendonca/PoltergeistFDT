@@ -1,0 +1,21 @@
+{
+	"nome": "LRI",
+	"ttpa": [1, 3, 1],
+	"capitulacao": {
+		"limpa": true,
+		"artigos": [
+		  {"artigo": "221", "paragrafo": "7"},
+			{"artigo": "250A", "inciso": "3", "junta": "C/C"},
+			{"artigo": "250A", "paragrafo": "1", "item": "1"},
+			{"especial": "art. 10 da Portaria CAT 147/2009"}
+		]
+	},
+	"relato": "Atrasou a entrega do Livro Fiscal de Registro de Inventário em meio eletrônico (EFD), referente a<periodoAAAA>, conforme se comprova pelos documentos juntados no Anexo do item.\nValor do estoque não escriturado: @CRO",
+	"relatorio_circunstanciado": "o contribuinte foi autuado por ter atrasado a entrega de EFDs, mesmo já tendo sido previamente notificado sobre as penalidades previstas a este comportamento.",
+	"provas": [
+		{
+			"tipo": "EFD-Extrato",
+			"descricao": "Extrato das entregas de EFD realizadas pelo contribuinte, demonstrando o atraso"
+		}
+	]
+}

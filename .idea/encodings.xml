@@ -18,6 +18,10 @@
     <file url="file://$PROJECT_DIR$/resources/infracoes/Va-nao_tributado.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Va-tributado.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vc-n_sujeita_imposto.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vg-LRE.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vg-LRI.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vg-LRS.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vh-LRAICMS.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vj-LRAICMS.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vj-LRE.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vj-LRI.json" charset="windows-1252" />
@@ -27,6 +31,7 @@
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vm-LRI.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vm-LRS.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/observacoes_aiim.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes-schema.json" charset="ISO-8859-1" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/credito_ativo_imobilizado.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/devolucoes_proprias_consumidor_final.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/difal_entrada_interestadual.json" charset="windows-1252" />

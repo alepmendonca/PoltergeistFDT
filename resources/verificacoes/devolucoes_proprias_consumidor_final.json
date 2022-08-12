@@ -11,13 +11,19 @@
   "infracoes": {
     "IIj": {
       	"relato": "Creditou-se indevidamente de ICMS no montante de @CRI, referente a<periodo>, por haver creditado no livro fiscal próprio - Livro Registro de Entradas (LRE) em EFD, documentos fiscais <modelos>, de sua emissão, relativos a operações tributadas de devolução de mercadorias por consumidor final não contribuinte do ICMS, fora das condições de troca e garantia, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas.",
+        "relatorio_circunstanciado": "o contribuinte foi autuado por creditar imposto sobre documentos fiscais de entrada de emissão própria, considerando que as mercadorias eram oriundas de não contribuintes ou não obrigados à emissão de documentos fiscais, mas referentes a devoluções de mercadorias por motivos diversos de garantia ou troca. Mesmo que o autor da devolução possua uma inscrição estadual, não significa que ele seja contribuinte do imposto, nos termos do art. 30 do RICMS/00 (p.ex. quando o contribuinte adquire a mercadoria para uso e consumo).",
         "capitulacao": {
             "artigos": [
                 {"artigo": "63", "inciso":  "1"},
                 {"artigo":  "136", "inciso":  "1", "alinea": "a"},
                 {"artigo": "452"}
             ]
-        }
+        },
+        "provas": [
+            {"tipo": "listagem", "descricao": "Listagem de documentos fiscais de entrada de emissão própria com crédito indevido"},
+            {"tipo": "DFe", "descricao": "Transcrição de documentos fiscais eletrônicos"},
+            {"tipo": "LRE", "descricao": "Transcrição de LRE, demonstrando a declaração do crédito indevido"}
+        ]
     }
   }
 }
