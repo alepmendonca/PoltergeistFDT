@@ -223,6 +223,10 @@ class AuditTest(AuditTestSetup):
     def test_notification_subs(self):
         audit = Audit.get_current_audit()
         item = audit.aiim_itens[0]
+        item.notification_path()
+        audit.notification_path().mkdir(exist_ok=True)
+        item.notification_path().mkdir(exist_ok=True)
+        item.notification_response_path().mkdir(exist_ok=True)
         self.assertEqual('OSF 01.1.68489/17-6 - Teste',
                          item.notificacao_titulo('OSF <osf> - Teste'))
         item.clear_cache()
@@ -232,14 +236,18 @@ class AuditTest(AuditTestSetup):
         self.assertEqual('documentos do período de 2019 a 2020',
                          item.notificacao_corpo('documentos d<periodoAAAA>'))
         item.clear_cache()
-        item.infracao.report = 'Deixou de pagar imposto nos documentos <modelos> d<periodoAAAA>, foi notificado na ' \
-                               'notificação DEC <notificacao>'
-        self.assertEqual('Deixou de pagar imposto nos documentos modelos 55 e 57 do período de 2019 a 2020, foi'
-                         ' notificado na notificação DEC IC/N/FIS/000002375/2022',
-                         item.relato())
+        item.infracao.relatorio_circunstanciado = \
+            'Deixou de pagar imposto nos documentos <modelos> d<periodoAAAA>.'
+        self.assertEqual('Deixou de pagar imposto nos documentos modelos 55 e 57 do período de 2019 a 2020.\n'
+                         'O contribuinte foi notificado por meio da notificação DEC IC/N/FIS/000002375/2022, '
+                         'sem apresentar resposta à fiscalização.',
+                         item.relatorio_circunstanciado())
         item.clear_cache()
+        item.infracao.relatorio_circunstanciado = \
+            'Deixou de pagar imposto nos documentos <modelos> d<periodoAAAA>.'
         item.notificacao_resposta = 'SFP-EXP-2022/45646'
-        self.assertEqual('Deixou de pagar imposto nos documentos modelos 55 e 57 do período de 2019 a 2020, foi'
-                         ' notificado na notificação DEC IC/N/FIS/000002375/2022, '
-                         'com resposta dada no expediente SFP-EXP-2022/45646',
-                         item.relato())
+        self.assertEqual('Deixou de pagar imposto nos documentos modelos 55 e 57 do período de 2019 a 2020.\n'
+                         'O contribuinte foi notificado por meio da notificação DEC IC/N/FIS/000002375/2022, '
+                         'com resposta dada no expediente SFP-EXP-2022/45646, '
+                         'mas sem justificativas legais para todos os pontos questionados.',
+                         item.relatorio_circunstanciado())

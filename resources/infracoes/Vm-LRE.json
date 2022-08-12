@@ -2,5 +2,13 @@
 	"nome": "LRE",
 	"ttpa": [2],
 	"ordem": "1% Vl das Operações",
-	"relato": "Deixou de exibir à autoridade fiscalizadora, no prazo cominado em notificação específica para tal fim, o Livro Fiscal de Registro de Entradas em meio eletrônico (EFD), referente a<periodo>, conforme se comprova pela notificação e demais documentos juntados no Anexo do item."
+	"capitulacao": {
+		"limpa": false
+	},
+	"relato": "Deixou de exibir à autoridade fiscalizadora, no prazo cominado em notificação específica para tal fim, o Livro Fiscal de Registro de Entradas em meio eletrônico (EFD), referente a<periodo>, conforme se comprova pela notificação e demais documentos juntados no Anexo do item.",
+	"relatorio_circunstanciado": "a despeito de ser obrigado a realizar Escrituração Fiscal Digital (EFD), o contribuinte não cumpriu a exigência n<periodo>, no prazo definido em notificação específica para tal fim, deixando assim de apresentar o Livro Registro de Entradas. A disciplina dos procedimentos a serem adotados para fins de EFD consta da Portaria CAT 147/2009 e suas alterações.",
+	"provas": [
+		{"tipo": "EFD-Obrigatoriedade", "descricao": "Extrato de obrigatoriedade de entrega de EFD pelo contribuinte"},
+		{"tipo": "EFD-Extrato", "descricao": "Extrato de entregas de EFD pelo contribuinte, demonstrando a falta de entrega após o início da ação fiscal"}
+	]
 }

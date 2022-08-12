@@ -1,5 +1,12 @@
 {
 	"nome": "GIA não entregue",
 	"ttpa": [1, 1, 1],
-	"relato": "Deixou de entregar guia de informação (GIA) no prazo determinado no RICMS/00, n<periodo>, conforme se comprova pelas cópias dos documentos juntadas no Anexo do item."
+	"relato": "Deixou de entregar guia de informação (GIA) no prazo determinado no RICMS/00, n<periodo>, conforme se comprova pelas cópias dos documentos juntadas no Anexo do item.",
+	"capitulacao": {
+		"limpa": false
+	},
+	"relatorio_circunstanciado": "o contribuinte foi autuado por não ter entregue GIA n<periodo>, mesmo estando obrigado a fazê-lo, por estar enquadrado no Regime Próprio de Apuração nestes períodos.",
+	"provas": [
+		{"tipo": "GIA-Extrato", "descricao": "Extrato das GIAs entregues pelo contribuinte, incluindo a data de entrega"}
+	]
 }

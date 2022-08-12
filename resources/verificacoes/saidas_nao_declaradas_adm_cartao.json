@@ -10,14 +10,18 @@
   "infracoes": {
      "Ia": {
       	"relato": "Deixou de pagar ICMS no montante de @CRI, referente a<periodo>, decorrente de operações de saída de mercadorias omitidas ao Fisco, apuradas por meio de levantamento fiscal realizado com fundamento no inciso VI do artigo 509-A do RICMS/00, com base em informações de transações do contribuinte constantes nos arquivos digitais disponibilizados por administradoras de cartões de crédito e débito, listadas no Anexo do item.",
+       "relatorio_circunstanciado": "o contribuinte foi autuado por falta de pagamento de imposto, apurado em levantamento fiscal baseado no art. 509-A, inciso VI do RICMS/00, pela comparação entre as operações de saída declaradas pelo contribuinte em documentos fiscais de sua emissão e as operações com cartões de crédito e débito informadas por empresas administradoras ao Fisco, em atendimento ao disposto no art. 75, X da Lei 6.374/89.",
         "capitulacao": {
             "artigos": [
                 {"artigo": "58"},
                 {"artigo": "87"},
                 {"artigo": "509A", "inciso": "6", "junta": "C/C"},
-                {"artigo": "509", "parágrafo": "3"}
+                {"artigo": "509", "paragrafo": "3"}
             ]
-        }
+        },
+       "provas": [
+         {"tipo": "listagem", "descricao": "Memória de cálculo da apuração fiscal, com listagem de transações sem respectivo documento fiscal"}
+       ]
      }
   }
 }

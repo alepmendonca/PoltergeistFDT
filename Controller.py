@@ -1351,3 +1351,7 @@ def executa_consulta_BD(sql: str, max_linhas=None) -> (int, pd.DataFrame):
 def existing_open_aiims_for_osf() -> list:
     with MDBReader.MDBReader() as aiim2003:
         return aiim2003.get_aiims_for_osf(get_current_audit().osf_only_digits())
+
+
+def generate_custom_report_cover(texto: str, caminho: Path):
+    WordReport.cria_capa_para_anexo(texto.upper(), caminho)

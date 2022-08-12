@@ -11,11 +11,18 @@
     "IIj": {
       "ttpa": [1, 1, 7],
 	  "relato": "Creditou-se indevidamente de ICMS no montante de @CRI, referente a<periodo>, no livro fiscal próprio - Livro Registro de Entradas (LRE) em EFD, em valor superior ao valor do imposto destacado em documentos fiscais <modelos>, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas.",
+      "relatorio_circunstanciado": "o contribuinte foi autuado por ter creditado a maior o imposto sobre operações registradas no livro fiscal próprio - Livro Registro de Entradas (LRE) em EFD, comparando-se o valor destacado nos documentos fiscais de entrada e o valor declarado pelo contribuinte em EFD.",
 	  "capitulacao": {
 	  	"limpa": true,
 		"artigos": [
 			{"artigo": "61", "paragrafo":  "2"}
 		]
-	}}
+	  },
+      "provas": [
+        {"tipo": "listagem", "descricao": "Listagem de documentos fiscais de entrada em que foi escriturado em LRE imposto maior do que o destacado"},
+        {"tipo": "DFe", "descricao": "Transcrições de documentos fiscais eletrônicos que tiveram aproveitamento indevido de créditos"},
+        {"tipo": "LRE", "descricao": "Escrituração em LRE dos documentos fiscais eletrônicos"}
+      ]
+    }
   }
 }

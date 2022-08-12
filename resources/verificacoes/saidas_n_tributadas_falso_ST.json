@@ -9,7 +9,13 @@
   },
   "infracoes": {
     "Ic-nao_tributado": {
-      "relato": "Deixou de pagar o ICMS no montante de @CRI, referente a<periodo>, por emissão de documentos fiscais <modelos> relativos a operações tributadas como não tributadas, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas. As mercadorias saídas com mercadorias foram classificadas com CFOP de substituição tributária por antecipação, sendo que não há amparo legal para tanto."
+      "relato": "Deixou de pagar o ICMS no montante de @CRI, referente a<periodo>, por emissão de documentos fiscais <modelos> relativos a operações tributadas como não tributadas, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas. As mercadorias saídas com mercadorias foram classificadas com CFOP de substituição tributária por antecipação, sendo que não há amparo legal para tanto.",
+      "relatorio_circunstanciado": "o contribuinte foi autuado por não destacar imposto em documentos fiscais de emissão própria, sem ser caso de não tributação ou isenção, registrando em DFe e LRS em EFD que o CFOP das operações envolvia mercadorias sujeitas à substituição tributária por antecipação, sendo que as mercadorias não estão sujeitas à ST - desta forma, cabe ao contribuinte realizar o destaque do imposto conforme a legislação vigente à época do fato gerador.",
+      "provas": [
+        {"tipo": "listagem", "descricao": "Listagem contendo os documentos fiscais de saída sem destaque de imposto, após a saída do regime Simples Nacional"},
+        {"tipo": "DFe", "descricao": "Transcrição de documentos fiscais eletrônicos"},
+        {"tipo": "LRS", "descricao": "Transcrição da escrituração dos documentos fiscais em LRS"}
+      ]
     }
   }
 }

@@ -16,7 +16,7 @@
       "relato": "Deixou de pagar o ICMS devido no valor total de @CRI, n<periodo>, conforme indicado no demonstrativo Anexo do item, relativo à diferença entre a alíquota interna e a alíquota interestadual devida na entrada de mercadorias destinadas a uso, consumo ou integração no ativo imobilizado, conforme se demonstra pelos documentos juntados.",
       "relatorio_circunstanciado": "o contribuinte foi autuado por ter declarado a menor, em Livro Registro de Apuração do ICMS, o valor devido de imposto, a este Estado, sobre o diferencial de alíquota interestadual, conforme art. 117, I do RICMS/00.",
       "provas": [
-        {"tipo": "listagem", "descricao": "Listagem de referências em que foi feita a declaração a menor de diferencial de alíquota interestadual"},
+        {"tipo": "listagem", "descricao": "Listagem de referências em que foi feita a declaração a menor de débitos referentes ao diferencial de alíquota interestadual"},
         {"tipo": "GIA-OutrosDebitos", "descricao": "Detalhamento de Outros Débitos em GIA, demonstrando os valores destacados a título de diferencial de alíquota interestadual"},
         {"tipo": "LRAICMS", "descricao": "Livro Registro de Apuração de ICMS, demonstrando os valores destacados a título de diferencial de alíquota interestadual"}
       ],
@@ -35,6 +35,12 @@
       "filtro": "positivo",
       "planilha_titulo": "Créditos indevidos na declaração de diferencial de alíquotas para entradas interestaduais",
       "relato": "Creditou-se a maior indevidamente do imposto decorrente da aquisição de mercadorias com diferencial de alíquota, n<periodo>, no valor total de @CRO, conforme relação juntada no Anexo do item.",
+      "relatorio_circunstanciado": "o contribuinte foi autuado por ter creditado-se a maior, em Livro Registro de Apuração do ICMS, o valor de imposto destacado em documento fiscal, referente ao diferencial de alíquota interestadual, conforme art. 117, II do RICMS/00.",
+      "provas": [
+        {"tipo": "listagem", "descricao": "Listagem de referências em que foi feita a declaração a maior de créditos referentes ao diferencial de alíquota interestadual"},
+        {"tipo": "GIA-OutrosCreditos", "descricao": "Detalhamento de Outros Créditos em GIA, demonstrando os valores destacados a título de diferencial de alíquota interestadual"},
+        {"tipo": "LRAICMS", "descricao": "Livro Registro de Apuração de ICMS, demonstrando os valores destacados a título de diferencial de alíquota interestadual"}
+      ],
       "capitulacao": {
         "limpa": true,
         "artigos": [

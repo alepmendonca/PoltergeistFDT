@@ -1,0 +1,219 @@
+  {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://github.com/alepmendonca/PoltergeistFDT/blob/master/resources/verificacoes-schema.json",
+    "type": "object",
+    "properties": {
+      "verificacao": {
+        "type": "string"
+      },
+      "consulta": {
+        "type": "string"
+      },
+      "funcao": {
+        "type": "object",
+        "properties": {
+          "nome": {"type": "string"},
+          "descricao": {"type": "string"}
+        }
+      },
+      "manda_notificacao_ou_gera_infracao": {
+        "type": "string"
+      },
+      "notificacao": {
+        "type": "object",
+        "properties": {
+          "assunto": {
+            "enum": [
+              "Advertência para Escrituração Fiscal Digital (EFD)",
+              "Crédito Acumulado",
+              "Notificação de não lavratura de AIIM - Portaria CAT 115/2014",
+              "Notificação para a prestação de informações e entrega de documentos fiscais",
+              "Outros"
+            ]
+          },
+          "titulo": {
+            "type": "string"
+          },
+          "corpo": {
+            "type": "string"
+          },
+          "anexo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "titulo",
+          "corpo"
+        ],
+        "additionalProperties": false
+      },
+      "infracoes": {
+        "oneOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          {
+            "type": "object",
+            "minProperties": 1,
+            "propertyNames": {
+              "pattern": "^[IVX]+[a-z]"
+            },
+            "patternProperties": {
+              "^[IVX][a-z]": {
+                "type": "object",
+                "minProperties": 1,
+                "additionalProperties": false,
+                "dependentRequired": {
+                  "filtro_coluna": ["filtro"]
+                },
+                "properties": {
+                  "relato": {
+                    "type": "string"
+                  },
+                  "relatorio_circunstanciado": {
+                    "type": "string"
+                  },
+                  "filtro": {"enum": ["positivo", "negativo"]},
+                  "filtro_coluna": {"type": "string"},
+                  "planilha_titulo": {"type": "string"},
+                  "ttpa": {
+                    "type": "array",
+                    "minItens": 1,
+                    "items": {"type": "number"}
+                  },
+                  "ordem": {
+                    "enum": ["Não Sujeito a pg. 5%", "1% Vl das Operações", "Inexiste Eper. Prest. 70UF"]
+                  },
+                  "capitulacao": {
+                    "type": "object",
+                    "properties": {
+                      "limpa": {
+                        "type": "boolean"
+                      },
+                      "artigos": {
+                        "type": "array",
+                        "minItems": 1,
+                        "items": {
+                          "type": "object",
+                          "minProperties": 1,
+                          "oneOf": [
+                            {
+                              "properties": {
+                                "artigo": {
+                                  "type": "string",
+                                  "pattern": "\\d+[A-Z]*"
+                                },
+                                "inciso": {
+                                  "type": "string",
+                                  "pattern": "\\d+"
+                                },
+                                "alinea": {
+                                  "type": "string",
+                                  "pattern": "\\d+"
+                                },
+                                "paragrafo": {
+                                  "type": "string",
+                                  "pattern": "UN|\\d+"
+                                },
+                                "item": {
+                                  "type": "string",
+                                  "pattern": "\\d+"
+                                },
+                                "letra": {
+                                  "type": "string",
+                                  "pattern": "[A-Za-z]"
+                                },
+                                "junta": {
+                                  "enum": ["Nenhum", "C/C", "E"]
+                              	}
+                              },
+                              "required": ["artigo"],
+                              "dependentRequired": {
+                                "alinea": ["inciso"],
+                                "item": ["paragrafo"],
+                                "letra": ["paragrafo", "item"]
+                              },
+                              "additionalProperties": false
+                            },
+                            {
+                              "properties": {
+                                "especial": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["especial"],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      }
+                    },
+                    "required": [
+                      "artigos"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "provas": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tipo": {
+                          "enum": [
+                            "listagem",
+                            "LRE",
+                            "LRS",
+                            "LRI",
+                            "LRAICMS",
+                            "DFe",
+                            "GIA-Extrato",
+                            "GIA-Apuracao",
+                            "GIA-OutrosDebitos",
+                            "GIA-OutrosCreditos",
+                            "EFD-Obrigatoriedade",
+                            "EFD-Extrato"
+                          ]
+                        },
+                        "descricao": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "tipo",
+                        "descricao"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+  "oneOf": [
+    {"required": ["verificacao", "consulta", "infracoes"]},
+    {"required": ["verificacao", "funcao", "infracoes"]}
+  ],
+  "dependentSchemas": {
+    "consulta": {
+      "properties": {
+        "consulta_detalhamento": {
+          "type": "string"
+        },
+        "acerto_base": {
+          "type": "string"
+        },
+        "planilha_nome": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

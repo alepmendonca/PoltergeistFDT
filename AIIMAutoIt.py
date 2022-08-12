@@ -407,7 +407,7 @@ class AIIMAutoIt:
                     self.preenche_ddf_com_qtd(row['valor'])
                 else:
                     self.preenche_ddf_valor_basico(row['referencia'], row['valor'], row['referencia'])
-        elif inciso == 'V' and alinea == 'j':
+        elif inciso == 'V' and alinea in ['g', 'h', 'j']:
             for index, row in dicionario['ddf'].iterrows():
                 self.preenche_ddf_com_livros_meses(row['Livros'], row['Meses'])
         elif inciso == 'V' and alinea == 'm':

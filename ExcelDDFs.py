@@ -540,8 +540,7 @@ class ExcelDDFs:
     def imprime_planilha(self, sheet, report_full_path: Path, path: Path = None, item: int = None) -> Path:
         if item:
             # coloca número do anexo na planilha e mostra detalhes, caso subtotais estejam fechados
-
-            self.update_number_in_subtotals(sheet, item)
+            # self.update_number_in_subtotals(sheet, item)
             openpyxlws = self.workbook()[sheet]
             is_grouped = any(x > 0 for x in
                              [v.outline_level for v in [openpyxlws.row_dimensions[idx]
