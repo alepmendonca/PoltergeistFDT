@@ -4,6 +4,8 @@ import PySimpleGUI as sg
 import logging
 import threading
 import time
+
+import GeneralFunctions
 from GeneralFunctions import logger, QueueFormatter
 
 """
@@ -28,20 +30,19 @@ def externalFunction(evento: threading.Event):
         logger.warning('Processo encerrado com sucesso!')
 
 
-class ThreadedApp(threading.Thread):
+class ThreadedApp(GeneralFunctions.ThreadWithReturnValue):
     def __init__(self, funcao_controller: Callable, nome_batch: str, parametros_funcao_controller):
-        super().__init__()
-        self.setName(nome_batch)
+        super().__init__(target=funcao_controller)
+        self.name = nome_batch
         self._stop_event = threading.Event()
-        self._funcao = funcao_controller
-        self._parametros = list(parametros_funcao_controller)
-        self._parametros.append(self._stop_event)
+        self._args = list(parametros_funcao_controller)
+        self._args.append(self._stop_event)
 
     def run(self):
         try:
-            self._funcao(*self._parametros)
-        except Exception:
-            logger.exception(f'Ocorreu um erro na execução do processo {self.getName()}, tente novamente mais tarde.')
+            super().run()
+        except Exception as e:
+            logger.exception(f'Ocorreu um erro na execução do processo {self.name}: {e}')
 
     def stop(self):
         self._stop_event.set()

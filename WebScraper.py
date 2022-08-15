@@ -3,7 +3,6 @@ import datetime
 import gzip
 import os
 import re
-import signal
 import sys
 import threading
 import time
@@ -158,6 +157,22 @@ launchpad_report_options = {
         'Grupo': 'Cartao', 'Principal': True
     }
 }
+
+
+def get_efd_pva_version(pva_version: str):
+    html = urlopen('https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
+                   'declaracoes-e-demonstrativos/sped-sistema-publico-de-escrituracao-digital/'
+                   'escrituracao-fiscal-digital-efd/escrituracao-fiscal-digital-efd')
+    bs = BeautifulSoup(html, 'html.parser')
+    linhas = bs.find_all('a', {'class': 'external-link'})
+    for tag in linhas:
+        link = tag.attrs['href']
+        if link.find(pva_version) > 0 and link.find('.exe') > 0:
+            logger.info(f'Baixando versão nova do EFD PVA ICMS: {pva_version}')
+            logger.debug(link)
+            urllib.request.urlretrieve(link, Path('tmp') / tag.text)
+            logger.info('Encerrado download do EFD PVA ICMS')
+            return
 
 
 def get_selic_last_years():
@@ -733,8 +748,16 @@ class SeleniumWebScraper:
         try:
             for ano in range(ano_inicial, ano_final + 1):
                 self.__get_driver().find_element(By.XPATH, '/html/body/div[2]/form/div[3]/ul/li[2]/a').click()
-                self.__get_driver().find_element(By.ID, 'ContentMain_tbxCnpjNFe').send_keys(re.sub(r'[^\d]', '', cnpj))
-                Select(self.__get_driver().find_element(By.ID, 'ContentMain_ddlAno')).select_by_value(str(ano - 2000))
+                self.__get_driver().find_element(By.ID, 'ContentMain_tbxCnpjNFe').send_keys(re.sub(r'\D', '', cnpj))
+                try:
+                    Select(self.__get_driver().find_element(By.ID, 'ContentMain_ddlAno')).select_by_value(str(ano - 2000))
+                except NoSuchElementException as nse:
+                    if nse.msg.startswith('Cannot locate option'):
+                        # está pedindo um ano que a consulta já não disponibiliza mais
+                        logger.warning(f'Não estão disponíveis para consulta as inutilizações de {ano}.')
+                        continue
+                    else:
+                        raise nse
                 logger.warning("MOSTRE QUE VOCÊ NÃO É UM ROBÔ NO SITE DE CONSULTA NF-E INUTILIZAÇÕES!!!")
                 try:
                     recaptcha_frame = self.driver.find_element(By.XPATH,

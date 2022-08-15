@@ -4,6 +4,8 @@ import br.gov.serpro.sped.fiscalpva.dominio.configuracao.ConfiguracoesAplicacao;
 import br.gov.serpro.sped.fiscalpva.nucleo.controle.fabrica.FabricaControle;
 import br.gov.serpro.sped.fiscalpva.nucleo.init.InicializacaoSistemaSPEDFiscalPVA;
 import br.gov.serpro.sped.fiscalpva.persistencia.PersistenciaFiscalPVA;
+import br.gov.serpro.sped.fiscalpva.versao.VersaoAplicativo;
+import br.gov.serpro.sped.fiscalpva.versao.webservice.WsVerificarVersaoPVAClient;
 
 public class EFDComprehension {
 
@@ -22,5 +24,19 @@ public class EFDComprehension {
 		InicializacaoSistemaSPEDFiscalPVA.getSingleton().encerrarSPEDFiscalPVA();
 		System.out.println("Banco de dados da EFD encerrado.");
 	}
-	
+
+	public static String verificaVersao() throws Exception {
+		String versaoAtual = VersaoAplicativo.getVersaoProduto(); 
+		String versaoServer = WsVerificarVersaoPVAClient.obterUnicaInstancia().verificarVersaoPVA();
+		if (VersaoAplicativo.isVersaoMaior(versaoServer, versaoAtual)) {
+			return versaoServer;
+		} else {
+			return null;
+		}
+	}
+
+	public static void main(String[] args) throws Exception {
+		System.out.println(EFDComprehension.verificaVersao());
+	}
+
 }

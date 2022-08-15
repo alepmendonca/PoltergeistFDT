@@ -133,8 +133,9 @@ def create_config_file():
         [sg.Text('Pasta principal do EFD PVA ICMS:')],
         [sg.InputText(key='-WIZ-EFD-'), sg.FolderBrowse(initial_folder='c:')],
         [sg.Text('\n'.join(textwrap.wrap('Abaixo, coloque os dados do banco de dados local Postgres '
-                                         '(na instalação dele aparecem essas informações, abaixo foram colocadas'
-                                         'as opções comumente usadas).', 75)), size=(580, None))],
+                                         '(na instalação dele aparecem essas informações). Caso use o AUD-Postgres '
+                                         'da Sefaz,abaixo foram colocadas as configurações dele', 75)
+                           ), size=(580, None))],
         [sg.Text("Endereço do Postgres:"), sg.Input(key='-WIZ-POSTGRES-ADDRESS-', default_text=config.postgres_address,
                                                     expand_x=True)],
         [sg.Text("Porta do Postgres:"), sg.Input(key='-WIZ-POSTGRES-PORT-', default_text=config.postgres_port,
