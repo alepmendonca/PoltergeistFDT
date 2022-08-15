@@ -159,7 +159,19 @@ launchpad_report_options = {
 }
 
 
-def get_efd_pva_version(pva_version: str):
+def get_efd_pva_version(pva_version: str = None):
+    if pva_version is None:
+        url="http://www.sped.fazenda.gov.br/SpedFiscalServer/WSConsultasPVA/WSConsultasPVA.asmx"
+        headers = {'content-type': 'text/xml'}
+        body = """<?xml version="1.0" encoding="utf-8"?>
+            <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
+              <soap12:Body>
+                <consultarVersaoAtualPVA xmlns="http://br.gov.serpro.spedfiscalserver/consulta" />
+              </soap12:Body>
+            </soap12:Envelope>"""
+        response = requests.post(url,data=body,headers=headers)
+        pva_version = re.match(r'.*<consultarVersaoAtualPVAResult>(.*)</consultarVersaoAtualPVAResult>', response.text).group(1)
+
     html = urlopen('https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
                    'declaracoes-e-demonstrativos/sped-sistema-publico-de-escrituracao-digital/'
                    'escrituracao-fiscal-digital-efd/escrituracao-fiscal-digital-efd')
@@ -168,11 +180,13 @@ def get_efd_pva_version(pva_version: str):
     for tag in linhas:
         link = tag.attrs['href']
         if link.find(pva_version) > 0 and link.find('.exe') > 0:
+            download_path = Path('tmp') / tag.text
             logger.info(f'Baixando versão nova do EFD PVA ICMS: {pva_version}')
             logger.debug(link)
-            urllib.request.urlretrieve(link, Path('tmp') / tag.text)
+            urllib.request.urlretrieve(link, download_path)
             logger.info('Encerrado download do EFD PVA ICMS')
-            return
+            return download_path
+    raise WebScraperException(f'Não localizei arquivo da versão {pva_version} pra baixar!')
 
 
 def get_selic_last_years():
