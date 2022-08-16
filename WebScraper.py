@@ -12,6 +12,7 @@ from concurrent.futures import Future
 from os import path
 from urllib.error import URLError, HTTPError
 from urllib.request import urlopen
+from pypac import pac_context_for_url
 
 import pandas as pd
 import PySimpleGUI as sg
@@ -39,6 +40,9 @@ import GeneralConfiguration
 import GeneralFunctions
 import PDFExtractor
 from GeneralFunctions import logger, wait_downloaded_file, move_downloaded_file
+import http.client as http_client
+import logging
+
 
 # Monkey Patching para não abrir shell em modo release!
 selenium.webdriver.common.service.subprocess.Popen = GeneralFunctions.PopenWindows
@@ -165,6 +169,8 @@ def set_proxy():
     # Proxy setup para rede interna Sefaz, apenas se fizer sentido...
     try:
         if urlopen(proxy_sefaz, timeout=2.0).status == 200:
+            http_client.HTTPConnection.debuglevel = 1
+
             os.environ["http_proxy"] = proxy_sefaz
             os.environ["HTTP_PROXY"] = proxy_sefaz
             os.environ["https_proxy"] = proxy_sefaz
@@ -199,13 +205,15 @@ def get_efd_pva_version(pva_version: str = None) -> Path:
                 <consultarVersaoAtualPVA xmlns="http://br.gov.serpro.spedfiscalserver/consulta" />
               </soap12:Body>
             </soap12:Envelope>"""
-        response = requests.post(url, data=body, headers=headers)
+        with pac_context_for_url(url):
+            response = requests.post(url, data=body, headers=headers)
         pva_version = re.match(r'.*<consultarVersaoAtualPVAResult>(.*)</consultarVersaoAtualPVAResult>',
                                response.text).group(1)
 
-    html = urlopen('https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
-                   'declaracoes-e-demonstrativos/sped-sistema-publico-de-escrituracao-digital/'
-                   'escrituracao-fiscal-digital-efd/escrituracao-fiscal-digital-efd')
+    with pac_context_for_url('https://www.gov.br'):
+        html = urlopen('https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
+                       'declaracoes-e-demonstrativos/sped-sistema-publico-de-escrituracao-digital/'
+                       'escrituracao-fiscal-digital-efd/escrituracao-fiscal-digital-efd')
     bs = BeautifulSoup(html, 'html.parser')
     linhas = bs.find_all('a', {'class': 'external-link'})
     for tag in linhas:
@@ -214,16 +222,18 @@ def get_efd_pva_version(pva_version: str = None) -> Path:
             download_path = Path('tmp') / tag.text
             logger.info(f'Baixando versão nova do EFD PVA ICMS: {pva_version}')
             logger.debug(link)
-            urllib.request.urlretrieve(link, download_path)
+            with pac_context_for_url(link):
+                urllib.request.urlretrieve(link, download_path)
             logger.info('Encerrado download do EFD PVA ICMS')
             return download_path
     raise WebScraperException(f'Não localizei arquivo da versão {pva_version} pra baixar!')
 
 
 def get_selic_last_years():
-    html = urlopen(
-        'https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
-        'pagamentos-e-parcelamentos/taxa-de-juros-selic')
+    with pac_context_for_url('https://www.gov.br'):
+        html = urlopen(
+            'https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
+            'pagamentos-e-parcelamentos/taxa-de-juros-selic')
     bs = BeautifulSoup(html, 'html.parser')
     linhas = bs.find_all('tr', {'class': ['even', 'odd']})
     lista = [td.text for tr in linhas for td in tr.findChildren('td') if td.text != '']
@@ -251,7 +261,8 @@ def get_selic_last_years():
 
 
 def get_latest_ufesps_from(ano: int):
-    html = urlopen('https://legislacao.fazenda.sp.gov.br/Paginas/ValoresDaUFESP.aspx')
+    with pac_context_for_url('https://legislacao.fazenda.sp.gov.br/Paginas/ValoresDaUFESP.aspx'):
+        html = urlopen('https://legislacao.fazenda.sp.gov.br/Paginas/ValoresDaUFESP.aspx')
     bs = BeautifulSoup(html, 'html.parser')
     bs.prettify()
     linhas = bs.findAll('tr', {'class': ['sefazTableEvenRow-pagina2', 'sefazTableOddRow-pagina2']})
@@ -265,21 +276,22 @@ def get_cnpj_data(cnpj: str):
     # Token apmendonca@fazenda.sp.gov.br: 57649b8e0b1f8b95429ae19ed5c7fd8143aa947afcf74735bf8f74d1371e7456
     ws_url = f'https://www.receitaws.com.br/v1/cnpj/{cnpj}/days/90'
     ws_public_url = f'https://www.receitaws.com.br/v1/cnpj/{cnpj}'
-    try:
-        resposta = requests.get(ws_url, headers={
-            'Authorization': 'Bearer 57649b8e0b1f8b95429ae19ed5c7fd8143aa947afcf74735bf8f74d1371e7456',
-            'Content-Type': 'application/json'
-        }, timeout=10)
-        resposta.raise_for_status()
-    except requests.exceptions.HTTPError as payerr:
-        if payerr.response.status_code == 402 and payerr.response.reason == 'Payment Required':
-            resposta = requests.get(ws_public_url, headers={
+    with pac_context_for_url(ws_public_url):
+        try:
+            resposta = requests.get(ws_url, headers={
+                'Authorization': 'Bearer 57649b8e0b1f8b95429ae19ed5c7fd8143aa947afcf74735bf8f74d1371e7456',
                 'Content-Type': 'application/json'
             }, timeout=10)
             resposta.raise_for_status()
-        else:
-            logger.exception('Falha no acesso ao ReceitaWS')
-            raise WebScraperException(f'Falha no acesso ao ReceitaWS: {payerr}')
+        except requests.exceptions.HTTPError as payerr:
+            if payerr.response.status_code == 402 and payerr.response.reason == 'Payment Required':
+                resposta = requests.get(ws_public_url, headers={
+                    'Content-Type': 'application/json'
+                }, timeout=10)
+                resposta.raise_for_status()
+            else:
+                logger.exception('Falha no acesso ao ReceitaWS')
+                raise WebScraperException(f'Falha no acesso ao ReceitaWS: {payerr}')
     return resposta.json()
 
 
