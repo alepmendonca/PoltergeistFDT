@@ -2,7 +2,6 @@ import datetime
 import os.path
 import queue
 import re
-import signal
 import subprocess
 import sys
 import threading
@@ -36,6 +35,32 @@ def new_smart_decode(s):
 py4j.protocol.smart_decode = new_smart_decode
 py4j.java_gateway.smart_decode = new_smart_decode
 py4j.java_gateway.Popen = GeneralFunctions.PopenWindows
+
+
+class EFDPVAInstaller:
+    @staticmethod
+    def upgrade_efd_pva(new_version_path: Path, install_path: Path, mysql_port: int = 3336):
+        if not new_version_path.is_file():
+            raise Exception(f'Não existe arquivo de instalação do EFD PVA ICMS em {new_version_path}, '
+                            f'desistindo da instalação...')
+        try:
+            logger.info('Iniciando instalação do EFD PVA ICMS mais atual...')
+            subprocess.check_call(f'java -DINSTALL_PATH="{install_path.resolve()}" '
+                                  f'-jar "{new_version_path.resolve()}" '
+                                  f'-console -options-system"')
+            logger.info('Instalação do EFD PVA ICMS realizada!')
+        except subprocess.CalledProcessError as cpe:
+            raise Exception(f'Falha ao tentar instalar EFD PVA ICMS: {cpe}')
+        if install_path.is_dir():
+            # alterando o arquivo de propriedades para definir uma porta para o banco MySQL
+            with (install_path / 'configuracoes' / 'spedfiscal.properties').open(mode='rt') as fin:
+                propriedades = fin.read()
+                with (install_path / 'configuracoes' / 'spedfiscal.properties').open(mode='wt') as fout:
+                    propriedades = re.sub(r'portaBanco=\d+', f'portaBanco={mysql_port}', propriedades)
+                    fout.write(propriedades)
+            logger.info('Arquivo de propriedades do EFD PVA ICMS atualizado com sucesso!')
+        else:
+            raise Exception('Falha ao instalar EFD PVA ICMS, diretório não criado.')
 
 
 class EFDPVAReversed:

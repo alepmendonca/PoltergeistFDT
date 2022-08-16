@@ -9,7 +9,6 @@ from zipfile import BadZipFile
 
 import PySimpleGUI as sg
 import numpy as np
-from win32comext.shell.demos.servers.folder_view import GUID
 
 import Controller
 import GUIFunctions
@@ -754,43 +753,31 @@ def data_extraction_progress_update(evento_progresso: str, tipo_progresso: str):
 
 def initialize_environment():
     try:
-        import pyi_splash
+        Controller.set_proxy()
+        GUIFunctions.update_splash(f'{GeneralFunctions.project_name} v{GeneralFunctions.project_version}')
 
-        while not pyi_splash.is_alive():
-            time.sleep(1)
-        pyi_splash.update_text(f'{GeneralFunctions.project_name} v{GeneralFunctions.project_version}')
-    except ModuleNotFoundError:
-        pass
-    except Exception as e:
-        GeneralFunctions.logger.exception('Falha ao fazer update na splashscreen')
-        pass
+        # tenta excluir diretorio tmp no início
+        GeneralFunctions.clean_tmp_folder()
 
-    # tenta excluir diretorio tmp no início
-    GeneralFunctions.clean_tmp_folder()
+        sg.theme('SystemDefaultForReal')
+        sg.set_options(ttk_theme=sg.THEME_WINNATIVE)
 
-    sg.theme('SystemDefaultForReal')
-    sg.set_options(ttk_theme=sg.THEME_WINNATIVE)
+        if not GeneralConfiguration.get():
+            GUIFunctions.close_splash()
+            InitialConfigurationWizard.create_config_file()
 
-    if not GeneralConfiguration.get():
-        InitialConfigurationWizard.create_config_file()
+        Controller.update_efd_pva_version()
 
-    # Criar janela
-    global window
-    window = sg.Window(GeneralFunctions.project_name, window_layout(), size=(1024, 768),
-                       resizable=True, finalize=True,
-                       enable_close_attempted_event=True, icon=GUIFunctions.app_icon)
-    window.set_min_size((800, 500))
-    window_layout_fix()
-    refresh_data_tab()
-
-    try:
-        import pyi_splash
-
-        pyi_splash.close()
-    except ModuleNotFoundError:
-        pass
-    except Exception as e:
-        pass
+        # Criar janela
+        global window
+        window = sg.Window(GeneralFunctions.project_name, window_layout(), size=(1024, 768),
+                           resizable=True, finalize=True,
+                           enable_close_attempted_event=True, icon=GUIFunctions.app_icon)
+        window.set_min_size((800, 500))
+        window_layout_fix()
+        refresh_data_tab()
+    finally:
+        GUIFunctions.close_splash()
 
 
 def window_event_handler():
@@ -1020,5 +1007,9 @@ def window_event_handler():
 
 if __name__ == "__main__":
     extracoes = {}
-    initialize_environment()
-    window_event_handler()
+    try:
+        initialize_environment()
+        window_event_handler()
+    except Exception as e:
+        GeneralFunctions.logger.exception(f'Exceção inesperada: {e}')
+        GUIFunctions.popup_erro(f'Erro inesperado na execução do {GeneralFunctions.project_name}: {e}')

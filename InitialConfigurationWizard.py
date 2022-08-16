@@ -1,12 +1,14 @@
 import io
 import sys
 import textwrap
+from pathlib import Path
 
+import Controller
 import GUIFunctions
 import GeneralConfiguration
 import GeneralFunctions
 import WaitWindow
-from SQLReader import SQLReader
+from SQLReader import SQLReader, QueryAnalysisException
 from WebScraper import SeleniumWebScraper
 import PySimpleGUI as sg
 from PIL import Image
@@ -45,7 +47,7 @@ def create_config_file():
         [sg.Text(f'vou pedir alguns dados seus, que vão ficar guardados em um arquivo chamado ')],
         [sg.Text(f'{GeneralFunctions.get_local_dados_afr_path().name}, '
                  f'na pasta {GeneralFunctions.get_local_dados_afr_path().parent}')],
-        [sg.Text(f'As senhas pedidas vão ficar num arquivo criptografado nessa mesma pasta, ')],
+        [sg.Text(f'As senhas pedidas vão ficar no cofre de senha do Windows, e não neste arquivo, ')],
         [sg.Text(f'pra dificultar um pouquinho o trabalho de outros poltergeists...')],
         [sg.Push(),
          sg.Button('Estou pronto!', key='-WIZ-2-', size=(20, 3)),
@@ -97,7 +99,7 @@ def create_config_file():
     text2 = 'Ao confirmar os dados abaixo, vou fazer umas pesquisas para pegar dados seus, ' \
             'então não mexa nas janelas que aparecerem no computador, para não dar nenhum problema.' \
             ' Você saberá que acabaram as pesquisas quando o navegador fechar e surgir uma nova ' \
-            'mensagem no programa.'
+            'mensagem no programa. CONECTE-SE NA REDE DA SEFAZ, SE NÃO ESTIVER AINDA CONECTADO!'
     layout = [
         [sg.VPush()],
         [sg.Text('\n'.join(textwrap.wrap(text1, 75)), size=(580, None))],
@@ -125,16 +127,17 @@ def create_config_file():
             config.sigadoc_pass = values['-WIZ-SIGADOC-PASS-']
             if WaitWindow.open_wait_window(__get_dados_from_web, 'Carregar dados do AFRE', config):
                 window.close()
-            break
+                break
 
     layout = [
         [sg.VPush()],
         [sg.Text('Ajude-me a localizar os programas instalados no seu computador:')],
-        [sg.Text('Pasta principal do EFD PVA ICMS:')],
-        [sg.InputText(key='-WIZ-EFD-'), sg.FolderBrowse(initial_folder='c:')],
+        [sg.Text('Pasta principal do EFD PVA ICMS (se deixar o padrão, vou instalar e manter uma versão própria:')],
+        [sg.InputText(key='-WIZ-EFD-', default_text=str(config.efd_path.resolve())),
+         sg.FolderBrowse('Selecionar Pasta', initial_folder=str(Path().resolve()))],
         [sg.Text('\n'.join(textwrap.wrap('Abaixo, coloque os dados do banco de dados local Postgres '
-                                         '(na instalação dele aparecem essas informações). Caso use o AUD-Postgres '
-                                         'da Sefaz,abaixo foram colocadas as configurações dele', 75)
+                                         '(na instalação dele aparecem essas informações).\nCaso use o AUD-Postgres '
+                                         'da Sefaz, abaixo já foram colocadas as configurações dele:', 75)
                            ), size=(580, None))],
         [sg.Text("Endereço do Postgres:"), sg.Input(key='-WIZ-POSTGRES-ADDRESS-', default_text=config.postgres_address,
                                                     expand_x=True)],
@@ -158,25 +161,32 @@ def create_config_file():
             try:
                 config.efd_path = values['-WIZ-EFD-']
             except ValueError as e:
-                GUIFunctions.popup_erro(f'Problema com EFD PVA ICMS: {e}')
-            else:
-                config.postgres_address = values['-WIZ-POSTGRES-ADDRESS-']
-                config.postgres_port = values['-WIZ-POSTGRES-PORT-']
-                config.postgres_dbname = values['-WIZ-POSTGRES-DBNAME-']
-                config.postgres_user = values['-WIZ-POSTGRES-USER-']
-                config.postgres_pass = values['-WIZ-POSTGRES-PASS-']
                 try:
-                    with SQLReader(config=config) as postgres:
-                        postgres.executa_consulta('SELECT 1')
+                    WaitWindow.open_wait_window(Controller.install_efd_pva, '', Path(values['-WIZ-EFD-']))
+                    config.efd_path = values['-WIZ-EFD-']
                 except Exception as e:
-                    texto = 'Não foi possível conectar no banco de dados local. ' \
-                            'Verifique os dados para conexão e tente novamente.' \
-                            f'Erro ocorrido: {e}'
-                    GUIFunctions.popup_erro(texto)
-                else:
-                    config.save()
-                    window.close()
-                    break
+                    GUIFunctions.popup_erro(f'Problema com EFD PVA ICMS: {e}')
+                    continue
+
+            config.postgres_address = values['-WIZ-POSTGRES-ADDRESS-']
+            config.postgres_port = values['-WIZ-POSTGRES-PORT-']
+            config.postgres_dbname = values['-WIZ-POSTGRES-DBNAME-']
+            config.postgres_user = values['-WIZ-POSTGRES-USER-']
+            config.postgres_pass = values['-WIZ-POSTGRES-PASS-']
+
+            try:
+                with SQLReader(config=config) as postgres:
+                    postgres.executa_consulta('SELECT 1')
+            except QueryAnalysisException as e:
+                texto = 'Não foi possível conectar no banco de dados local. ' \
+                        'Verifique os dados para conexão e tente novamente.' \
+                        f'Erro ocorrido: {e}'
+                GUIFunctions.popup_erro(texto)
+                continue
+
+            config.save()
+            window.close()
+            break
 
     layout = [
         [sg.Text(f'Muito bem, {GeneralConfiguration.get().nome.split()[0].capitalize()}, já sei bem quem você é!')],

@@ -50,6 +50,14 @@ class PopenWindows(subprocess.Popen):
             super().__init__(command, **popen_kwargs)
 
 
+def initializePythonCom():
+    try:
+        # Esse CoInitialize é pra não dar erro quando rodar qualquer comando COM dentro de uma thread
+        pythoncom.CoInitialize()
+    except:
+        pass
+
+
 class ThreadWithReturnValue(threading.Thread):
     def __init__(self, target, args=()):
         threading.Thread.__init__(self, group=None, target=target, name=None, args=args, kwargs=None, daemon=True)
@@ -58,8 +66,7 @@ class ThreadWithReturnValue(threading.Thread):
 
     def run(self):
         if self._target is not None:
-            # Esse CoInitialize é pra não dar erro quando rodar qualquer comando COM dentro de uma thread
-            pythoncom.CoInitialize()
+            initializePythonCom()
             try:
                 self._return = self._target(*self._args, **self._kwargs)
             except Exception as e:
