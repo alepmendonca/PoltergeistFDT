@@ -10,6 +10,7 @@ import urllib
 import zipfile
 from concurrent.futures import Future
 from os import path
+from urllib.error import URLError, HTTPError
 from urllib.request import urlopen
 
 import pandas as pd
@@ -45,6 +46,7 @@ selenium.webdriver.common.service.subprocess.Popen = GeneralFunctions.PopenWindo
 LAUNCHPAD_MAX_TIME_WAIT_SECONDS = 1800
 LAUNCHPAD_TIME_WAIT_SECONDS = 30
 
+proxy_sefaz = "http://proxyservidores.lbintra.fazenda.sp.gov.br:8080"
 pgsf_url = "https://portal60.sede.fazenda.sp.gov.br/"
 nfe_consulta_url = "https://nfe.fazenda.sp.gov.br/ConsultaNFe/consulta/publica/ConsultarNFe.aspx#tabConsInut"
 pfe_url = "https://www3.fazenda.sp.gov.br/CAWEB/Account/Login.aspx"
@@ -159,18 +161,47 @@ launchpad_report_options = {
 }
 
 
-def get_efd_pva_version(pva_version: str = None):
+def set_proxy():
+    # Proxy setup para rede interna Sefaz, apenas se fizer sentido...
+    try:
+        if urlopen(proxy_sefaz, timeout=2.0).status == 200:
+            os.environ["http_proxy"] = proxy_sefaz
+            os.environ["HTTP_PROXY"] = proxy_sefaz
+            os.environ["https_proxy"] = proxy_sefaz
+            os.environ["HTTPS_PROXY"] = proxy_sefaz
+            os.environ["ftp_proxy"] = proxy_sefaz
+            os.environ["FTP_PROXY"] = proxy_sefaz
+            os.environ["no_proxy"] = "fazenda.sp.gov.br, localhost"
+    except URLError as e:
+        # situação em que está na VPN SSL
+        if isinstance(e.reason, TimeoutError):
+            return
+        # situação em que está totalmente fora da rede Sefaz
+        if isinstance(e.reason, OSError) and e.reason.strerror == 'getaddrinfo failed':
+            return
+        # situação em que está na VPN Desktop
+        if isinstance(e.reason, HTTPError) and e.reason.strerror.find('Multi-Hop Cycle') >= 0:
+            return
+        raise WebScraperException(f'Falha desconhecida ao tentar acessar proxy Sefaz: {e}')
+    except TimeoutError:
+        # situação ocorrida na VPN Desktop quando está carregando ainda o DNS...
+        raise WebScraperException('A VPN ainda não carregou completamente. Tente novamente mais tarde.')
+
+
+def get_efd_pva_version(pva_version: str = None) -> Path:
     if pva_version is None:
         url="http://www.sped.fazenda.gov.br/SpedFiscalServer/WSConsultasPVA/WSConsultasPVA.asmx"
         headers = {'content-type': 'text/xml'}
         body = """<?xml version="1.0" encoding="utf-8"?>
-            <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
+            <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+            xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">
               <soap12:Body>
                 <consultarVersaoAtualPVA xmlns="http://br.gov.serpro.spedfiscalserver/consulta" />
               </soap12:Body>
             </soap12:Envelope>"""
-        response = requests.post(url,data=body,headers=headers)
-        pva_version = re.match(r'.*<consultarVersaoAtualPVAResult>(.*)</consultarVersaoAtualPVAResult>', response.text).group(1)
+        response = requests.post(url, data=body, headers=headers)
+        pva_version = re.match(r'.*<consultarVersaoAtualPVAResult>(.*)</consultarVersaoAtualPVAResult>',
+                               response.text).group(1)
 
     html = urlopen('https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
                    'declaracoes-e-demonstrativos/sped-sistema-publico-de-escrituracao-digital/'
@@ -1284,6 +1315,14 @@ class SeleniumWebScraper:
         Select(self.__get_driver().find_element(By.ID, "ctl00_MainContent_ddlRelatorios")).select_by_index(1)
         WebDriverWait(self.__get_driver(), 10).until(
             EC.visibility_of_element_located((By.ID, "ctl00_MainContent_filtroCombos_ddlDrt")))
+
+        unidades = self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlUnidade")
+        seletor = Select(unidades)
+        if seletor.first_selected_option.text == 'Selecione':
+            if any([opcao.text.startswith('FDT DRT') for opcao in seletor.options]):
+                seletor.select_by_visible_text([opcao.text for opcao in seletor.options if opcao.text.startswith('FDT DRT')][0])
+            else:
+                raise WebScraperException('Não foi encontrada opção de FDT em DRT no PGSF, para pegar a DRT do AFRE!')
 
         config.drt_sigla = self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlDrt").text
         config.equipe_fiscal = self.__get_driver().find_element(By.ID,

@@ -3,7 +3,6 @@ import concurrent.futures
 import os
 import re
 import subprocess
-import sys
 import threading
 import time
 
@@ -20,6 +19,7 @@ from pathlib import Path
 
 import Audit
 import CSVProcessing
+import GUIFunctions
 import GeneralConfiguration
 import GeneralFunctions
 import MDBReader
@@ -31,7 +31,7 @@ from AIIMAutoIt import AIIMAutoIt
 from CSVProcessing import CSVProcessingMissingPrerequisite
 from ConfigFiles import Analysis, Infraction
 from Audit import AiimItem, PossibleInfraction, get_current_audit
-from EFDPVAReversed import EFDPVAReversed
+from EFDPVAReversed import EFDPVAReversed, EFDPVAInstaller
 from SQLReader import SQLReader, SQLWriter, QueryAnalysisException
 from GeneralFunctions import logger
 from WebScraper import SeleniumWebScraper, launchpad_report_options
@@ -1005,7 +1005,8 @@ def launchpad_relatorios_download(relatorios: list, ws: SeleniumWebScraper, wind
     # é feita quebra de relatórios em diferentes períodos, conforme estimativa feita
     global is_downloading_reports
     with ThreadPoolExecutor(thread_name_prefix='LaunchpadDownload',
-                            max_workers=LAUNCHPAD_MAX_CONCURRENT_REPORTS) as executor:
+                            max_workers=LAUNCHPAD_MAX_CONCURRENT_REPORTS,
+                            initializer=GeneralFunctions.initializePythonCom) as executor:
         is_downloading_reports = True
         try:
             for relatorio in relatorios:
@@ -1022,7 +1023,7 @@ def launchpad_relatorios_download(relatorios: list, ws: SeleniumWebScraper, wind
 def __run_report(relatorio: str, evento: threading.Event, ws: SeleniumWebScraper,
                  executor: ThreadPoolExecutor, window: sg.Window):
     parametros = __parametros_para_launchpad(relatorio)
-    periodos = __estima_periodicidades_relatorio(ws, relatorio, parametros, evento)
+    periodos = __estima_periodicidades_relatorio(relatorio, parametros)
     if evento.is_set():
         return
     report = launchpad_report_options[relatorio]
@@ -1032,7 +1033,7 @@ def __run_report(relatorio: str, evento: threading.Event, ws: SeleniumWebScraper
         executor.submit(ws.get_launchpad_report, relatorio,
                         launchpad_download_filename(relatorio,
                                                     (get_current_audit().inicio_auditoria,
-                                                       get_current_audit().fim_auditoria)),
+                                                     get_current_audit().fim_auditoria)),
                         evento, window, *parametros)
     else:
         window.write_event_value('-DATA-EXTRACTION-STATUS-',
@@ -1115,8 +1116,7 @@ def __parametros_para_launchpad(nome_relatorio: str):
     return parametros
 
 
-def __estima_periodicidades_relatorio(ws: SeleniumWebScraper, nome_relatorio: str,
-                                      parametros: list, evento: threading.Event) -> list:
+def __estima_periodicidades_relatorio(nome_relatorio: str, parametros: list) -> list:
     nomes_parametros = launchpad_report_options[nome_relatorio]['Parametros']
     if 'inicio' not in nomes_parametros:
         # nao tem necessidade de quebrar relatorios que ja sao consolidados
@@ -1138,49 +1138,13 @@ def __estima_periodicidades_relatorio(ws: SeleniumWebScraper, nome_relatorio: st
         else:
             periodicidade = LAUNCHPAD_REPORT_WITHOUT_BREAKS
     else:
-        # se nao encontrou estimativa guardada, aí baixa um minirelatorio pra estimar
-        logger.info(
-            f'Pegando um pequeno trecho do período de pesquisa de {nome_relatorio} '
-            f'para saber se precisa quebrar a pesquisa em várias...')
-        # amostra atualmente pega 10 dias do 1º quarto do período de auditoria
-        # ex: de 2018 a 2019 -> 01/07/2018 a 11/07/2018
-        inicio_amostra = inicio + (fim - inicio) / 4
-        fim_amostra = inicio_amostra + timedelta(days=10)
-        parametros_cp = parametros.copy()
-        parametros_cp[nomes_parametros.index('inicio')] = inicio_amostra.strftime('%d/%m/%Y')
-        parametros_cp[nomes_parametros.index('fim')] = fim_amostra.strftime('%d/%m/%Y')
-
-        # nao manda janela, porque não quero confundir progresso geral com da estimativa
-        arquivo_amostra = launchpad_download_filename(nome_relatorio, (inicio_amostra, fim_amostra))
-        report_file = ws.get_launchpad_report(nome_relatorio,
-                                              arquivo_amostra,
-                                              evento, None, *parametros_cp)
-        if evento.is_set():
-            return []
-
-        if report_file is None or not report_file.is_file():
-            # se não conseguiu baixar arquivo, provavelmente são muitos dados
-            # gera sempre 3 periodicidades por mês
-            periodicidade = timedelta(11)
-        else:
-            tamanho = os.path.getsize(str(report_file))
-            Path(arquivo_amostra).unlink(missing_ok=True)
-            if tamanho <= 100000:
-                periodicidade = LAUNCHPAD_REPORT_WITHOUT_BREAKS
-            elif tamanho <= 300000:
-                periodicidade = relativedelta(years=1)
-            elif tamanho <= 600000:
-                periodicidade = relativedelta(months=6)
-            elif tamanho <= 1000000:
-                periodicidade = relativedelta(months=3)
-            elif tamanho <= 20000000:
-                periodicidade = relativedelta(months=1)
-            else:
-                # 16 para sempre ter 2 periodicidades em um mês, independentemente da qtd dias do mês
-                periodicidade = timedelta(16)
+        # se nao encontrou estimativa guardada, aí considera que é um ano por padrão,
+        # já que a velocidade de geração de relatório no Launchpad não parece ter muita
+        # relação com o período de download
+        periodicidade = relativedelta(years=1)
 
         if periodicidade == LAUNCHPAD_REPORT_WITHOUT_BREAKS:
-            logger.info(f'Arquivo de amostra baixado, será baixado o período todo de uma vez para {nome_relatorio}')
+            logger.info(f'Será baixado o período todo de uma vez para {nome_relatorio}')
             get_current_audit().reports[launchpad_report_options[nome_relatorio]['Grupo']] = 'Agrupado'
         else:
             if isinstance(periodicidade, timedelta):
@@ -1197,7 +1161,7 @@ def __estima_periodicidades_relatorio(ws: SeleniumWebScraper, nome_relatorio: st
                     get_current_audit().reports[
                         launchpad_report_options[nome_relatorio]['Grupo']] = f'{periodicidade.years}y'
             logger.warning(
-                f'Arquivo de amostra baixado, {nome_relatorio} será baixado em blocos de {tempo}')
+                f'{nome_relatorio} será baixado em blocos de {tempo}')
         get_current_audit().save()
 
     periodos = []
@@ -1211,6 +1175,43 @@ def __estima_periodicidades_relatorio(ws: SeleniumWebScraper, nome_relatorio: st
             periodos.append((i, min(fim, i + periodicidade + timedelta(-1), GeneralFunctions.last_day_of_month(i))))
         i = periodos[-1][1] + timedelta(1)
     return periodos
+
+
+def __revisa_periodicidade_relatorio_grupo(nome_grupo: str):
+    atual = get_current_audit().reports.get(nome_grupo, 'Agrupado')
+    nomes_parametros = launchpad_report_options[nome_grupo]['Parametros']
+    if 'inicio' not in nomes_parametros:
+        # não há como revisar, o relatório já é agrupado
+        return
+    texto = None
+    match atual:
+        case 'Agrupado':
+            novo = '1y'
+            texto = 'anual'
+        case '1y':
+            novo = '6m'
+            texto = 'semestral'
+        case '6m':
+            novo = '3m'
+            texto = 'trimestral'
+        case '3m':
+            novo = '1m'
+            texto = 'mensal'
+        case '1m':
+            # 16 para sempre ter 2 periodicidades em um mês, independentemente da qtd dias do mês
+            novo = '16d'
+            texto = 'quinzenal'
+        case '16d':
+            # para ter 3 periodicidades em um mês
+            novo = '11d'
+            texto = 'semanal'
+        case _:
+            # se não souber o que fazer, não atualiza
+            novo = None
+    if novo:
+        logger.warning(f'Periodicidade de download dos relatórios do grupo "{nome_grupo}" diminuída para {texto}')
+        get_current_audit().reports[nome_grupo] = novo
+        get_current_audit().save()
 
 
 def launchpad_relatorios_import(relatorios: list, window: sg.Window, evento: threading.Event):
@@ -1263,7 +1264,8 @@ def __check_reports_completed(relatorio_nome_inicio: str, relatorio_opcoes: dict
                 result = predecessor.exception(timeout=1)
                 # mas se deu exception, desiste
                 if result:
-                    # TODO aqui seria um bom momento para aumentar os chuncks de relatorios, pra proxima tentativa
+                    # aumentar a periodicidade dos relatorios, pra proxima tentativa
+                    __revisa_periodicidade_relatorio_grupo(relatorio_opcoes['Grupo'])
                     raise concurrent.futures.CancelledError
                 logger.debug(f'Liberada importação do relatório {relatorio_nome_inicio},'
                              f' pois importação de tabela principal acabou')
@@ -1355,3 +1357,29 @@ def existing_open_aiims_for_osf() -> list:
 
 def generate_custom_report_cover(texto: str, caminho: Path):
     WordReport.cria_capa_para_anexo(texto.upper(), caminho)
+
+
+def set_proxy():
+    WebScraper.set_proxy()
+
+
+def install_efd_pva(efd_path: Path):
+    logger.info('Instalando EFD PVA...')
+    arquivo = WebScraper.get_efd_pva_version()
+    EFDPVAInstaller.upgrade_efd_pva(arquivo, efd_path)
+
+
+def update_efd_pva_version():
+    GUIFunctions.update_splash('Verificando versão mais atualizada do EFD PVA ICMS...')
+    try:
+        with EFDPVAReversed() as pva:
+            versao = pva.get_efd_pva_current_version()
+        if versao is not None:
+            GUIFunctions.update_splash(f'Baixando versão {versao} do EFD PVA ICMS...')
+            arquivo = WebScraper.get_efd_pva_version(versao)
+            GUIFunctions.update_splash(f'Instalando versão {versao} do EFD PVA ICMS...')
+            EFDPVAInstaller.upgrade_efd_pva(arquivo, GeneralConfiguration.get().efd_path)
+            GUIFunctions.update_splash(f'EFD PVA ICMS atualizado!')
+    except:
+        logger.exception('Falha na atualização do EFD PVA ICMS')
+        GUIFunctions.update_splash('Falha na atualização do EFD PVA ICMS, tentarei depois...')

@@ -1,4 +1,6 @@
 import textwrap
+import time
+
 import PySimpleGUI as sg
 
 import GeneralFunctions
@@ -19,10 +21,33 @@ def popup_ok(texto: str, titulo=GeneralFunctions.project_name):
 
 def popup_sim_nao(texto: str, titulo='Atenção') -> str:
     botao = sg.Window(titulo, [[sg.Text('\n'.join(textwrap.wrap(texto, 100)))],
-                       [sg.Push(), sg.Button('Sim', s=10), sg.Button('Não', s=10),
-                        sg.Push()]], disable_close=True, modal=True,
+                               [sg.Push(), sg.Button('Sim', s=10), sg.Button('Não', s=10),
+                                sg.Push()]], disable_close=True, modal=True,
                       icon=app_icon).read(close=True)
     return botao[0] if botao else None
+
+
+def update_splash(text: str):
+    try:
+        import pyi_splash
+        while not pyi_splash.is_alive():
+            time.sleep(1)
+        pyi_splash.update_text(text)
+    except ModuleNotFoundError:
+        pass
+    except Exception as e:
+        GeneralFunctions.logger.exception('Falha ao fazer update na splashscreen')
+        pass
+
+
+def close_splash():
+    try:
+        import pyi_splash
+        pyi_splash.close()
+    except ModuleNotFoundError:
+        pass
+    except Exception as e:
+        pass
 
 
 bar_striped = b'R0lGODlhoAAUAIAAAAQCBP7+/iH/C05FVFNDQVBFMi4wAwEAAAAh+QQJCQABACwAAAAAoAAUAAAC' \

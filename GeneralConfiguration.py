@@ -48,9 +48,9 @@ class Configuration:
         self.postgres_address = self._dicionario.get('postgres_address', 'localhost')
         self._postgres_port = self._dicionario.get('postgres_port', 5431)  # essa é a porta do AUD-Postgres
         self.postgres_dbname = self._dicionario.get('postgres_dbname', 'postgres')
-        self.postgres_user = self._dicionario.get('postgres_user', '')  # essa é a senha do AUD-Postgres
+        self.postgres_user = self._dicionario.get('postgres_user', 'postgres')  # essa é o usuário do AUD-Postgres
         self.ultima_pasta = Path(self._dicionario.get('ultima_pasta', str(GeneralFunctions.get_user_path().absolute())))
-        self._efd_path = Path(self._dicionario['efd_path']) if self._dicionario.get('efd_path') else Path.home()
+        self._efd_path = Path(self._dicionario['efd_path']) if self._dicionario.get('efd_path') else Path('efd-pva')
         self.max_epat_attachment_size = 8
 
     @property
