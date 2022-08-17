@@ -1,6 +1,5 @@
 import datetime
 import re
-import socket
 
 import pandas as pd
 import psycopg2
@@ -39,22 +38,6 @@ def _get_dtypes_from_oids(oids: list) -> list:
     except KeyError as ex:
         raise QueryAnalysisException(f'Consulta no banco não soube verificar tipo de dados retornado'
                                      f' para o {oids.index(ex.args[0])}º argumento: {ex.args[0]}')
-
-
-def check_if_port_is_open(remoteServerHost: str, port: int):
-    remoteServerIP = socket.gethostbyname(remoteServerHost)
-    sock = None
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        result = sock.connect_ex((remoteServerIP, port))
-        return result == 0
-    except socket.gaierror:
-        raise QueryAnalysisException(f'Não consegui descobrir que endereço é esse: {remoteServerHost}')
-    except socket.error:
-        raise QueryAnalysisException(f'Não consegui conectar no Postgres em {remoteServerHost}:{port}')
-    finally:
-        if sock is not None:
-            sock.close()
 
 
 class SQLReader:
