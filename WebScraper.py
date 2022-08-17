@@ -3,16 +3,18 @@ import datetime
 import gzip
 import os
 import re
+import socket
 import sys
 import threading
 import time
 import urllib
+import urllib.parse
 import zipfile
 from concurrent.futures import Future
 from os import path
-from urllib.error import URLError, HTTPError
+from urllib.error import URLError
+from urllib.request import urlopen, install_opener
 from urllib.request import urlopen
-from pypac import pac_context_for_url
 
 import pandas as pd
 import PySimpleGUI as sg
@@ -41,8 +43,6 @@ import GeneralFunctions
 import PDFExtractor
 from GeneralFunctions import logger, wait_downloaded_file, move_downloaded_file
 import http.client as http_client
-import logging
-
 
 # Monkey Patching para não abrir shell em modo release!
 selenium.webdriver.common.service.subprocess.Popen = GeneralFunctions.PopenWindows
@@ -50,7 +50,6 @@ selenium.webdriver.common.service.subprocess.Popen = GeneralFunctions.PopenWindo
 LAUNCHPAD_MAX_TIME_WAIT_SECONDS = 1800
 LAUNCHPAD_TIME_WAIT_SECONDS = 30
 
-proxy_sefaz = "http://proxyservidores.lbintra.fazenda.sp.gov.br:8080"
 pgsf_url = "https://portal60.sede.fazenda.sp.gov.br/"
 nfe_consulta_url = "https://nfe.fazenda.sp.gov.br/ConsultaNFe/consulta/publica/ConsultarNFe.aspx#tabConsInut"
 pfe_url = "https://www3.fazenda.sp.gov.br/CAWEB/Account/Login.aspx"
@@ -165,38 +164,53 @@ launchpad_report_options = {
 }
 
 
+def check_if_port_is_open(remote_server_host: str, port: int):
+    sock = None
+    try:
+        remote_server_ip = socket.gethostbyname(remote_server_host)
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex((remote_server_ip, port))
+        return result == 0
+    except socket.gaierror:
+        logger.debug(f'Não consegui descobrir que endereço é esse: {remote_server_host}')
+        return False
+    except socket.error:
+        logger.debug(f'Não consegui conectar nesta porta: {remote_server_host}:{port}')
+        return False
+    finally:
+        if sock is not None:
+            sock.close()
+
+
 def set_proxy():
     # Proxy setup para rede interna Sefaz, apenas se fizer sentido...
-    try:
-        if urlopen(proxy_sefaz, timeout=2.0).status == 200:
-            http_client.HTTPConnection.debuglevel = 1
+    proxy_srv = "10.216.28.110"
+    proxy_port = 8080
+    if check_if_port_is_open(proxy_srv, proxy_port):
+        logger.info('Ajustando proxy da Sefaz-SP...')
+        proxy_sefaz = f'http://{proxy_srv}:{proxy_port}'
+        os.environ["http_proxy"] = proxy_sefaz
+        os.environ["HTTP_PROXY"] = proxy_sefaz
+        os.environ["https_proxy"] = proxy_sefaz
+        os.environ["HTTPS_PROXY"] = proxy_sefaz
+        os.environ["ftp_proxy"] = proxy_sefaz
+        os.environ["FTP_PROXY"] = proxy_sefaz
+        os.environ["no_proxy"] = "fazenda.sp.gov.br, localhost"
 
-            os.environ["http_proxy"] = proxy_sefaz
-            os.environ["HTTP_PROXY"] = proxy_sefaz
-            os.environ["https_proxy"] = proxy_sefaz
-            os.environ["HTTPS_PROXY"] = proxy_sefaz
-            os.environ["ftp_proxy"] = proxy_sefaz
-            os.environ["FTP_PROXY"] = proxy_sefaz
-            os.environ["no_proxy"] = "fazenda.sp.gov.br, localhost"
-    except URLError as e:
-        # situação em que está na VPN SSL
-        if isinstance(e.reason, TimeoutError):
-            return
-        # situação em que está totalmente fora da rede Sefaz
-        if isinstance(e.reason, OSError) and e.reason.strerror == 'getaddrinfo failed':
-            return
-        # situação em que está na VPN Desktop
-        if isinstance(e.reason, HTTPError) and e.reason.strerror.find('Multi-Hop Cycle') >= 0:
-            return
-        raise WebScraperException(f'Falha desconhecida ao tentar acessar proxy Sefaz: {e}')
-    except TimeoutError:
-        # situação ocorrida na VPN Desktop quando está carregando ainda o DNS...
-        raise WebScraperException('A VPN ainda não carregou completamente. Tente novamente mais tarde.')
+        # reseta o cache de proxy
+        install_opener(None)
+        try:
+            urlopen('https://www.gov.br', timeout=5)
+            logger.info('Acesso ao proxy funcionando...')
+        except URLError as e:
+            raise WebScraperException(f'Conexão com a Internet está inoperante, mesmo com proxy Sefaz: {e}')
+    else:
+        logger.info('Não está no ambiente interno Sefaz, não precisa definir proxy...')
 
 
 def get_efd_pva_version(pva_version: str = None) -> Path:
     if pva_version is None:
-        url="http://www.sped.fazenda.gov.br/SpedFiscalServer/WSConsultasPVA/WSConsultasPVA.asmx"
+        url = "http://www.sped.fazenda.gov.br/SpedFiscalServer/WSConsultasPVA/WSConsultasPVA.asmx"
         headers = {'content-type': 'text/xml'}
         body = """<?xml version="1.0" encoding="utf-8"?>
             <soap12:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
@@ -205,13 +219,11 @@ def get_efd_pva_version(pva_version: str = None) -> Path:
                 <consultarVersaoAtualPVA xmlns="http://br.gov.serpro.spedfiscalserver/consulta" />
               </soap12:Body>
             </soap12:Envelope>"""
-        with pac_context_for_url(url):
-            response = requests.post(url, data=body, headers=headers)
+        response = requests.post(url, data=body, headers=headers)
         pva_version = re.match(r'.*<consultarVersaoAtualPVAResult>(.*)</consultarVersaoAtualPVAResult>',
                                response.text).group(1)
 
-    with pac_context_for_url('https://www.gov.br'):
-        html = urlopen('https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
+    html = urlopen('https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
                        'declaracoes-e-demonstrativos/sped-sistema-publico-de-escrituracao-digital/'
                        'escrituracao-fiscal-digital-efd/escrituracao-fiscal-digital-efd')
     bs = BeautifulSoup(html, 'html.parser')
@@ -222,16 +234,14 @@ def get_efd_pva_version(pva_version: str = None) -> Path:
             download_path = Path('tmp') / tag.text
             logger.info(f'Baixando versão nova do EFD PVA ICMS: {pva_version}')
             logger.debug(link)
-            with pac_context_for_url(link):
-                urllib.request.urlretrieve(link, download_path)
+            urllib.request.urlretrieve(link, download_path)
             logger.info('Encerrado download do EFD PVA ICMS')
             return download_path
     raise WebScraperException(f'Não localizei arquivo da versão {pva_version} pra baixar!')
 
 
 def get_selic_last_years():
-    with pac_context_for_url('https://www.gov.br'):
-        html = urlopen(
+    html = urlopen(
             'https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
             'pagamentos-e-parcelamentos/taxa-de-juros-selic')
     bs = BeautifulSoup(html, 'html.parser')
@@ -261,8 +271,7 @@ def get_selic_last_years():
 
 
 def get_latest_ufesps_from(ano: int):
-    with pac_context_for_url('https://legislacao.fazenda.sp.gov.br/Paginas/ValoresDaUFESP.aspx'):
-        html = urlopen('https://legislacao.fazenda.sp.gov.br/Paginas/ValoresDaUFESP.aspx')
+    html = urlopen('https://legislacao.fazenda.sp.gov.br/Paginas/ValoresDaUFESP.aspx')
     bs = BeautifulSoup(html, 'html.parser')
     bs.prettify()
     linhas = bs.findAll('tr', {'class': ['sefazTableEvenRow-pagina2', 'sefazTableOddRow-pagina2']})
@@ -276,22 +285,21 @@ def get_cnpj_data(cnpj: str):
     # Token apmendonca@fazenda.sp.gov.br: 57649b8e0b1f8b95429ae19ed5c7fd8143aa947afcf74735bf8f74d1371e7456
     ws_url = f'https://www.receitaws.com.br/v1/cnpj/{cnpj}/days/90'
     ws_public_url = f'https://www.receitaws.com.br/v1/cnpj/{cnpj}'
-    with pac_context_for_url(ws_public_url):
-        try:
-            resposta = requests.get(ws_url, headers={
-                'Authorization': 'Bearer 57649b8e0b1f8b95429ae19ed5c7fd8143aa947afcf74735bf8f74d1371e7456',
+    try:
+        resposta = requests.get(ws_url, headers={
+            'Authorization': 'Bearer 57649b8e0b1f8b95429ae19ed5c7fd8143aa947afcf74735bf8f74d1371e7456',
+            'Content-Type': 'application/json'
+        }, timeout=10)
+        resposta.raise_for_status()
+    except requests.exceptions.HTTPError as payerr:
+        if payerr.response.status_code == 402 and payerr.response.reason == 'Payment Required':
+            resposta = requests.get(ws_public_url, headers={
                 'Content-Type': 'application/json'
             }, timeout=10)
             resposta.raise_for_status()
-        except requests.exceptions.HTTPError as payerr:
-            if payerr.response.status_code == 402 and payerr.response.reason == 'Payment Required':
-                resposta = requests.get(ws_public_url, headers={
-                    'Content-Type': 'application/json'
-                }, timeout=10)
-                resposta.raise_for_status()
-            else:
-                logger.exception('Falha no acesso ao ReceitaWS')
-                raise WebScraperException(f'Falha no acesso ao ReceitaWS: {payerr}')
+        else:
+            logger.exception('Falha no acesso ao ReceitaWS')
+            raise WebScraperException(f'Falha no acesso ao ReceitaWS: {payerr}')
     return resposta.json()
 
 
@@ -807,7 +815,8 @@ class SeleniumWebScraper:
                 self.__get_driver().find_element(By.XPATH, '/html/body/div[2]/form/div[3]/ul/li[2]/a').click()
                 self.__get_driver().find_element(By.ID, 'ContentMain_tbxCnpjNFe').send_keys(re.sub(r'\D', '', cnpj))
                 try:
-                    Select(self.__get_driver().find_element(By.ID, 'ContentMain_ddlAno')).select_by_value(str(ano - 2000))
+                    Select(self.__get_driver().find_element(By.ID, 'ContentMain_ddlAno')).select_by_value(
+                        str(ano - 2000))
                 except NoSuchElementException as nse:
                     if nse.msg.startswith('Cannot locate option'):
                         # está pedindo um ano que a consulta já não disponibiliza mais
@@ -1332,7 +1341,8 @@ class SeleniumWebScraper:
         seletor = Select(unidades)
         if seletor.first_selected_option.text == 'Selecione':
             if any([opcao.text.startswith('FDT DRT') for opcao in seletor.options]):
-                seletor.select_by_visible_text([opcao.text for opcao in seletor.options if opcao.text.startswith('FDT DRT')][0])
+                seletor.select_by_visible_text(
+                    [opcao.text for opcao in seletor.options if opcao.text.startswith('FDT DRT')][0])
             else:
                 raise WebScraperException('Não foi encontrada opção de FDT em DRT no PGSF, para pegar a DRT do AFRE!')
 

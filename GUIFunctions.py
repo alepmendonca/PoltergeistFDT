@@ -28,6 +28,7 @@ def popup_sim_nao(texto: str, titulo='Atenção') -> str:
 
 
 def update_splash(text: str):
+    GeneralFunctions.logger.info(text)
     try:
         import pyi_splash
         while not pyi_splash.is_alive():
