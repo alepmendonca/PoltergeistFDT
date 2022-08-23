@@ -417,8 +417,9 @@ def remove_notification(notification: PossibleInfraction):
 
 def remove_aiim_item(aiim_item: AiimItem):
     if aiim_item.has_aiim_item_number():
+        item_number = aiim_item.item
         update_aiim_item_number(aiim_item)
-        AIIMAutoIt().remove_aiim_item(*__get_open_aiim_data_from_aiim2003(), aiim_item.item)
+        AIIMAutoIt().remove_aiim_item(*__get_open_aiim_data_from_aiim2003(), item_number)
     get_current_audit().aiim_itens.remove(aiim_item)
     get_current_audit().save()
 

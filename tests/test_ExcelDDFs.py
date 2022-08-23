@@ -1,7 +1,6 @@
 import datetime
 import re
 import shutil
-import unittest
 from pathlib import Path
 from unittest import mock
 
@@ -11,7 +10,7 @@ from tika import parser
 
 import Audit
 from ConfigFiles import Infraction
-from ExcelDDFs import ExcelArrazoadoIncompletoException, ExcelArrazoadoCriticalException
+from ExcelDDFs import ExcelArrazoadoIncompletoException
 from tests.test_Audit import AuditTestSetup
 
 
@@ -184,15 +183,15 @@ class ExcelDDFsTest(AuditTestSetup):
     @staticmethod
     def _planilha_sem_agrupamento():
         return pd.DataFrame(columns=['Chave', 'Período', 'Valor'],
-                            data=[['351722115556546654', datetime.date(2022, 1, 5), 100],
-                                  ['371854654656666556', datetime.date(2022, 4, 2), 300]])
+                            data=[['3517221155565466541255', datetime.date(2022, 1, 5), 100],
+                                  ['3718546546566665561255', datetime.date(2022, 4, 2), 300]])
 
     @staticmethod
     def _planilha_com_agrupamento():
         return pd.DataFrame(columns=['Chave', 'Período', 'Valor', 'mês'],
-                            data=[['351722115556546654', datetime.date(2022, 1, 5), 100, datetime.date(2022, 1, 31)],
+                            data=[['3517221155565466541255', datetime.date(2022, 1, 5), 100, datetime.date(2022, 1, 31)],
                                   ['Total Subitem 1.1', None, 100, datetime.date(2022, 1, 31)],
-                                  ['371854654656666556', datetime.date(2022, 4, 2), 300, datetime.date(2022, 4, 30)],
+                                  ['3718546546566665561255', datetime.date(2022, 4, 2), 300, datetime.date(2022, 4, 30)],
                                   ['Total Subitem 1.2', None, 300, datetime.date(2022, 4, 30)],
                                   ['TOTAL ITEM 1', None, 400, 'Total Geral']])
 
@@ -207,8 +206,8 @@ class ExcelDDFsTest(AuditTestSetup):
 
     def test_get_periodos_referencia_sem_agrupamento_sem_periodo(self):
         df = pd.DataFrame(columns=['Chave', 'Horario', 'Valor'],
-                          data=[['351722115556546654', datetime.datetime(2022, 1, 5, 10, 5, 0), 100],
-                                ['371854654656666556', datetime.datetime(2022, 4, 2, 22, 1, 3), 300]])
+                          data=[['3517221155565466541255', datetime.datetime(2022, 1, 5, 10, 5, 0), 100],
+                                ['3718546546566665561255', datetime.datetime(2022, 4, 2, 22, 1, 3), 300]])
         with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=df):
             with self.assertRaises(ExcelArrazoadoIncompletoException) as cm:
                 Audit.get_current_audit().get_sheet().periodos_de_referencia('planilha')
@@ -226,8 +225,8 @@ class ExcelDDFsTest(AuditTestSetup):
 
     def test_get_ddf_sem_agrupamento_failure(self):
         df = pd.DataFrame(columns=['Chave', 'Nome qualquer', 'Valor'],
-                          data=[['351722115556546654', datetime.date(2022, 1, 5), 100],
-                                ['371854654656666556', datetime.date(2022, 4, 2), 300]])
+                          data=[['3517221155565466541255', datetime.date(2022, 1, 5), 100],
+                                ['3718546546566665561255', datetime.date(2022, 4, 2), 300]])
         with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=df):
             with self.assertRaises(ExcelArrazoadoIncompletoException) as cm:
                 Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'IV', 'b')

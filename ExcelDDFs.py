@@ -13,9 +13,8 @@ from openpyxl import Workbook
 from openpyxl.drawing.image import Image
 from openpyxl.styles import Border, Side, Alignment
 from copy import copy
-
+from pandas import Timestamp
 from pathlib import Path
-
 from pandas._libs.missing import NAType
 
 import Audit
@@ -53,8 +52,6 @@ def _dataframe_to_rows(df: pd.DataFrame, header=True):
     If header is True then column headers will be included starting one column to the right.
     Formatting should be done by client code.
     """
-    import numpy
-    from pandas import Timestamp
     blocks = df._data.blocks
     ncols = sum(b.shape[0] for b in blocks)
     data = [None] * ncols
@@ -62,11 +59,11 @@ def _dataframe_to_rows(df: pd.DataFrame, header=True):
     for b in blocks:
         values = b.values
 
-        if b.dtype.type == numpy.datetime64:
-            values = numpy.array([Timestamp(v) for v in values.ravel()])
+        if b.dtype.type == np.datetime64:
+            values = np.array([Timestamp(v) for v in values.ravel()])
             values = values.reshape(b.shape)
         elif b.dtype.name == 'Int64':
-            values = numpy.array([v for v in values.ravel()])
+            values = np.array([v for v in values.ravel()])
             values = values.reshape(b.shape)
 
         result = values.tolist()
@@ -79,7 +76,7 @@ def _dataframe_to_rows(df: pd.DataFrame, header=True):
         for row in rows:
             n = []
             for v in row:
-                if isinstance(v, numpy.datetime64):
+                if isinstance(v, np.datetime64):
                     v = Timestamp(v)
                 n.append(v)
             row = n
@@ -226,8 +223,21 @@ class ExcelDDFs:
             df = df[df['Chave'] >= '1']
         aggregator = [i for i, x in enumerate(df.keys()) if isinstance(x, str) and x.lower() in ('mês', 'dia')]
         if aggregator:
-            df = df[~df[df.keys()[0]].str.upper().str.startswith('TOTAL')]
+            df = df[df[df.keys()[0]].map(lambda v: not isinstance(v, str) or not v.upper().startswith('TOTAL'))]
             df = df.iloc[:, 0:aggregator[0]]
+        df = df.convert_dtypes()
+        # converte tipo de colunas datas, para uso em comparações
+        new_types = {}
+        for idx in range(0, len(df.keys())):
+            t = df.dtypes.tolist()[idx]
+            coluna = df.keys()[idx]
+            if t == np.object_ and any(df[coluna].map(
+                    lambda v: isinstance(v, datetime.datetime) or isinstance(v, datetime.date) or
+                              isinstance(v, Timestamp)
+            )):
+                new_types[coluna] = np.datetime64
+        if new_types:
+            df = df.astype(new_types)
         return df
 
     def create_creditos_sheet(self, saldos: pd.DataFrame):
@@ -295,7 +305,7 @@ class ExcelDDFs:
                 .astype(np.datetime64)
             resultado = ddf.merge(glosas, on='referencia')
             if 'valor_basico' in resultado.columns:
-                resultado = resultado.iloc[:, [1, 3, 8, 9, 10, 11]]
+                resultado = resultado.iloc[:, [1, 3, 7, 8, 9, 10]]
                 resultado.columns = ['valor_basico', 'referencia', 'valor', 'dci', 'dij', 'dcm']
                 resultado['valor_basico'] = resultado['valor_basico'].apply(
                     lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
@@ -307,10 +317,10 @@ class ExcelDDFs:
             resultado['valor'] = resultado['valor'].apply(
                 lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
             resultado['dci'] = resultado['dci'].apply(
-                lambda d: None if isinstance(d, NAType) else f'{d.strftime("%d/%m/%y")}'
+                lambda d: None if isinstance(d, np.float) and np.isnan(d) else f'{d.strftime("%d/%m/%y")}'
             )
             resultado['dij'] = resultado['dij'].apply(
-                lambda d: None if isinstance(d, NAType) else f'{d.strftime("%d/%m/%y")}'
+                lambda d: None if isinstance(d, np.float) and np.isnan(d) else f'{d.strftime("%d/%m/%y")}'
             )
             resultado['dcm'] = resultado['dcm'].apply(
                 lambda d: f'{d.strftime("%d/%m/%y")}'
@@ -332,12 +342,24 @@ class ExcelDDFs:
 
     def get_vencimentos_GIA(self) -> pd.DataFrame:
         audit = Audit.get_current_audit()
+        refresh_cf = False
         if not self.conta_fiscal_path().is_file():
+            refresh_cf = True
+        else:
+            vencimentos = PDFExtractor.vencimentos_de_PDF_CFICMS(self.conta_fiscal_path(), self.main_path,
+                                                                 audit.get_periodos_da_fiscalizacao(rpa=True))
+            if GeneralFunctions.last_day_of_month(vencimentos['vencimento'].iloc[-1]) < \
+                    GeneralFunctions.first_day_of_month_before(datetime.date.today()) \
+                    and vencimentos['saldo'].iloc[-1] < 0:
+                refresh_cf = True
+        if refresh_cf:
             with SeleniumWebScraper(self.main_path) as ws:
                 ws.get_conta_fiscal(audit.ie, audit.inicio_auditoria.year, audit.fim_auditoria.year,
                                     self.conta_fiscal_path())
+                self.conta_fiscal_path().unlink(missing_ok=True)
+                self.creditos_path().unlink(missing_ok=True)
         return PDFExtractor.vencimentos_de_PDF_CFICMS(self.conta_fiscal_path(), self.main_path,
-                                                      audit.get_periodos_da_fiscalizacao(rpa=True))
+                                                      audit.get_periodos_da_fiscalizacao(rpa=True, ate_presente=True))
 
     def update_number_in_subtotals(self, sheet_name: str, item: int):
         ws = self.workbook()[sheet_name]
@@ -440,7 +462,8 @@ class ExcelDDFs:
                 aba.columns = ['referencia', 'entrega', 'atraso', 'valor']
                 ddf = aba[['referencia', 'valor', 'atraso']]
             else:
-                aba.columns = ['referencia', 'valor']
+                if len(aba.columns) == 2:
+                    aba.columns = ['referencia', 'valor']
                 ddf = aba[['referencia', 'valor']]
                 ddf['atraso'] = None
         else:

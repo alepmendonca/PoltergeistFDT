@@ -753,6 +753,7 @@ def data_extraction_progress_update(evento_progresso: str, tipo_progresso: str):
 
 def initialize_environment():
     try:
+        GeneralFunctions.logger.debug("Inicializando ambiente...")
         Controller.set_proxy()
         GUIFunctions.update_splash(f'{GeneralFunctions.project_name} v{GeneralFunctions.project_version}')
 
@@ -921,6 +922,7 @@ def window_event_handler():
                                             'Atualizar número do Item',
                                             aiim_item, int(resposta))
                 refresh_aiim_tab()
+                values['-INFRACTION-CHOSEN-'] = [aiim_item]
                 aiim_item_chosen(aiim_item)
         elif event == '-AIIM-UPDATE-NOTIF-ANSWER-':
             resposta = sg.popup_get_text('Digite o expediente Sem Papel com resposta à notificação',

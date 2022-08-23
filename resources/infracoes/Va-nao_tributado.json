@@ -8,7 +8,7 @@
 			{"artigo": "250A", "inciso": "1"}
 		]
 	},
-	"relatorio_circunstanciado": "o contribuinte foi autuado por deixar de registrar no LRE em EFD documentos fiscais <modelos> em que consta como destinatário ou tomador do serviço, todos sem destaque de imposto, constatado pela simples comparação entre os documentos presentes nas bases de dados desta Receita Estadual e os documentos fiscais efetivamente escriturados. O contribuinte foi notificado através da notificação DEC <notificacao>, não tendo apresentado justificativas regulamentares para a não escrituração destes documentos.",
+	"relatorio_circunstanciado": "o contribuinte foi autuado por deixar de registrar no LRE em EFD documentos fiscais <modelos> em que consta como destinatário ou tomador do serviço, todos sem destaque de imposto, constatado pela simples comparação entre os documentos presentes nas bases de dados desta Receita Estadual e os documentos fiscais efetivamente escriturados.",
 	"provas": [
 		{"tipo": "listagem", "descricao": "Listagem de documentos fiscais não tributados não escriturados, cujo destinatário ou tomador de serviço declarado é o contribuinte"},
 		{"tipo": "DFe", "descricao":  "Documentos fiscais eletrônicos não escriturados"}
