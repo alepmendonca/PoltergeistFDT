@@ -1,6 +1,8 @@
+import base64
 import concurrent.futures
 import datetime
 import gzip
+import json
 import os
 import re
 import socket
@@ -167,8 +169,11 @@ launchpad_report_options = {
 def check_if_port_is_open(remote_server_host: str, port: int):
     sock = None
     try:
+        logger.debug(f"Buscando servidor {remote_server_host}...")
         remote_server_ip = socket.gethostbyname(remote_server_host)
+        logger.debug(f"Acessando porta {port} do servidor {remote_server_host}...")
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(1.0)
         result = sock.connect_ex((remote_server_ip, port))
         return result == 0
     except socket.gaierror:
@@ -184,7 +189,7 @@ def check_if_port_is_open(remote_server_host: str, port: int):
 
 def set_proxy():
     # Proxy setup para rede interna Sefaz, apenas se fizer sentido...
-    proxy_srv = "10.216.28.110"
+    proxy_srv = "proxyservidores.lbintra.fazenda.sp.gov.br"
     proxy_port = 8080
     if check_if_port_is_open(proxy_srv, proxy_port):
         logger.info('Ajustando proxy da Sefaz-SP...')
@@ -224,8 +229,8 @@ def get_efd_pva_version(pva_version: str = None) -> Path:
                                response.text).group(1)
 
     html = urlopen('https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
-                       'declaracoes-e-demonstrativos/sped-sistema-publico-de-escrituracao-digital/'
-                       'escrituracao-fiscal-digital-efd/escrituracao-fiscal-digital-efd')
+                   'declaracoes-e-demonstrativos/sped-sistema-publico-de-escrituracao-digital/'
+                   'escrituracao-fiscal-digital-efd/escrituracao-fiscal-digital-efd')
     bs = BeautifulSoup(html, 'html.parser')
     linhas = bs.find_all('a', {'class': 'external-link'})
     for tag in linhas:
@@ -242,8 +247,8 @@ def get_efd_pva_version(pva_version: str = None) -> Path:
 
 def get_selic_last_years():
     html = urlopen(
-            'https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
-            'pagamentos-e-parcelamentos/taxa-de-juros-selic')
+        'https://www.gov.br/receitafederal/pt-br/assuntos/orientacao-tributaria/'
+        'pagamentos-e-parcelamentos/taxa-de-juros-selic')
     bs = BeautifulSoup(html, 'html.parser')
     linhas = bs.find_all('tr', {'class': ['even', 'odd']})
     lista = [td.text for tr in linhas for td in tr.findChildren('td') if td.text != '']
@@ -550,20 +555,32 @@ class SeleniumWebScraper:
         options.add_argument("--log-level=3")  # minimal logging
         options.add_argument("--ignore-certificate-errors")
         options.add_argument("--kiosk-printing")
+        options.add_argument("--enable-print-browser")
         # apenas rola imprimir PDF em modo headless, o que nao eh muito bom pra debug...
         if headless:
             options.add_argument('--headless')
             options.add_argument('--disable-gpu')
             options.add_argument('--no-sandbox')
+        print_settings = {
+            "recentDestinations": [{
+                "id": "Save as PDF",
+                "origin": "local",
+                "account": ""
+            }],
+            "selectedDestinationId": "Save as PDF",
+            "version": 2,
+        }
         options.add_experimental_option(
             "prefs",
             {
                 "download.default_directory": str(self.tmp_path),
+                "savefile.default_directory": str(self.tmp_path),
                 "download.prompt_for_download": False,
                 "download.directory_upgrade": True,
                 "plugins.always_open_pdf_externally": True,
                 "credentials_enable_service": False,
                 "profile.password_manager_enabled": False,
+                "printing.print_preview_sticky_settings.appState": json.dumps(print_settings)
             },
         )  # removes DevTools msg
         options.add_experimental_option(
@@ -620,27 +637,26 @@ class SeleniumWebScraper:
         absolute_link = pgsf_url + "/" + relative_link
         self.__get_driver().get(absolute_link)
 
-    def __save_html_as_pdf(self, html: str, download_path: Path, encoding: str = 'iso-8859-1'):
-        tmp_file = self.tmp_path / 'html_to_pdf.html'
-        tmp_file.unlink(missing_ok=True)
-        with tmp_file.open(mode='w', encoding=encoding) as f:
-            f.write(html)
 
-        pdfconfig = pdfkit.configuration(
-            wkhtmltopdf=os.path.join(self.script_path, 'wkhtmltopdf', 'bin', 'wkhtmltopdf.exe'))
-        try:
-            pdfkit.from_file(
-                str(tmp_file.absolute()),
-                output_path=str(download_path.absolute()),
-                configuration=pdfconfig,
-                options={'--encoding': encoding})
-        except OSError as ex:
-            # ocorre erro no wkhtmltopdf se ele não encontra as imagens, mas ele consegue gerar o PDF
-            if str(ex).find('network error') > 0 and download_path.is_file():
-                pass
-            else:
-                logger.exception('Falha ao salvar PDF a partir de HTML')
-                raise WebScraperException(f'Falha no salvamento de {download_path.name}: {ex}')
+    def __save_as_pdf(self, download_path: Path):
+        # serve para garantir que a renderização de PDF siga o CSS de tela, não de impressão
+        command_url = f'/session/{self.driver.session_id}/chromium/send_command'
+        self.__get_driver().command_executor._commands["send_command"] = ("POST", command_url)
+        params = {'cmd': 'Emulation.setEmulatedMedia', 'params': {'media': 'screen'}}
+        self.__get_driver().execute('send_command', params)
+
+        if self.hidden:
+            a = self.__get_driver().execute_cdp_cmd(
+                "Page.printToPDF", {"path": download_path.name, "format": 'A4'})
+            bytes_pdf = base64.b64decode(a['data'], validate=True)
+            if bytes_pdf != b'%PDF':
+                raise WebScraperException('Arquivo de impressão PDF gerado com falha!')
+            with download_path.open('wb') as f:
+                f.write(bytes_pdf)
+        else:
+            download_path.unlink(missing_ok=True)
+            self.__get_driver().execute_script("window.print();")
+            move_downloaded_file(self.tmp_path, f'{self.__get_driver().title}.pdf', download_path)
 
     def __sigadoc_login(self, config=GeneralConfiguration.get()):
         self.__get_driver().get(sem_papel_url)
@@ -797,7 +813,7 @@ class SeleniumWebScraper:
                 self.__get_driver().find_element(By.ID, "conteudo_btnConsultar").click()
                 pdf_file = self.tmp_path / f'{cupom}.pdf'
                 cupom_element = self.__get_driver().find_element(By.ID, "divTelaImpressao")
-                self.__save_html_as_pdf(cupom_element.get_attribute('innerHTML'), pdf_file)
+                self.__save_as_pdf(pdf_file)
                 paths.append(pdf_file)
                 self.__get_driver().find_element(By.ID, 'conteudo_btnSair').click()
             return paths
@@ -998,30 +1014,7 @@ class SeleniumWebScraper:
                                              'ctl00_conteudoPaginaPlaceHolder_btnMenuImprimir'
                                              ).click()
 
-            html = self.__get_driver().page_source
-            html = html[:html.index("<!-- Menu -->")] + " " + html[html.index("<!-- Conte"):]
-            html = html[:html.index('<td class="conteudoPrincipal">') + len('<td class="conteudoPrincipal">')] + \
-                   " " + html[html.index("</table>", html.index('<td class="conteudoPrincipal">')) + len("</table>"):]
-            # remove head original
-            html = html[:html.index("<head")] + " " + html[html.index("</head>") + len("</head>"):]
-            # remove todos os scripts
-            while html.find("<script") >= 0:
-                html = html[:html.index("<script")] + " " + html[html.index("</script>") + len("</script>"):]
-            # remove imagens
-            while html.find("<img") >= 0:
-                html = html[:html.index("<img")] + " " + html[html.index(">", html.index("<img")):]
-            # remove inputs
-            html = html[:html.index("<div>")] + " " + html[
-                                                      html.index("</div>", html.index("</div>") + 1) + len("</div>"):]
-            # adiciona um header com hint do encoding
-            html = html[:html.index("<body")] + \
-                   '\n<head><meta http-equiv="Content-Type" ' + \
-                   'content="text/html; charset=iso-8859-1"></head>' + \
-                   html[html.index("<body"):]
-            with open(path.join(self.script_path, 'resources', 'cadesp.css')) as cssfile:
-                html = html.replace("</head>", f'<style>{cssfile.read()}</style></head>')
-
-            self.__save_html_as_pdf(html, filename)
+            self.__save_as_pdf(filename)
             return dados_atuais
 
         except Exception as e:
@@ -1032,6 +1025,7 @@ class SeleniumWebScraper:
                 raise WebScraperException(f"Erro ao baixar Cadesp da IE {ie}: {e}")
 
     def get_conta_fiscal(self, ie: str, ano_inicio: int, ano_fim: int, filename: Path):
+        # caso o saldo do último mês do ano_fim seja credor, pega outros anos até ficar negativo
         tmp_files = []
         try:
             logger.info("Acessando a Conta Fiscal")
@@ -1059,7 +1053,9 @@ class SeleniumWebScraper:
 
             self.__get_driver().find_element(By.ID, "MainContent_txtCriterioConsulta").send_keys(ie)
 
-            for ano in range(ano_inicio, ano_fim + 1):
+            ano = ano_inicio
+            cf_credora = False
+            while ano <= ano_fim or (ano <= datetime.date.today().year and cf_credora):
                 Select(self.__get_driver().find_element(By.ID, "MainContent_ddlReferencia")).select_by_visible_text(
                     str(ano))
                 self.__get_driver().find_element(By.ID, "MainContent_chkrecolhimento").click()
@@ -1067,6 +1063,15 @@ class SeleniumWebScraper:
                 try:
                     time.sleep(1)
                     self.__get_driver().find_element(By.ID, "plus").click()
+                    if ano >= ano_fim:
+                        ultimo_mes = self.driver.find_elements(By.XPATH,
+                                                               "//span[contains(@id, "
+                                                               "'MainContent_rptContaFiscalMes_gdvResultadoDetalhe_')]")[
+                                         -1].get_attribute('id')[:53]
+                        if [e.text for e in self.driver.find_elements(By.XPATH,
+                                                                      "//span[contains(@id, '" + ultimo_mes + "')]")
+                            if e.text.find('SALDO CREDOR') >= 0]:
+                            cf_credora = True
                 except NoSuchElementException:
                     # pode ser que o período não tenha informações. A confirmar
                     erro = self.__get_driver().find_element(By.ID, "MainContent_lblMensagemDeErro").text
@@ -1080,7 +1085,7 @@ class SeleniumWebScraper:
                 novo_nome = self.tmp_path / f'Conta Fiscal {ano}.pdf'
                 move_downloaded_file(self.tmp_path, 'ListaImpressaoContaFiscalNovo.pdf', novo_nome)
                 tmp_files.append(novo_nome)
-
+                ano += 1
             PDFExtractor.merge_pdfs(filename, tmp_files)
 
         except Exception as e:
@@ -1239,7 +1244,7 @@ class SeleniumWebScraper:
                 self.__get_driver().find_element(By.LINK_TEXT, "10 - Apuração do ICMS - Operações Próprias").click()
                 time.sleep(1)
                 paths[gia[0]] = [self.tmp_path / f'giaapuracao{gia[0]}.pdf']
-                self.__save_html_as_pdf(self.__get_driver().page_source, paths[gia[0]][0])
+                self.__save_as_pdf(paths[gia[0]][0])
                 for code in codes:
                     self.__get_driver().find_element(By.LINK_TEXT, code).click()
                     try:
@@ -1247,7 +1252,7 @@ class SeleniumWebScraper:
                     except NoSuchElementException:
                         # apenas adiciona a página de detalhe se ela tem conteúdo, sem erro
                         pdf_file = self.tmp_path / f'giadetalhe{code}-{gia[0]}.pdf'
-                        self.__save_html_as_pdf(self.__get_driver().page_source, pdf_file)
+                        self.__save_as_pdf(pdf_file)
                         paths[gia[0]].append(pdf_file)
                     self.__get_driver().back()
                 self.__get_driver().back()
@@ -1269,7 +1274,7 @@ class SeleniumWebScraper:
             home_url = self.__go_to_pfe_gias_entregues(ie, inicio, fim)
             logger.info(f'Imprimindo extrato de GIAs entregues pela IE {ie}...')
             relatorio = self.tmp_path / 'giaentregas.pdf'
-            self.__save_html_as_pdf(self.__get_driver().page_source, relatorio)
+            self.__save_as_pdf(relatorio)
             return [relatorio]
         except Exception as e:
             logger.exception("Erro ao levantar GIAs da IE " + ie)
@@ -2084,11 +2089,9 @@ class SeleniumWebScraper:
 
     def print_efd_obrigatoriedade(self, cnpj: str, download_path: Path):
         logger.info('Baixando relatório de obrigatoriedade de EFD')
-        resposta = requests.get(f'https://www.fazenda.sp.gov.br/sped/obrigados/obrigados.asp?CNPJLimpo={cnpj}'
-                                f'&Submit=Enviar')
-        html = resposta.text
-        html = html.replace('/incs_internet', 'https://www.fazenda.sp.gov.br/incs_internet')
-        self.__save_html_as_pdf(html, download_path)
+        self.__get_driver.get(f'https://www.fazenda.sp.gov.br/sped/obrigados/obrigados.asp?CNPJLimpo={cnpj}'
+                              f'&Submit=Enviar')
+        self.__save_as_pdf(download_path)
 
     def print_efd_entregas(self, cnpj: str, inicio: datetime.date, fim: datetime.date, download_path: Path):
         try:
@@ -2119,10 +2122,7 @@ class SeleniumWebScraper:
 
             WebDriverWait(self.__get_driver(), 5).until(
                 EC.visibility_of_element_located((By.ID, 'ctl00_ConteudoPagina_fsEntregaPorIE')))
-            html = self.__get_driver().page_source
-            html = html.replace('"/ArquivosDigitais/', '"https://www10.fazenda.sp.gov.br/ArquivosDigitais/')
-            html = html.replace("../", "https://www10.fazenda.sp.gov.br/ArquivosDigitais/")
-            self.__save_html_as_pdf(html, download_path, encoding='UTF-8')
+            self.__save_as_pdf(download_path)
         except Exception as e:
             logger.exception(f'Ocorreu um problema no download do extrato de entrega de EFD')
             raise WebScraperException(f'Ocorreu um problema no download do extrato de entrega de EFD: {e}')
