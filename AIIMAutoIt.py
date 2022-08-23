@@ -145,10 +145,11 @@ class AIIMAutoIt:
         if wait:
             time.sleep(0.5)
 
-    def __check_and_wait(self, handle, is_checked: bool):
+    def __check_and_wait(self, handle, is_checked: bool, wait=True):
         autoit.win_activate(self.titulo_janela)
         autoit.control_command(self.titulo_janela, handle, 'Check' if is_checked else 'Uncheck')
-        time.sleep(0.5)
+        if wait:
+            time.sleep(0.5)
 
     def __is_control_enabled(self, handle):
         return autoit.control_command(self.titulo_janela, handle, 'isEnabled') == '1'
@@ -171,7 +172,7 @@ class AIIMAutoIt:
         autoit.control_send(dialogo, handle, '{HOME}')
         for i in range(1, opcao):
             autoit.control_send(dialogo, handle, '{DOWN}')
-        time.sleep(1)
+        time.sleep(int(0.25*opcao))
 
     def __wait_dialog_and_click(self, dialogo, button, wait=True):
         if wait:
@@ -198,11 +199,11 @@ class AIIMAutoIt:
         self.__click_and_wait("[CLASS:ThunderRT6CommandButton; INSTANCE:11]")
 
     def preenche_ddf_glosa(self, tributo, dci, dij, dcm, valor_basico, davb):
+        self.__check_and_wait('[CLASS:ThunderRT6CheckBox; INSTANCE:7]', not dci)
         self.__focus_and_set_text("[CLASS:ThunderRT6TextBox; INSTANCE:13]", 'tributo', tributo)
         if dci:
             self.__focus_and_set_text("[CLASS:MSMaskWndClass; INSTANCE:2]", 'DCI', dci)
             self.__focus_and_set_text("[CLASS:MSMaskWndClass; INSTANCE:3]", 'DIJ', dij)
-        self.__check_and_wait('[CLASS:ThunderRT6CheckBox; INSTANCE:7]', not dci)
         self.preenche_ddf_valor_basico(dcm, valor_basico, davb)
 
     def preenche_ddf_com_qtd(self, qtd):

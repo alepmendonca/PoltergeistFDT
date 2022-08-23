@@ -487,7 +487,7 @@ class Audit:
         with GeneralFunctions.get_audit_json_path(self._path_name).open(mode='w') as outfile:
             json.dump(self.toJson(), outfile, sort_keys=True, indent=3)
 
-    def get_periodos_da_fiscalizacao(self, rpa=True) -> list[[date, date]]:
+    def get_periodos_da_fiscalizacao(self, rpa=True, ate_presente=False) -> list[[date, date]]:
         retorno = []
         nome_regime = 'NORMAL' if rpa else 'SIMPLES NACIONAL'
         for periodo in self.historico_regime:
@@ -499,12 +499,15 @@ class Audit:
                     fim = datetime.strptime(periodo[1], '%d/%m/%Y').date()
                 if inicio <= self.inicio_auditoria <= fim or inicio <= self.fim_auditoria <= fim \
                         or self.inicio_auditoria <= inicio <= self.fim_auditoria:
-                    retorno.append([max(self.inicio_auditoria, inicio), min(self.fim_auditoria, fim)])
+                    if ate_presente:
+                        retorno.append([max(self.inicio_auditoria, inicio), fim])
+                    else:
+                        retorno.append([max(self.inicio_auditoria, inicio), min(self.fim_auditoria, fim)])
         return retorno
 
     def periodos_da_fiscalizacao_descricao(self):
-        periodos = [[p[0], p[1], 'rpa'] for p in self.get_periodos_da_fiscalizacao()]
-        periodos.extend([[p[0], p[1], 'sn'] for p in self.get_periodos_da_fiscalizacao(rpa=False)])
+        periodos = [[p[0], p[1], 'rpa'] for p in self.get_periodos_da_fiscalizacao(ate_presente=True)]
+        periodos.extend([[p[0], p[1], 'sn'] for p in self.get_periodos_da_fiscalizacao(rpa=False, ate_presente=True)])
         periodos.sort(key=lambda p: p[0])
         descricao = 'O'
         for p in periodos:

@@ -24,6 +24,10 @@ MAX_SAMPLE = 30
 SUPPORTED_DFE_MODELS = [55, 57, 59]
 
 
+class AiimProofException(Exception):
+    pass
+
+
 def generate_general_proofs_file() -> list[str]:
     GeneralFunctions.clean_tmp_folder()
     arquivo_path = get_current_audit().aiim_path() / 'Provas Gerais.pdf'
@@ -90,8 +94,9 @@ def get_notification_and_response(item: AiimItem, ws: SeleniumWebScraper) -> lis
         if not notification_path.is_file():
             logger.info(f'Baixando notificação {item.notificacao}...')
             if not ws.get_notification(item.notificacao, notification_path, notification_attachment_path):
-                raise Exception(f'Ainda não houve ciência (expressa ou tácita) da notificação {item.notificacao}, '
-                                f'deve-se aguardar para juntar no AIIM...')
+                raise AiimProofException(
+                    f'Ainda não houve ciência (expressa ou tácita) da notificação {item.notificacao}, '
+                    f'deve-se aguardar para juntar no AIIM...')
         proofs.append(notification_path)
         proofs.extend([notification_attachment_path / f
                        for f in next(os.walk(notification_attachment_path), (None, None, []))[2]])
@@ -160,7 +165,7 @@ def get_df_list(item: AiimItem) -> pd.DataFrame:
     qtd_por_modelo = {model: len(df[df['Modelo'] == model]) for model in SUPPORTED_DFE_MODELS}
     # ordena da menor qtd pra maior, para pegar amostras menores primeiro
     qtd_por_modelo = {k: v for k, v in sorted(qtd_por_modelo.items(), key=lambda qtd: qtd[1])}
-    value_column = df.keys()[[i for i, x in enumerate(df.dtypes.tolist()) if x == 'float64'][-1]]
+    value_column = df.keys()[[i for i, x in enumerate(df.dtypes.tolist()) if x == 'Float64'][-1]]
     dfe = pd.DataFrame()
     for model in qtd_por_modelo.keys():
         models_to_get = len(SUPPORTED_DFE_MODELS) - list(qtd_por_modelo.keys()).index(model)
@@ -195,22 +200,25 @@ def get_lre(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list
     df = item.get_dfs_list_for_proof_generation()
     date_columns = df.keys()[[i for i, x in enumerate(df.dtypes.tolist()) if x == 'datetime64[ns]']].tolist()
     if not [x for x in date_columns if x.upper().find('ENTRADA') >= 0]:
-        raise Exception('Não existe na planilha uma coluna de data contendo no título "Entrada". '
-                        'Não é possível localizar as provas no Livro Registro de Entradas sem a data de entrada. '
-                        'Altere o título da coluna certa para gerar as provas do LRE.')
+        raise AiimProofException('Não existe na planilha uma coluna de data contendo no título "Entrada". '
+                                 'Não é possível localizar as provas no Livro Registro de Entradas '
+                                 'sem a data de entrada. '
+                                 'Altere o título da coluna certa para gerar as provas do LRE.')
     if not [x for x in date_columns if x.upper().find('EMISS') >= 0]:
-        raise Exception('Não existe na planilha uma coluna de data contendo no título "Emiss". '
-                        'Não é possível localizar as provas no Livro Registro de Entradas sem a data de emissão. '
-                        'Altere o título da coluna certa para gerar as provas do LRE.')
+        raise AiimProofException('Não existe na planilha uma coluna de data contendo no título "Emiss". '
+                                 'Não é possível localizar as provas no Livro Registro de Entradas '
+                                 'sem a data de emissão. '
+                                 'Altere o título da coluna certa para gerar as provas do LRE.')
     if not [x for x in df.keys() if x.upper().find('CHAVE') >= 0]:
-        raise Exception('Não existe na planilha uma coluna contendo no título "Chave". '
-                        'Não é possível localizar as provas no Livro Registro de Entradas sem a chave do documento. '
-                        'Altere o título da coluna certa para gerar as provas do LRE.')
+        raise AiimProofException('Não existe na planilha uma coluna contendo no título "Chave". '
+                                 'Não é possível localizar as provas no Livro Registro de Entradas '
+                                 'sem a chave do documento. '
+                                 'Altere o título da coluna certa para gerar as provas do LRE.')
     coluna_entrada = [x for x in date_columns if x.upper().find('ENTRADA') >= 0][0]
     coluna_emissao = [x for x in date_columns if x.upper().find('EMISS') >= 0][0]
     coluna_chave = [x for x in df.keys() if x.upper().find('CHAVE') >= 0][0]
-    df.sort_values(by=coluna_entrada)
-    referencias = [Timestamp(t).date() for t in df[coluna_entrada].unique()]
+    df.sort_values(by=coluna_entrada, inplace=True)
+    referencias = list(set([GeneralFunctions.last_day_of_month(Timestamp(t).date()) for t in df[coluna_entrada]]))
     paths = []
     for ref in sorted(referencias):
         lre_file = Path('tmp', f'lre{ref.strftime("%Y%m")}.pdf')
@@ -218,29 +226,12 @@ def get_lre(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list
         pva.print_LRE(ref, lre_file)
         df_ref = df[(df[coluna_entrada].dt.month == ref.month) & (df[coluna_entrada].dt.year == ref.year)]
         textos_a_procurar = df_ref.apply(
-            lambda x: x[coluna_entrada].strftime('%d/%m/%Y') + x[coluna_emissao].strftime('%d/%m/%Y') + str(
-                int(x[coluna_chave][25:34])) + x[coluna_chave][20:22],
+            lambda x: f"{x[coluna_entrada].strftime('%d/%m/%Y')} {x[coluna_emissao].strftime('%d/%m/%Y')} "
+                      f"{int(x[coluna_chave][25:34])} {int(x[coluna_chave][20:22])}",
             axis=1).tolist()
         logger.info(f'Extraindo folhas do LRE {ref.strftime("%m/%Y")} '
                     f'contendo {len(textos_a_procurar)} documentos fiscais...')
-        lre = PdfReader(lre_file)
-        selection = PdfWriter()
-        selected_pages = []
-        for page in lre.pages:
-            remover = [texto for texto in textos_a_procurar if texto in page.extract_text()]
-            if remover:
-                selected_pages.append(page)
-                textos_a_procurar = [texto for texto in textos_a_procurar if texto not in remover]
-            if not textos_a_procurar:
-                break
-        if textos_a_procurar:
-            raise Exception(f'Não foram encontrados todos os documentos fiscais no LRE {ref.strftime("%m/%Y")}: '
-                            f'{textos_a_procurar}')
-        for page in sorted(selected_pages, key=lambda p: lre.get_page_number(p)):
-            selection.add_page(page)
-        selection_file = Path('tmp', f'lre{ref.strftime("%Y%m")}-selection.pdf')
-        with selection_file.open(mode='wb') as pdf_selection:
-            selection.write(pdf_selection)
+        selection_file = PDFExtractor.highlight_pdf(lre_file, textos_a_procurar)
         paths.append(selection_file)
     return paths
 
@@ -275,15 +266,35 @@ def get_lri(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list
 
 def get_lrs(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:
     df = item.get_dfs_list_for_proof_generation()
-    date_column = df.keys()[[i for i, x in enumerate(df.dtypes.tolist()) if x == 'datetime64[ns]'][-1]]
-    df.sort_values(by=date_column)
-    referencias = [Timestamp(t).date() for t in df[date_column].unique()]
+    date_columns = df.keys()[[i for i, x in enumerate(df.dtypes.tolist()) if x == 'datetime64[ns]']].tolist()
+    if not [x for x in date_columns if x.upper().find('EMISS') >= 0]:
+        raise AiimProofException('Não existe na planilha uma coluna de data contendo no título "Emiss". '
+                                 'Não é possível localizar as provas no Livro Registro de Saídas '
+                                 'sem a data de emissão. '
+                                 'Altere o título da coluna certa para gerar as provas do LRS.')
+    if not [x for x in df.keys() if x.upper().find('CHAVE') >= 0]:
+        raise AiimProofException('Não existe na planilha uma coluna contendo no título "Chave". '
+                                 'Não é possível localizar as provas no Livro Registro de Saídas '
+                                 'sem a chave do documento. '
+                                 'Altere o título da coluna certa para gerar as provas do LRS.')
+    coluna_emissao = [x for x in date_columns if x.upper().find('EMISS') >= 0][0]
+    coluna_chave = [x for x in df.keys() if x.upper().find('CHAVE') >= 0][0]
+    df.sort_values(by=coluna_emissao, inplace=True)
+    referencias = list(set([GeneralFunctions.last_day_of_month(Timestamp(t).date()) for t in df[coluna_emissao]]))
     paths = []
-    for ref in referencias:
-        file = Path('tmp', f'lrs{ref.strftime("%Y%m")}.pdf')
-        file.unlink(missing_ok=True)
-        pva.print_LRS(ref, file)
-        paths.append(file)
+    for ref in sorted(referencias):
+        lrs_file = Path('tmp', f'lrs{ref.strftime("%Y%m")}.pdf')
+        lrs_file.unlink(missing_ok=True)
+        pva.print_LRS(ref, lrs_file)
+        df_ref = df[(df[coluna_emissao].dt.month == ref.month) & (df[coluna_emissao].dt.year == ref.year)]
+        textos_a_procurar = df_ref.apply(
+            lambda x: f"{x[coluna_emissao].strftime('%d/%m/%Y')} {int(x[coluna_chave][25:34])} "
+                      f"{int(x[coluna_chave][20:22])}",
+            axis=1).tolist()
+        logger.info(f'Extraindo folhas do LRS {ref.strftime("%m/%Y")} '
+                    f'contendo {len(textos_a_procurar)} documentos fiscais...')
+        selection_file = PDFExtractor.highlight_pdf(lrs_file, textos_a_procurar)
+        paths.append(selection_file)
     return paths
 
 
@@ -305,19 +316,15 @@ def get_gia_apuracao(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed
 def get_gia_outros_debitos(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:
     df = item.get_dfs_list_for_proof_generation()
     date_column = df.keys()[[i for i, x in enumerate(df.dtypes.tolist()) if x == 'datetime64[ns]'][-1]]
-    df.sort_values(by=date_column)
-
-    referencias = [Timestamp(t).date() for t in df[date_column].unique()]
-    return ws.print_gia_outros_debitos(get_current_audit().ie, referencias)
+    referencias = list(set([GeneralFunctions.last_day_of_month(Timestamp(t).date()) for t in df[date_column]]))
+    return ws.print_gia_outros_debitos(get_current_audit().ie, sorted(referencias))
 
 
 def get_gia_outros_creditos(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:
     df = item.get_dfs_list_for_proof_generation()
     date_column = df.keys()[[i for i, x in enumerate(df.dtypes.tolist()) if x == 'datetime64[ns]'][-1]]
-    df.sort_values(by=date_column)
-
-    referencias = [Timestamp(t).date() for t in df[date_column].unique()]
-    return ws.print_gia_outros_creditos(get_current_audit().ie, referencias)
+    referencias = list(set([GeneralFunctions.last_day_of_month(Timestamp(t).date()) for t in df[date_column]]))
+    return ws.print_gia_outros_creditos(get_current_audit().ie, sorted(referencias))
 
 
 def get_efd_obrigatoriedade(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:

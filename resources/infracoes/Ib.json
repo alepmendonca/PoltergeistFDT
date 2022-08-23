@@ -1,7 +1,7 @@
 {
 	"ttpa": [1, 1, [1, 1]],
 	"relato": "Deixou de pagar o ICMS no montante de @CRI, referente a<periodo>, por não haver escriturado regularmente no livro fiscal próprio - Livro Registro de Saídas (LRS) em EFD, documentos fiscais <modelos>, de sua emissão, relativos a operações tributadas, relacionados no demonstrativo Anexo do item, conforme se comprova pelas cópias dos documentos juntadas.",
-	"relatorio_circunstanciado": "o contribuinte foi autuado por não ter escriturado no livro fiscal próprio, Livro Registro de Saídas - LRS - em EFD, documentos fiscais <modelos> de saída de emissão própria, com destaque de imposto, constatado pela simples comparação entre os documentos presentes nas bases de dados desta Receita Estadual e os documentos fiscais efetivamente escriturados.",
+	"relatorio_circunstanciado": "o contribuinte foi autuado por não ter escriturado no livro fiscal próprio, Livro Registro de Saídas - LRS - em EFD, documentos fiscais <modelos> de saída de emissão própria, com destaque de imposto, constatado pela simples comparação entre os documentos presentes nas bases de dados desta Receita Estadual e os documentos fiscais efetivamente escriturados. O valor do imposto considerado foi o declarado nos documentos fiscais de saída.",
 	"provas": [
         {"tipo": "listagem", "descricao": "Listagem contendo os documentos fiscais de saídas com destaque de imposto, não escriturados"},
         {"tipo": "DFe", "descricao": "Transcrições de documentos fiscais eletrônicos não escriturados"}

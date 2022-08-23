@@ -26,6 +26,7 @@ class AuditTestSetup(TestCase):
         Audit.set_audit(self._main_path)
 
     def tearDown(self) -> None:
+        Audit.set_audit(None)
         for subpasta in ['Dados', 'Achados', 'AIIM', 'Notificações']:
             for path, _, arquivos in os.walk(self._main_path / subpasta):
                 for arquivo in arquivos:
