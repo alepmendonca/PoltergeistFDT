@@ -344,9 +344,10 @@ def wait_downloaded_file(tmp_path, downloaded_file, timeout=10):
             # apenas conta o timeout se nao existe um arquivo temporario sendo baixado
             tempo = tempo + 1
         else:
-            tamanho_atual = Path(os.path.join(tmp_path, downloaded_file + '.crdownload')).stat().st_size
-            logger.info(f'Arquivo {downloaded_file} ainda está sendo baixado (tamanho {tamanho_atual}...')
-            if tamanho == tamanho_atual:
+            arquivo_temp = get_tmp_path() / (downloaded_file + '.crdownload')
+            logger.info(f'Arquivo {downloaded_file} ainda está sendo baixado '
+                        f'({get_file_size_pretty_print(arquivo_temp)}...)')
+            if tamanho == arquivo_temp.stat().st_size:
                 # resolve contar tempo se o tamanho não está mudando...
                 tempo = tempo + 1
 

@@ -51,6 +51,7 @@ class Configuration:
         self.postgres_user = self._dicionario.get('postgres_user', 'postgres')  # essa é o usuário do AUD-Postgres
         self.ultima_pasta = Path(self._dicionario.get('ultima_pasta', str(GeneralFunctions.get_user_path().absolute())))
         self._efd_path = Path(self._dicionario['efd_path']) if self._dicionario.get('efd_path') else Path('efd-pva')
+        self._efd_port = self._dicionario.get('efd_port', 3337)  # essa é a porta padrão do EFD PVA
         self.max_epat_attachment_size = 8
 
     @property
@@ -157,6 +158,23 @@ class Configuration:
             self._efd_path = None
             raise ValueError(msg_erro)
 
+    @property
+    def efd_port(self) -> int:
+        return self._efd_port
+
+    @efd_port.setter
+    def efd_port(self, porta: int | str):
+        if isinstance(porta, str):
+            try:
+                valor = int(porta)
+            except ValueError:
+                raise ValueError('Porta deve ser um número!')
+        else:
+            valor = porta
+        if valor <= 0:
+            raise ValueError('Porta deve ser um número maior que zero!')
+        self._efd_port = valor
+
     def efd_java_path(self) -> Path:
         return self.efd_path / 'jre' / 'bin'
 
@@ -167,6 +185,7 @@ class Configuration:
         dadosAFR['postgres_port'] = self.postgres_port
         dadosAFR['ultima_pasta'] = str(self.ultima_pasta.absolute())
         dadosAFR['efd_path'] = str(self.efd_path.absolute())
+        dadosAFR['efd_port'] = self.efd_port
         for k in [k for k in dadosAFR.keys() if k.startswith('_') or not dadosAFR[k]]:
             dadosAFR.pop(k)
         with GeneralFunctions.get_local_dados_afr_path().open(mode='w') as outfile:
@@ -230,6 +249,8 @@ def configuration_window():
              sg.FolderBrowse('Escolher',
                              initial_folder=str(get().efd_path if get().efd_path is not None
                                                 else GeneralFunctions.get_user_path()))],
+            [sg.Text("Porta (padrão EFD PVA ICMS 3337, instalação interna 3336):"),
+             sg.Input(key='efd_port', default_text=get().efd_port, expand_x=True)]
         ], expand_x=True)],
         [sg.Push(), sg.Button('Salvar'), sg.Button('Cancelar'), sg.Push()]
     ]

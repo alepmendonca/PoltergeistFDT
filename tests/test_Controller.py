@@ -2,7 +2,12 @@ import datetime
 import json
 import os
 import shutil
-from unittest import TestCase
+import threading
+import unittest
+
+import PySimpleGUI as sg
+from unittest import TestCase, mock
+from unittest.mock import call
 
 from pathlib import Path
 
@@ -12,6 +17,8 @@ import Controller
 import Audit
 import GeneralFunctions
 from ConfigFiles import Analysis
+from WebScraper import WebScraperTimeoutException
+from tests.test_Audit import AuditTestSetup
 
 
 class ControllerTest(TestCase):
@@ -179,3 +186,136 @@ class ControllerTest(TestCase):
                                                            'IC/N/FIS/456/2021')
         self.assertEqual(0, len(audit.aiim_itens))
         self.assertEqual(0, len(audit.notificacoes))
+
+
+class ControllerPopulateDatabase(AuditTestSetup):
+    @mock.patch("Controller.SeleniumWebScraper")
+    @mock.patch("Controller.SQLWriter")
+    @mock.patch("Controller.time")
+    @mock.patch("WebScraper.time")
+    def test_run_launchpad_report_break_download_periods(self, mock_time1, mock_time2, mock_postgres, mock_ws):
+        audit = Audit.get_current_audit()
+        self.assertDictEqual({}, audit.reports)
+        window = mock.create_autospec(sg.Window)
+        event = threading.Event()
+        Controller.populate_database(['NFeDest'], window, event)
+        self.assertDictEqual({'NFeDest': '1y'}, audit.reports)
+        mock_ws.assert_called_once_with(Audit.get_current_audit().reports_path())
+        mock_ws_ctx = mock_ws.return_value.__enter__.return_value
+        self.assertEqual(5, mock_ws_ctx.get_launchpad_report.call_count)
+        self.assertEqual(2, len([c for c in mock_ws_ctx.get_launchpad_report.mock_calls
+                                 if len(c.args) and c.args[0] == 'NFe_Destinatario_OSF']))
+        calls = [
+            call('NFe_Destinatario_OSF', 'NFe_Destinatario_OSF_01012017_31122017.csv', event, window,
+                 audit.cnpj_only_digits(), '01/01/2017', '31/12/2017', '0', audit.osf_only_digits(),
+                 relatorio_anterior=None),
+            call('NFe_Destinatario_OSF', 'NFe_Destinatario_OSF_01012018_31122018.csv', event, window,
+                 audit.cnpj_only_digits(), '01/01/2018', '31/12/2018', '0', audit.osf_only_digits(),
+                 relatorio_anterior=mock.ANY)
+        ]
+        mock_ws_ctx.get_launchpad_report.assert_has_calls(calls, any_order=True)
+
+    @mock.patch("Controller.SeleniumWebScraper")
+    @mock.patch("Controller.SQLWriter")
+    @mock.patch("Controller.time")
+    @mock.patch("WebScraper.time")
+    def test_run_launchpad_report_dont_break_download_periods_for_aggregated_reports(self, mock_time1, mock_time2,
+                                                                                     mock_postgres, mock_ws):
+        audit = Audit.get_current_audit()
+        self.assertDictEqual({}, audit.reports)
+        window = mock.create_autospec(sg.Window)
+        event = threading.Event()
+        Controller.populate_database(['NFeDest'], window, event)
+        self.assertDictEqual({'NFeDest': '1y'}, audit.reports)
+        mock_ws_ctx = mock_ws.return_value.__enter__.return_value
+        self.assertEqual(1, len([c for c in mock_ws_ctx.get_launchpad_report.mock_calls
+                                 if len(c.args) and c.args[0] == 'NFe Docs Referenciados Destinatário']))
+        calls = [
+            call('NFe Docs Referenciados Destinatário', 'NFe_Docs_Referenciados_Destinatário_01012017_31122018.csv',
+                 event, window,
+                 audit.cnpj_only_digits(), '201701', '201812')
+        ]
+        mock_ws_ctx.get_launchpad_report.assert_has_calls(calls)
+
+    @mock.patch("Controller.SeleniumWebScraper")
+    @mock.patch("Controller.SQLWriter")
+    @mock.patch("Controller.time")
+    @mock.patch("WebScraper.time")
+    def test_run_launchpad_report_timeout_during_download_decrease_download_period(self, mock_time1, mock_time2,
+                                                                                   mock_postgres, mock_ws):
+        audit = Audit.get_current_audit()
+        self.assertDictEqual({}, audit.reports)
+        window = mock.create_autospec(sg.Window)
+        event = threading.Event()
+        mock_ws_ctx = mock_ws.return_value.__enter__.return_value
+        mock_ws_ctx.get_launchpad_report.side_effect = WebScraperTimeoutException('deu ruim')
+        Controller.populate_database(['NFeDest'], window, event)
+        self.assertDictEqual({'NFeDest': '6m'}, audit.reports)
+        self.assertEqual(2, len([c for c in mock_ws_ctx.get_launchpad_report.mock_calls
+                                 if len(c.args) and c.args[0] == 'NFe_Destinatario_OSF']))
+        calls = [
+            call('NFe_Destinatario_OSF', 'NFe_Destinatario_OSF_01012017_31122017.csv', event, window,
+                 audit.cnpj_only_digits(), '01/01/2017', '31/12/2017', '0', audit.osf_only_digits(),
+                 relatorio_anterior=None),
+            call('NFe_Destinatario_OSF', 'NFe_Destinatario_OSF_01012018_31122018.csv', event, window,
+                 audit.cnpj_only_digits(), '01/01/2018', '31/12/2018', '0', audit.osf_only_digits(),
+                 relatorio_anterior=mock.ANY)
+        ]
+        mock_ws_ctx.get_launchpad_report.assert_has_calls(calls, any_order=True)
+
+        # da próxima vez, vai rodar em períodos de 6 meses
+        mock_ws_ctx.reset_mock()
+        Controller.populate_database(['NFeDest'], window, event)
+        self.assertDictEqual({'NFeDest': '3m'}, audit.reports)
+        self.assertEqual(4, len([c for c in mock_ws_ctx.get_launchpad_report.mock_calls
+                                 if len(c.args) and c.args[0] == 'NFe_Destinatario_OSF']))
+        calls = [
+            call('NFe_Destinatario_OSF', 'NFe_Destinatario_OSF_01012017_30062017.csv', event, window,
+                 audit.cnpj_only_digits(), '01/01/2017', '30/06/2017', '0', audit.osf_only_digits(),
+                 relatorio_anterior=None),
+            call('NFe_Destinatario_OSF', 'NFe_Destinatario_OSF_01072017_31122017.csv', event, window,
+                 audit.cnpj_only_digits(), '01/07/2017', '31/12/2017', '0', audit.osf_only_digits(),
+                 relatorio_anterior=mock.ANY),
+            call('NFe_Destinatario_OSF', 'NFe_Destinatario_OSF_01012018_30062018.csv', event, window,
+                 audit.cnpj_only_digits(), '01/01/2018', '30/06/2018', '0', audit.osf_only_digits(),
+                 relatorio_anterior=mock.ANY),
+            call('NFe_Destinatario_OSF', 'NFe_Destinatario_OSF_01072018_31122018.csv', event, window,
+                 audit.cnpj_only_digits(), '01/07/2018', '31/12/2018', '0', audit.osf_only_digits(),
+                 relatorio_anterior=mock.ANY)
+        ]
+        mock_ws_ctx.get_launchpad_report.assert_has_calls(calls, any_order=True)
+
+        # da próxima vez, vai rodar em períodos de 3 meses
+        mock_ws_ctx.reset_mock()
+        Controller.populate_database(['NFeDest'], window, event)
+        self.assertDictEqual({'NFeDest': '1m'}, audit.reports)
+        self.assertEqual(8, len([c for c in mock_ws_ctx.get_launchpad_report.mock_calls
+                                 if len(c.args) and c.args[0] == 'NFe_Destinatario_OSF']))
+
+        # da próxima vez, vai rodar em períodos de 1 mês
+        mock_ws_ctx.reset_mock()
+        Controller.populate_database(['NFeDest'], window, event)
+        self.assertDictEqual({'NFeDest': '16d'}, audit.reports)
+        self.assertEqual(24, len([c for c in mock_ws_ctx.get_launchpad_report.mock_calls
+                                 if len(c.args) and c.args[0] == 'NFe_Destinatario_OSF']))
+
+        # da próxima vez, vai rodar em período quinzenal
+        mock_ws_ctx.reset_mock()
+        Controller.populate_database(['NFeDest'], window, event)
+        self.assertDictEqual({'NFeDest': '11d'}, audit.reports)
+        self.assertEqual(48, len([c for c in mock_ws_ctx.get_launchpad_report.mock_calls
+                                 if len(c.args) and c.args[0] == 'NFe_Destinatario_OSF']))
+
+        # da próxima vez, vai rodar em 3 períodos por mês
+        mock_ws_ctx.reset_mock()
+        Controller.populate_database(['NFeDest'], window, event)
+        self.assertDictEqual({'NFeDest': '11d'}, audit.reports)
+        self.assertEqual(72, len([c for c in mock_ws_ctx.get_launchpad_report.mock_calls
+                                 if len(c.args) and c.args[0] == 'NFe_Destinatario_OSF']))
+
+        # das próximas vezes, vai continuar tentando em período semanal
+        mock_ws_ctx.reset_mock()
+        Controller.populate_database(['NFeDest'], window, event)
+        self.assertDictEqual({'NFeDest': '11d'}, audit.reports)
+        self.assertEqual(72, len([c for c in mock_ws_ctx.get_launchpad_report.mock_calls
+                                  if len(c.args) and c.args[0] == 'NFe_Destinatario_OSF']))

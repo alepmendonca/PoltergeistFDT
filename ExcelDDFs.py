@@ -153,6 +153,10 @@ def print_workbook_as_pdf(wb_path: Path, pdf: Path, sheet_number: int = None, he
         excel.Quit()
 
 
+def glosas_item_path(item: int) -> Path:
+    return Audit.get_current_audit().findings_path() / f'Glosa - Item {item}.xlsx'
+
+
 class ExcelDDFs:
     def __init__(self):
         self.main_path = Audit.get_current_audit().path()
@@ -179,7 +183,6 @@ class ExcelDDFs:
                 raise e
         self._planilha: dict[str, pd.DataFrame] = {}
         self.creditos_path = Audit.get_current_audit().findings_path() / 'Glosa de Créditos.xlsx'
-        self.glosas_item_path = Audit.get_current_audit().findings_path() / 'Glosa - Item.xlsx'
         self.quadro3_path = Audit.get_current_audit().aiim_path() / 'Quadro 3.xlsm'
         self.operacoes_csv = Audit.get_current_audit().reports_path() / 'valor_operacoes.csv'
         self._template_row = 0
@@ -281,12 +284,13 @@ class ExcelDDFs:
                 if wb is not None:
                     wb.close()
 
-    def generate_creditos_ddf(self, ddf: pd.DataFrame) -> pd.DataFrame:
+    def generate_creditos_ddf(self, ddf: pd.DataFrame, alinea: str, item: int) -> pd.DataFrame:
         wb = None
         try:
             logger.info('Preenchendo planilha de glosa de créditos com valores a glosar')
-            shutil.copyfile(self.creditos_path, self.glosas_item_path)
-            wb = openpyxl.load_workbook(self.glosas_item_path)
+            glosas_path = glosas_item_path(item)
+            shutil.copyfile(self.creditos_path, glosas_path)
+            wb = openpyxl.load_workbook(glosas_path)
             ws = wb['Dados']
             mes_inicial = ws['A2'].value
             linha_inicial = 2
@@ -296,9 +300,9 @@ class ExcelDDFs:
                     diferenca_referencias = relativedelta(mes, mes_inicial)
                     meses = diferenca_referencias.years * 12 + diferenca_referencias.months
                     ws.cell(meses + linha_inicial, 6).value = linha['valor']
-            self.salva_planilha(wb, self.glosas_item_path)
+            self.salva_planilha(wb, glosas_path)
 
-            glosas = pd.read_excel(self.glosas_item_path, sheet_name='Subitens')
+            glosas = pd.read_excel(glosas_path, sheet_name='Subitens')
             glosas = glosas[glosas['subitem'] > 0]
             glosas = glosas.iloc[:, [1, 11, 17, 18, 19]]
             glosas['referencia'] = glosas.iloc[:, 0].map(lambda dt: GeneralFunctions.last_day_of_month(dt)) \
@@ -325,6 +329,10 @@ class ExcelDDFs:
             resultado['dcm'] = resultado['dcm'].apply(
                 lambda d: f'{d.strftime("%d/%m/%y")}'
             )
+            if alinea in ['h', 'i', 'j']:
+                resultado['davb'] = resultado['dij']
+            else:
+                raise Exception(f'Não sei ainda tratar o DAVB para a alinea {alinea}!')
             return resultado
         except Exception as e:
             logger.exception('Ocorreu uma falha ao copiar a planilha de créditos '
@@ -357,9 +365,10 @@ class ExcelDDFs:
                 ws.get_conta_fiscal(audit.ie, audit.inicio_auditoria.year, audit.fim_auditoria.year,
                                     self.conta_fiscal_path())
                 self.conta_fiscal_path().unlink(missing_ok=True)
-                self.creditos_path().unlink(missing_ok=True)
-        return PDFExtractor.vencimentos_de_PDF_CFICMS(self.conta_fiscal_path(), self.main_path,
-                                                      audit.get_periodos_da_fiscalizacao(rpa=True, ate_presente=True))
+                self.creditos_path.unlink(missing_ok=True)
+            vencimentos = PDFExtractor.vencimentos_de_PDF_CFICMS(self.conta_fiscal_path(), self.main_path,
+                                                                 audit.get_periodos_da_fiscalizacao(rpa=True))
+        return vencimentos
 
     def update_number_in_subtotals(self, sheet_name: str, item: int):
         ws = self.workbook()[sheet_name]
@@ -375,7 +384,7 @@ class ExcelDDFs:
                         cell.value = f'TOTAL ITEM {item}'
         self.salva_planilha()
 
-    def get_ddf_from_sheet(self, sheet_name: str, inciso: str, alinea: str):
+    def get_ddf_from_sheet(self, sheet_name: str, inciso: str, alinea: str, item: int = 1):
         sheet = self.planilha(sheet_name)
         is_monthly_grouped = len(list(filter(lambda k: k.upper() == 'MÊS', sheet.keys()))) > 0
         titulos_planilha = sheet.keys().tolist()
@@ -450,7 +459,7 @@ class ExcelDDFs:
             vencimentos = self.get_vencimentos_GIA()
             self.create_creditos_sheet(vencimentos)
             ddf = aba.merge(vencimentos, on='referencia', how='right')
-            ddf = self.generate_creditos_ddf(ddf)
+            ddf = self.generate_creditos_ddf(ddf, alinea, item)
         elif inciso == 'IV' and alinea == 'b':
             aba['valor'] = aba['valor'].apply(lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
             ddf = aba[['referencia', 'valor']]

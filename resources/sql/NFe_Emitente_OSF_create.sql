@@ -16,7 +16,7 @@ CREATE TABLE IF NOT EXISTS NFE (
   ,DRT_Dest                                          VARCHAR(15)
   ,UF_Dest                                           VARCHAR(2)
   ,Tipo_Doc_Fiscal                                   VARCHAR(10) NOT NULL
-  ,Natureza_Operacao                                 VARCHAR(60) NOT NULL
+  ,Natureza_Operacao                                 VARCHAR(100) NOT NULL
   ,Peso_Liquido                                      NUMERIC(10,2)
   ,Peso_Bruto                                        NUMERIC(10,2)
   ,Info_Interesse_Fisco                              VARCHAR

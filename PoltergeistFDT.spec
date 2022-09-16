@@ -9,7 +9,6 @@ a = Analysis(
     pathex=[],
     binaries=[('venv/share/py4j/*', 'share/py4j')],
     datas=[('resources', 'resources'), ('mysqldump', 'mysqldump'),
-        ('wkhtmltopdf', 'wkhtmltopdf'),
         ('tika-server', 'tika-server'),
         ('efd-pva-inspector/bin', 'efd-pva-inspector/bin'),
         ('venv/Lib/site-packages/autoit/lib/*', 'autoit/lib')],

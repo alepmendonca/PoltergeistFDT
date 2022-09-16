@@ -39,7 +39,7 @@ py4j.java_gateway.Popen = GeneralFunctions.PopenWindows
 
 class EFDPVAInstaller:
     @staticmethod
-    def upgrade_efd_pva(new_version_path: Path, install_path: Path, mysql_port: int = 3336):
+    def upgrade_efd_pva(new_version_path: Path, install_path: Path, mysql_port: int):
         if not new_version_path.is_file():
             raise Exception(f'Não existe arquivo de instalação do EFD PVA ICMS em {new_version_path}, '
                             f'desistindo da instalação...')
@@ -224,7 +224,8 @@ class EFDPVAReversed:
         self.__efd_pva()
         logger.info('Levantando períodos das EFDs importadas...')
         try:
-            efddb = mysql.connector.connect(host='127.0.0.1', port=3337, charset='latin1',
+            efddb = mysql.connector.connect(host='127.0.0.1', port=GeneralConfiguration.get().efd_port,
+                                            charset='latin1',
                                             user='spedfiscal', password='spedfiscal', db='master')
             cur = efddb.cursor()
             cnpj_sem_digitos = re.sub(r"[^\d]", "", cnpj).zfill(14)
@@ -242,8 +243,11 @@ class EFDPVAReversed:
 
     def dump_db(self, database: str, dump_file: Path):
         comando = str(Path('mysqldump') / 'mysqldump.exe') + ' --user=spedfiscal --password=spedfiscal ' \
-                                                             f'--host=127.0.0.1 --port=3337 --result-file={str(dump_file)} ' \
-                                                             '--skip-add-locks --compatible=postgresql --skip-quote-names '
+                                                             f'--host=127.0.0.1 ' \
+                                                             f'--port={GeneralConfiguration.get().efd_port} ' \
+                                                             f'--result-file={str(dump_file)} ' \
+                                                             '--skip-add-locks --compatible=postgresql ' \
+                                                             '--skip-quote-names '
         # --default-character-set=latin1
         for ignored_table in ['docentrada', 'docsaida', 'inconsistencia', 'metainf', 'resumototaissaida',
                               'resumototaissaida_chaveregpai',

@@ -1,0 +1,1 @@
+"Inscrição Estadual - DG","Razão Social da IE","Data Ref (AAAAMM) - DG","Id Cfop - CFOP","Código CFOP - CFOP (6 digitos)","Valor Contabil - CFOP","Valor Base Calculo - CFOP","Valor Imposto - CFOP","Valor Isento - CFOP","Valor Outros - CFOP","Valor Imp.Retido Sub.Tribut - CFOP","Valor Outros Imp.Sub.Tribut - CFOP"

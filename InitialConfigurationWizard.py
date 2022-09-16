@@ -162,8 +162,10 @@ def create_config_file():
                 config.efd_path = values['-WIZ-EFD-']
             except ValueError as e:
                 try:
-                    WaitWindow.open_wait_window(Controller.install_efd_pva, '', Path(values['-WIZ-EFD-']))
+                    # instala EFD PVA ICMS próprio, na porta 3336 pra não confundir com a padrão
+                    WaitWindow.open_wait_window(Controller.install_efd_pva, '', Path(values['-WIZ-EFD-']), 3336)
                     config.efd_path = values['-WIZ-EFD-']
+                    config.efd_port = 3336
                 except Exception as e:
                     GUIFunctions.popup_erro(f'Problema com EFD PVA ICMS: {e}')
                     continue

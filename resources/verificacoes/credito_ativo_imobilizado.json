@@ -19,6 +19,7 @@
       },
       "relatorio_circunstanciado": "o contribuinte foi autuado por ter escriturado no livro fiscal próprio, Livro Registro de Entradas - LRE, documentos fiscais de entrada com créditos em situação não permitida pelo RICMS/00.\nDe acordo com o art. 29 da DDTT, é permitida a apropriação excepcional de crédito do imposto em operações com bens destinados à integração ao ativo imobilizado nas operações realizadas por estabelecimento industrial (dentre aqueles listados no §3º do artigo da DDTT) que os adquirir diretamente de seu fabricante localizado neste Estado. Condiciona-se ainda que o bem tenha sido produzido em estabelecimento localizado neste Estado.\nNa impossibilidade de atendimento às condições do art. 29 das DDTT, deve o contribuinte apropriar-se do crédito em 48 parcelas mensais, nos termos do art. 61, §10.",
       "provas": [
+        {"tipo": "creditos", "descricao": "Demonstrativo de créditos indevidos para análise de saldos para incidência de juros, utilizado para formação do DDF do item"},
         {"tipo": "listagem", "descricao": "Listagem contendo os documentos fiscais de entradas de mercadorias com aproveitamento indevido de créditos"},
         {"tipo": "DFe", "descricao": "Transcrições de documentos fiscais eletrônicos que tiveram aproveitamento indevido de créditos"},
         {"tipo": "LRE", "descricao": "Escrituração em LRE dos documentos fiscais eletrônicos, demonstrando o aproveitamento de créditos"}

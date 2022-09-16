@@ -3,12 +3,14 @@ import re
 import shutil
 from pathlib import Path
 from unittest import mock
+from dateutil.rrule import rrule, MONTHLY
 
 import numpy as np
 import pandas as pd
-from tika import parser
 
 import Audit
+import GeneralFunctions
+import PDFExtractor
 from ConfigFiles import Infraction
 from ExcelDDFs import ExcelArrazoadoIncompletoException
 from tests.test_Audit import AuditTestSetup
@@ -17,15 +19,15 @@ from tests.test_Audit import AuditTestSetup
 class ExcelDDFsTest(AuditTestSetup):
 
     def assertEqualsContents(self, aiim_number: str, expected_file: Path, actual_file: Path):
-        raw = parser.from_file(str(expected_file.absolute()))
-        expected_text = re.sub(r'\d{2}/\d{2}/\d{4}', datetime.date.today().strftime('%d/%m/%Y'), str(raw['content']))
-        raw = parser.from_file(str(actual_file.absolute()))
-        actual_text = re.sub(r'\d.\d{3}.\d{3}-\d', aiim_number, str(raw['content']))
+        raw = '\n'.join(PDFExtractor.parse_pdf(expected_file))
+        expected_text = re.sub(r'\d{2}/\d{2}/\d{4}', datetime.date.today().strftime('%d/%m/%Y'), raw)
+        raw = '\n'.join(PDFExtractor.parse_pdf(actual_file))
+        actual_text = re.sub(r'\d.\d{3}.\d{3}-\d', aiim_number, raw)
         self.assertEqual(expected_text, actual_text)
 
     def _verifica_quadro_3(self, aiim_number: str):
-        caminho_q1 = self._main_path / 'template' / f'Quadro1_{aiim_number}.pdf'
-        caminho_q3 = self._main_path / 'template' / f'Quadro3_{aiim_number}.pdf'
+        caminho_q1 = self._template_path / f'Quadro1_{aiim_number}.pdf'
+        caminho_q3 = self._template_path / f'Quadro3_{aiim_number}.pdf'
         aiim_number = f'{aiim_number[0]}.{aiim_number[1:4]}.{aiim_number[4:7]}-{aiim_number[-1]}'
         Audit.get_current_audit().aiim_number = aiim_number
         Audit.get_current_audit().get_sheet().gera_quadro_3(caminho_q1)
@@ -34,9 +36,43 @@ class ExcelDDFsTest(AuditTestSetup):
 
     def test_gera_quadro_3(self):
         with mock.patch('MDBReader.MDBReader.get_last_ufesp_stored', return_value=31.97):
+            self._verifica_quadro_3('41477900')
             self._verifica_quadro_3('41500581')
             self._verifica_quadro_3('41427889')
             self._verifica_quadro_3('41473700')
+
+    @mock.patch('ExcelDDFs.SeleniumWebScraper')
+    def test_vencimentos_GIA_existing_file(self, ws_mock):
+        caminho_cficms = self._template_path / 'cf1.pdf'
+        shutil.copyfile(caminho_cficms, self._main_path / 'Conta Fiscal.pdf')
+        resultado = Audit.get_current_audit().get_sheet().get_vencimentos_GIA()
+        ws_mock.assert_not_called()
+        self.assertIsInstance(resultado, pd.DataFrame)
+        self.assertEqual(54, len(resultado))
+        self.assertListEqual([GeneralFunctions.last_day_of_month(dt)
+                              for dt in rrule(MONTHLY, dtstart=datetime.date(2018, 1, 1),
+                                              until=datetime.date(2022, 6, 30))],
+                             resultado['referencia'].tolist())
+        self.assertListEqual([datetime.datetime.strptime(dt, '%d/%m/%Y').date() for dt in
+                              ['20/02/2018', '20/03/2018', '20/04/2018', '21/05/2018', '20/06/2018', '20/07/2018',
+                               '20/08/2018', '20/09/2018', '22/10/2018', '21/11/2018', '20/12/2018', '21/01/2019',
+                               '20/02/2019', '20/03/2019', '22/04/2019', '20/05/2019', '21/06/2019', '22/07/2019',
+                               '20/08/2019', '20/09/2019', '21/10/2019', '21/11/2019', '20/12/2019', '20/01/2020',
+                               '20/02/2020', '20/03/2020', '20/04/2020', '20/05/2020', '22/06/2020', '20/07/2020',
+                               '20/08/2020', '21/09/2020', '20/10/2020', '23/11/2020', '21/12/2020', '20/01/2021',
+                               '22/02/2021', '22/03/2021', '20/04/2021', '20/05/2021', '21/06/2021', '20/07/2021',
+                               '20/08/2021', '20/09/2021', '20/10/2021', '22/11/2021', '20/12/2021', '20/01/2022',
+                               '21/02/2022', '21/03/2022', '20/04/2022', '20/05/2022', '20/06/2022', '20/07/2022']],
+                             resultado['vencimento'].tolist())
+        self.assertListEqual([-67094.42, -92688.84, -99599.19, -108342.34, -113046.32, -126637.01, -135226.85,
+                              -148608.31, -162814.57, -180324.83, -202374.69, -220886.87, -236708.68, -253345.56,
+                              -265108.55, -276061.69, -293756.17, -317780.4, -349858.91, -376870.93, -405560.23,
+                              -439303.62, -479813.91, -505027.08, -525594.35, -531079.41, -576439.29, -630947.22,
+                              -651579.76, -717455.18, -801060.97, -872717.85, -962808.22, -1087654.05, -1206566.96,
+                              -1240778.94, -1312622.41, -1358071.31, -1381725.99, -1498862.85, -1625705.4, -1660780.13,
+                              -1674653.49, -1638944.6, -1512336.47, -1544226.37, -1329690.17, -1304466.62, -1247052.28,
+                              -1107468.42, -1106343.38, -985973.13, 0.0, 0.0],
+                             resultado['saldo'].tolist())
 
     def test_get_operations_with_csv_file(self):
         arquivo_csv = Path(self._main_path / 'Dados' / 'valor_operacoes.csv')
@@ -76,7 +112,7 @@ class ExcelDDFsTest(AuditTestSetup):
         arquivo_csv = Path(self._main_path / 'Dados' / 'valor_operacoes.csv')
         self.assertFalse(arquivo_csv.is_file())
         arquivo_xls = self._main_path / 'Dados' / 'Valores.xlsx'
-        shutil.copyfile(Path('tests') / 'template' / 'Valor_Total_Documentos_Fiscais_x_GIA_so_df.xlsx',
+        shutil.copyfile(self._template_path / 'Valor_Total_Documentos_Fiscais_x_GIA_so_df.xlsx',
                         arquivo_xls)
         resultado = Audit.get_current_audit().get_sheet().get_operations_for_aiim(arquivo_xls)
         self.assertIsInstance(resultado, pd.DataFrame)
@@ -111,7 +147,7 @@ class ExcelDDFsTest(AuditTestSetup):
         arquivo_csv = Path(self._main_path / 'Dados' / 'valor_operacoes.csv')
         self.assertFalse(arquivo_csv.is_file())
         arquivo_xls = self._main_path / 'Dados' / 'Valores.xlsx'
-        shutil.copyfile(Path('tests') / 'template' / 'Valor_Total_Documentos_Fiscais_x_GIA_gia_menor.xlsx',
+        shutil.copyfile(self._template_path / 'Valor_Total_Documentos_Fiscais_x_GIA_gia_menor.xlsx',
                         arquivo_xls)
         resultado = Audit.get_current_audit().get_sheet().get_operations_for_aiim(arquivo_xls)
         self.assertIsInstance(resultado, pd.DataFrame)
@@ -133,7 +169,7 @@ class ExcelDDFsTest(AuditTestSetup):
         arquivo_csv = Path(self._main_path / 'Dados' / 'valor_operacoes.csv')
         self.assertFalse(arquivo_csv.is_file())
         arquivo_xls = self._main_path / 'Dados' / 'Valores.xlsx'
-        shutil.copyfile(Path('tests') / 'template' / 'Valor_Total_Documentos_Fiscais_x_GIA_gia_maior.xlsx',
+        shutil.copyfile(self._template_path / 'Valor_Total_Documentos_Fiscais_x_GIA_gia_maior.xlsx',
                         arquivo_xls)
         resultado = Audit.get_current_audit().get_sheet().get_operations_for_aiim(arquivo_xls)
         self.assertIsInstance(resultado, pd.DataFrame)
@@ -161,7 +197,7 @@ class ExcelDDFsTest(AuditTestSetup):
                           '2021-05-01,5,2021,"316.672.689,54"\n2021-04-01,4,2021,"303.077.942,56"\n'
                           '2021-03-01,3,2021,"313.859.083,41"\n2021-02-01,2,2021,"296.753.854,64"\n')
         arquivo_xls = self._main_path / 'Dados' / 'Valores.xlsx'
-        shutil.copyfile(Path('tests') / 'template' / 'Valor_Total_Documentos_Fiscais_x_GIA_gia_maior.xlsx',
+        shutil.copyfile(self._template_path / 'Valor_Total_Documentos_Fiscais_x_GIA_gia_maior.xlsx',
                         arquivo_xls)
         resultado = Audit.get_current_audit().get_sheet().get_operations_for_aiim(arquivo_xls)
         self.assertIsInstance(resultado, pd.DataFrame)
@@ -189,11 +225,12 @@ class ExcelDDFsTest(AuditTestSetup):
     @staticmethod
     def _planilha_com_agrupamento():
         return pd.DataFrame(columns=['Chave', 'Período', 'Valor', 'mês'],
-                            data=[['3517221155565466541255', datetime.date(2022, 1, 5), 100, datetime.date(2022, 1, 31)],
-                                  ['Total Subitem 1.1', None, 100, datetime.date(2022, 1, 31)],
-                                  ['3718546546566665561255', datetime.date(2022, 4, 2), 300, datetime.date(2022, 4, 30)],
-                                  ['Total Subitem 1.2', None, 300, datetime.date(2022, 4, 30)],
-                                  ['TOTAL ITEM 1', None, 400, 'Total Geral']])
+                            data=[
+                                ['3517221155565466541255', datetime.date(2022, 1, 5), 100, datetime.date(2022, 1, 31)],
+                                ['Total Subitem 1.1', None, 100, datetime.date(2022, 1, 31)],
+                                ['3718546546566665561255', datetime.date(2022, 4, 2), 300, datetime.date(2022, 4, 30)],
+                                ['Total Subitem 1.2', None, 300, datetime.date(2022, 4, 30)],
+                                ['TOTAL ITEM 1', None, 400, 'Total Geral']])
 
     @staticmethod
     def _vencimentos_gia():

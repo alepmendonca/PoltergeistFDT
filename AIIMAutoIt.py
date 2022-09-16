@@ -6,7 +6,6 @@ import time
 import autoit
 from pathlib import Path
 
-import psutil
 import win32api
 import win32con
 
@@ -172,7 +171,7 @@ class AIIMAutoIt:
         autoit.control_send(dialogo, handle, '{HOME}')
         for i in range(1, opcao):
             autoit.control_send(dialogo, handle, '{DOWN}')
-        time.sleep(int(0.25*opcao))
+        time.sleep(int(0.5*opcao))
 
     def __wait_dialog_and_click(self, dialogo, button, wait=True):
         if wait:
@@ -395,10 +394,14 @@ class AIIMAutoIt:
         elif inciso == 'I' and alinea == 'e':
             for index, row in dicionario['ddf'].iterrows():
                 self.preenche_ddf_dci_davb(row['valor'], row['referencia'], row['davb'])
-        elif inciso == 'II' and alinea in ['b', 'c', 'd', 'j']:
+        elif inciso == 'II' and alinea == 'b':
             for index, row in dicionario['ddf'].iterrows():
                 self.preenche_ddf_glosa(row['valor'], row['dci'], row['dij'],
                                         row['dcm'], row['valor_basico'], row['referencia'])
+        elif inciso == 'II' and alinea == 'j':
+            for index, row in dicionario['ddf'].iterrows():
+                self.preenche_ddf_glosa(row['valor'], row['dci'], row['dij'],
+                                        row['dcm'], row['valor_basico'], row['davb'])
         elif inciso == 'IV' and alinea == 'b':
             for index, row in dicionario['ddf'].iterrows():
                 self.preenche_ddf_valor_basico(row['referencia'], row['valor'], row['referencia'])
@@ -725,6 +728,8 @@ class AIIMAutoIt:
             if msg != 'Operação bem sucedida!':
                 logger.error(f'Falha na exportação de AIIM: {msg}')
                 raise Exception(f'Ocorreu erro na exportação de AIIM: {msg}')
+            if not (aex_path / f'{aiim_number.replace(".", "")}.aex').is_file():
+                raise Exception('Arquivo do AIIM não foi salvo na pasta correta! Tente novamente!')
         except AutoItError as e:
             logger.exception('Falha na exportação de AIIM')
             raise Exception(f'Ocorreu erro na exportação de AIIM: {str(e)}')

@@ -16,6 +16,7 @@
       },
       "relatorio_circunstanciado": "o contribuinte foi autuado por ter escriturado no livro fiscal próprio, Livro Registro de Apuração de ICMS - LRAICMS, ajustes de crédito em situação não permitida pelo RICMS/00. O contribuinte foi notificado via notificação DEC <notificacao>, não tendo apresentado motivação legal ou informações suficientes para demonstrar a correição dos ajustes promovidos.",
       "provas": [
+        {"tipo": "creditos", "descricao": "Demonstrativo de créditos indevidos para análise de saldos para incidência de juros, utilizado para formação do DDF do item"},
         {"tipo": "listagem", "descricao": "Listagem contendo os períodos em que foram realizados ajustes de créditos indevidos"},
         {"tipo": "LRAICMS", "descricao": "Livro Registro de Apuração de ICMS, contendo os ajustes de créditos declarados"},
         {"tipo": "GIA-OutrosCreditos", "descricao": "Apuração de GIA, demonstrando os ajustes de créditos declarados"}

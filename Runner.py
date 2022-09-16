@@ -33,6 +33,11 @@ window: sg.Window
 extracoes: dict
 
 
+def refresh_menu():
+    window['-MENU-'].update(menu_definition=menu_layout('AUDITORIA_COM_AIIM' if get_current_audit().aiim_number
+                                                        else 'AUDITORIA_SEM_AIIM'))
+
+
 def refresh_data_tab():
     for grupo in Controller.data_groups.keys():
         global extracoes
@@ -125,8 +130,7 @@ def __refresh_tabs(pasta: Path):
         window['periodo'].update(f'Período de Fiscalização: '
                                  f'{get_current_audit().inicio_auditoria.strftime("%m/%Y")} '
                                  f'a {get_current_audit().fim_auditoria.strftime("%m/%Y")}')
-        window['-MENU-'].update(menu_definition=menu_layout('AUDITORIA_COM_AIIM' if get_current_audit().aiim_number
-                                                            else 'AUDITORIA_SEM_AIIM'))
+        refresh_menu()
         refresh_data_tab()
         refresh_analysis_tab()
         refresh_notifications_tab()
@@ -786,22 +790,22 @@ def window_event_handler():
     # Event Loop to process "events" and get the "values" of the inputs
     while True:
         w, event, values = sg.read_all_windows(timeout=100)
-        if isinstance(w, LogWindow) or event == '-LOG-WINDOW-EVENT-':
+        if event == sg.TIMEOUT_EVENT:
+            if log_window:
+                log_window.handle_event(event, values)
+            update_gifs()
+        elif isinstance(w, LogWindow) or event == '-LOG-WINDOW-EVENT-':
             log_window = w
             w.handle_event(event, values)
             if event == sg.WINDOW_CLOSED:
                 clear_data_tab()
             continue
-        if isinstance(w, AnalysisWizardWindow):
+        elif isinstance(w, AnalysisWizardWindow):
             w.handle_event(event, values)
             if event == sg.WINDOW_CLOSED:
                 w.close()
                 refresh_analysis_tab()
             continue
-        elif event == sg.TIMEOUT_EVENT:
-            if log_window:
-                log_window.handle_event(event, values)
-            update_gifs()
         # eventos da janela principal
         elif event == sg.WINDOW_CLOSE_ATTEMPTED_EVENT or event == sg.WINDOW_CLOSED or event.endswith('-MENU-EXIT-') \
                 or event == 'Cancel':  # if user closes window or clicks cancel
@@ -984,14 +988,15 @@ def window_event_handler():
                     WaitWindow.open_wait_window(Controller.generate_custom_report_cover, '', texto, Path(caminho))
         elif event.endswith('-MENU-AIIM-RECEIPT-'):
             WaitWindow.open_wait_window(Controller.send_notification_with_files_digital_receipt, 'Enviar Recibo')
-            refresh_aiim_tab()
+            refresh_menu()
         elif event.endswith('-MENU-AIIM-EXPORT-'):
             WaitWindow.open_wait_window(Controller.export_aiim, 'Exportar AIIM')
         elif event.endswith('-MENU-AIIM-REOPEN-'):
             WaitWindow.open_wait_window(Controller.reopen_aiim, 'Reabrir AIIM')
-            refresh_aiim_tab()
+            refresh_menu()
         elif event.endswith('-MENU-AIIM-UPLOAD-'):
             WaitWindow.open_wait_window(Controller.upload_aiim, 'Transmitir AIIM')
+            refresh_menu()
         elif event.endswith('-MENU-USER-FOLDER-'):
             subprocess.run([os.path.join(os.getenv('WINDIR'), 'explorer.exe'),
                             GeneralFunctions.get_user_path().absolute()])

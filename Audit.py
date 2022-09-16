@@ -534,14 +534,14 @@ class Audit:
                 if notifications.get(notification_name):
                     notifications[notification_name]['files'].extend(
                         [path / f for f in verificacoes if not f.startswith('SFPEXP')
-                         and not f.upper().startswith('Email') and not f.upper().startswith('E-mail')])
+                         and not f.upper().startswith('EMAIL') and not f.upper().startswith('E-MAIL')])
                 else:
                     notifications[notification_name] = {'year': int(is_notification.group(1)),
                                                         'number': int(is_notification.group(2)),
                                                         'files': [path / f for f in verificacoes
                                                                   if not f.startswith('SFPEXP')
-                                                                  and not f.upper().startswith('Email')
-                                                                  and not f.upper().startswith('E-mail')]
+                                                                  and not f.upper().startswith('EMAIL')
+                                                                  and not f.upper().startswith('E-MAIL')]
                                                         }
         notifications = {k: v for k, v in sorted(notifications.items(),
                                                  key=lambda tupla: (tupla[1]['year'], tupla[1]['number']))}

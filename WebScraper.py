@@ -20,7 +20,6 @@ from urllib.request import urlopen
 
 import pandas as pd
 import PySimpleGUI as sg
-import pdfkit
 import requests
 import autoit
 import selenium
@@ -44,13 +43,14 @@ import GeneralConfiguration
 import GeneralFunctions
 import PDFExtractor
 from GeneralFunctions import logger, wait_downloaded_file, move_downloaded_file
-import http.client as http_client
 
 # Monkey Patching para não abrir shell em modo release!
 selenium.webdriver.common.service.subprocess.Popen = GeneralFunctions.PopenWindows
 
 LAUNCHPAD_MAX_TIME_WAIT_SECONDS = 1800
-LAUNCHPAD_TIME_WAIT_SECONDS = 30
+LAUNCHPAD_MAX_CONCURRENT_REPORTS = 4
+LAUNCHPAD_TIME_WAIT_SECONDS = 15
+LAUNCHPAD_TIME_REPORT_MINUTES = 2
 
 pgsf_url = "https://portal60.sede.fazenda.sp.gov.br/"
 nfe_consulta_url = "https://nfe.fazenda.sp.gov.br/ConsultaNFe/consulta/publica/ConsultarNFe.aspx#tabConsInut"
@@ -97,7 +97,7 @@ launchpad_report_options = {
     "NF-es exportação com evento de averbação por CNPJ x periodo": {
         'Pesquisa': 'NF-es exportação',
         'Parametros': ['cnpj', '', 'inicioAAAAMM', 'fimAAAAMM', 'osf'],
-        'Tipo': "Dados", 'Relatorios': [], 'Grupo': 'COMEX'},
+        'Tipo': "Dados", 'Relatorios': ['Consulta 1 com SIEX'], 'Grupo': 'COMEX'},
     "NFe Docs Referenciados Destinatário": {
         'Pesquisa': 'Referenciados',
         'Parametros': ['cnpj', 'inicioAAAAMM', 'fimAAAAMM'],
@@ -413,6 +413,10 @@ class WebScraperException(Exception):
     pass
 
 
+class WebScraperTimeoutException(WebScraperException):
+    pass
+
+
 class SeleniumWebScraper:
 
     def __init__(self, download_path: Path = None, hidden=False):
@@ -636,7 +640,6 @@ class SeleniumWebScraper:
         relative_link = re.search('"/(.+?)/"', resultado_text).group(1)
         absolute_link = pgsf_url + "/" + relative_link
         self.__get_driver().get(absolute_link)
-
 
     def __save_as_pdf(self, download_path: Path):
         # serve para garantir que a renderização de PDF siga o CSS de tela, não de impressão
@@ -929,8 +932,7 @@ class SeleniumWebScraper:
                                                                    "ctl00_conteudoPaginaPlaceHolder_tcConsultaCompleta_TabPanel1_txtIdentificacao"
                                                                    )
             input_identificacao.clear()
-            digits_only_ie = re.sub(r"\D", "", ie)
-            input_identificacao.send_keys(digits_only_ie + Keys.RETURN)
+            input_identificacao.send_keys(ie + Keys.RETURN)
 
             self.__get_driver().find_element(By.ID,
                                              "ctl00_conteudoPaginaPlaceHolder_dlConsultaCompletaEstabelecimento_ctl01_linkButtonEstabelecimento"
@@ -1013,7 +1015,7 @@ class SeleniumWebScraper:
             self.__get_driver().find_element(By.ID,
                                              'ctl00_conteudoPaginaPlaceHolder_btnMenuImprimir'
                                              ).click()
-
+            # TODO fazer funcionar a redução de periodo em relatorios launchpad quando dá pau
             self.__save_as_pdf(filename)
             return dados_atuais
 
@@ -1494,20 +1496,26 @@ class SeleniumWebScraper:
                         raise e
                     except WebDriverException:
                         pass
-                except NoSuchWindowException:
+                except WebDriverException | NoSuchWindowException:
                     raise WebScraperException('Envio de notificação cancelada pelo usuário! '
                                               'A notificação ficará como rascunho no DEC, se você não tiver apagado!')
             mensagem = self.__get_driver().find_element(By.ID, "ConteudoPagina_lblSucessoEnvio").text
             notificacao = re.match(r'.*(IC.*\d)', mensagem).group(1)
             logger.info(f'Notificação {notificacao} enviada!')
             return notificacao
+        except WebScraperException:
+            pass
         except Exception as e:
             logger.exception(f"Erro ao enviar notificação DEC para CNPJ {cnpj}, título '{titulo}'")
             raise WebScraperException(f"Erro ao enviar notificação DEC para CNPJ {cnpj}, título '{titulo}': {e}")
         finally:
-            if janela_principal and self.__get_driver().current_window_handle != janela_principal:
-                self.__get_driver().close()
-                self.__get_driver().switch_to.window(janela_principal)
+            try:
+                if janela_principal and self.__get_driver().current_window_handle != janela_principal:
+                    self.__get_driver().close()
+                    self.__get_driver().switch_to.window(janela_principal)
+            except WebDriverException:
+                # usuário fechou janelas
+                pass
 
     # tenta baixar a notificação DEC e salva como o primeiro caminho (incluindo nome do arquivo)
     # se tiver anexos, baixa eles na segunda pasta indicada
@@ -1807,13 +1815,14 @@ class SeleniumWebScraper:
                 while True:
                     try:
                         # retorna se deu exception ou não, mas desde que tenha finalizado
-                        relatorio_anterior.exception(timeout=30)
-                        logger.debug(f'Iniciando execução do relatório {report_name},'
-                                     f' pois execução de período anterior acabou')
-                        break
+                        resultado = relatorio_anterior.exception(timeout=LAUNCHPAD_TIME_WAIT_SECONDS)
+                        if not resultado or not isinstance(resultado, WebScraperTimeoutException):
+                            logger.debug(f'Iniciando execução do relatório {report_name},'
+                                         f' pois execução de período anterior acabou')
+                            break
                     except concurrent.futures.CancelledError:
                         logger.debug(f'Desistiu de executar relatório {report_name},'
-                                     f' pois execução de período anterior deu falha')
+                                     f' pois execução de período anterior foi cancelada')
                         return
                     except concurrent.futures.TimeoutError:
                         if evento.is_set():
@@ -1849,95 +1858,120 @@ class SeleniumWebScraper:
                         window.write_event_value('-DATA-EXTRACTION-STATUS-',
                                                  [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'STOP'])
                     return None
-                try:
-                    logger.info(f"Solicitando relatório {report_name} no Launchpad, parâmetros {parametros}...")
-                    self.__get_driver().find_element(By.LINK_TEXT, "Documentos").click()
-                    self.__get_driver().find_element(By.ID, "infoviewSearchInput").clear()
-                    pesquisa = modo_exportacao.get('Pesquisa', report_name)
-                    self.__get_driver().find_element(By.ID, "infoviewSearchInput").send_keys(pesquisa)
-                    self.__get_driver().find_element(By.ID, "searchButton").click()
 
-                    # localiza relatório na pagina de pesquisa
-                    # faz 3 tentativas, pois a atualizacao da pagina de pesquisa é por ajax
-                    tentativas = 0
-                    while tentativas < 3:
-                        try:
-                            self.__get_driver().switch_to.default_content()
-                            self.__get_driver().switch_to.frame("servletBridgeIframe")
+            while True:
+                self.launchpad_lock.acquire()
+                self.__get_driver().switch_to.default_content()
+                self.__get_driver().switch_to.frame("servletBridgeIframe")
+                abas = [tab.text for tab in self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
+                        if tab.text]
+                # verifica se está no limite de abas abertas (sempre tem 2 abas)
+                if len(abas) < LAUNCHPAD_MAX_CONCURRENT_REPORTS + 2:
+                    break
+                self.launchpad_lock.release()
+                time.sleep(LAUNCHPAD_TIME_WAIT_SECONDS)
+
+            try:
+                self.__get_driver().switch_to.default_content()
+                self.__get_driver().switch_to.frame("servletBridgeIframe")
+                logger.info(f"Solicitando relatório {report_name} no Launchpad, parâmetros {parametros}...")
+                self.__get_driver().find_element(By.LINK_TEXT, "Documentos").click()
+                self.__get_driver().find_element(By.ID, "infoviewSearchInput").clear()
+                pesquisa = modo_exportacao.get('Pesquisa', report_name)
+                self.__get_driver().find_element(By.ID, "infoviewSearchInput").send_keys(pesquisa)
+                self.__get_driver().find_element(By.ID, "searchButton").click()
+
+                # localiza relatório na pagina de pesquisa
+                # faz 3 tentativas, pois a atualizacao da pagina de pesquisa é por ajax
+                tentativas = 0
+                while tentativas < 3:
+                    try:
+                        self.__get_driver().switch_to.default_content()
+                        self.__get_driver().switch_to.frame("servletBridgeIframe")
+                        subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
+                                               self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
+                        self.__get_driver().switch_to.frame(subframe)
+                        ActionChains(self.__get_driver()) \
+                            .double_click(
+                            self.__get_driver().find_element(By.XPATH, f'//tr[@aria-label="{report_name}"]')) \
+                            .perform()
+                        logger.debug(f'Encontrei na pesquisa o link pra {report_name}, duplo click feito...')
+                        self.__get_driver().switch_to.parent_frame()
+                        aba_atual = \
+                            [tab.text for tab in self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
+                             if 'Active' in tab.get_attribute('class').split()][0]
+                        if aba_atual == 'Documentos':
+                            logger.debug('Não fez duplo clique, vamos tentar dando enter')
                             subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
                                                    self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
                             self.__get_driver().switch_to.frame(subframe)
-                            ActionChains(self.__get_driver()) \
-                                .double_click(
-                                self.__get_driver().find_element(By.XPATH, f'//tr[@aria-label="{report_name}"]')) \
-                                .perform()
-                            logger.debug(f'Encontrei na pesquisa o link pra {report_name}, duplo click feito...')
-                            self.__get_driver().switch_to.parent_frame()
+                            elemento_buscado = self.__get_driver().find_element(By.XPATH,
+                                                                                f'//tr[@aria-label="{report_name}"]')
+                            elemento_buscado.click()
+                            elemento_buscado.send_keys(Keys.ENTER)
+                            time.sleep(1)
+                            self.__get_driver().switch_to.default_content()
+                            self.__get_driver().switch_to.frame("servletBridgeIframe")
                             aba_atual = \
-                                [tab.text for tab in self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
+                                [tab.text for tab in
+                                 self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
                                  if 'Active' in tab.get_attribute('class').split()][0]
                             if aba_atual == 'Documentos':
-                                logger.debug('Não fez duplo clique, vamos tentar dando enter')
-                                subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
-                                                       self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
-                                self.__get_driver().switch_to.frame(subframe)
-                                elemento_buscado = self.__get_driver().find_element(By.XPATH,
-                                                                                    f'//tr[@aria-label="{report_name}"]')
-                                elemento_buscado.click()
-                                elemento_buscado.send_keys(Keys.ENTER)
-                                aba_atual = \
-                                    [tab.text for tab in
-                                     self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
-                                     if 'Active' in tab.get_attribute('class').split()][0]
-                                if aba_atual == 'Documentos':
-                                    logger.debug('Insiste em não sair da página de busca, vamos retentar depois')
-                                    raise NoSuchElementException()
-                            else:
-                                break
-                        except NoSuchElementException:
-                            tentativas = tentativas + 1
-                            time.sleep(3)
+                                logger.debug('Insiste em não sair da página de busca, vamos retentar depois')
+                                raise NoSuchElementException()
+                        else:
+                            break
+                    except NoSuchElementException:
+                        tentativas = tentativas + 1
+                        time.sleep(3)
 
-                    # subframe é o frame da aba selecionada
-                    self.__get_driver().switch_to.default_content()
-                    self.__get_driver().switch_to.frame("servletBridgeIframe")
-                    WebDriverWait(self.__get_driver(), 20).until(
-                        EC.invisibility_of_element_located((By.CLASS_NAME, "spinnerMask")))
-                    WebDriverWait(self.__get_driver(), 20).until(
-                        EC.visibility_of_element_located((By.LINK_TEXT, report_name)))
-                    self.__get_driver().find_element(By.LINK_TEXT, report_name).click()
-                    subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
-                                           self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
-                    self.__get_driver().switch_to.frame(subframe)
-                    self.__get_driver().switch_to.frame(self.__get_driver().find_element(By.ID, "webiViewFrame"))
-                    self.__get_driver().switch_to.frame(self.__get_driver().find_element(By.ID, "_iframeleftPaneW"))
-                    i = 1
-                    while i <= len(parametros):
+                # subframe é o frame da aba selecionada
+                self.__get_driver().switch_to.default_content()
+                self.__get_driver().switch_to.frame("servletBridgeIframe")
+                WebDriverWait(self.__get_driver(), 20).until(
+                    EC.invisibility_of_element_located((By.CLASS_NAME, "spinnerMask")))
+                WebDriverWait(self.__get_driver(), 20).until(
+                    EC.visibility_of_element_located((By.LINK_TEXT, report_name)))
+                self.__get_driver().find_element(By.LINK_TEXT, report_name).click()
+                subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
+                                       self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
+                self.__get_driver().switch_to.frame(subframe)
+                self.__get_driver().switch_to.frame(self.__get_driver().find_element(By.ID, "webiViewFrame"))
+                self.__get_driver().switch_to.frame(self.__get_driver().find_element(By.ID, "_iframeleftPaneW"))
+                i = 1
+                while i <= len(parametros):
+                    # estão usando listbox para alguns casos. vou ignorar por enquanto, pois está selecionada
+                    # uma opção padrão que atende (situação = 0)
+                    try:
+                        self.__get_driver().find_element(By.ID, f"PV{i}").clear()
                         self.__get_driver().find_element(By.ID, f"PV{i}").send_keys(parametros[i - 1])
-                        i = i + 1
-                    self.__get_driver().find_element(By.ID, "PV1").send_keys(Keys.ENTER)
-                    if evento.is_set():
-                        if window:
-                            window.write_event_value('-DATA-EXTRACTION-STATUS-',
-                                                     [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'STOP'])
-                        return None
-                    logger.info(f"Iniciada execução do relatório {report_name} no Launchpad. Aguardando resposta...")
-
-                    # faz com que vá pra janela principal, para poder verificar depois se acabou
-                    self.__get_driver().switch_to.default_content()
-                    self.__get_driver().switch_to.frame("servletBridgeIframe")
-                except Exception as e:
+                    except NoSuchElementException:
+                        pass
+                    i = i + 1
+                self.__get_driver().find_element(By.ID, "PV1").send_keys(Keys.ENTER)
+                if evento.is_set():
                     if window:
                         window.write_event_value('-DATA-EXTRACTION-STATUS-',
-                                                 [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
-                    logger.exception(f"Ocorreu um problema ao solicitar relatório {report_name} no Launchpad, "
-                                     f"usando os seguintes parametros: {parametros}")
-                    raise WebScraperException(f"Ocorreu um problema ao solicitar relatório {report_name} no "
-                                              f"Launchpad: {e}")
+                                                 [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'STOP'])
+                    self.launchpad_lock.release()
+                    return None
+                logger.info(f"Iniciada execução do relatório {report_name} no Launchpad. Aguardando resposta...")
+
+                # faz com que vá pra janela principal, para poder verificar depois se acabou
+                self.__get_driver().switch_to.default_content()
+                self.__get_driver().switch_to.frame("servletBridgeIframe")
+                self.launchpad_lock.release()
+            except Exception as e:
+                if window:
+                    window.write_event_value('-DATA-EXTRACTION-STATUS-',
+                                             [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
+                self.launchpad_lock.release()
+                raise e
 
             # tempo máximo de espera para um relatório ficar pronto
             tempo_maximo = time.time() + LAUNCHPAD_MAX_TIME_WAIT_SECONDS
-
+            ultimo_tempo_mostrado = 0
+            inicio_execucao = time.time()
             try:
                 while True:
                     # o botão que tem que procurar quando terminou a consulta
@@ -1970,9 +2004,13 @@ class SeleniumWebScraper:
                     except TimeoutException:
                         # ainda não ficou pronto, dorme um tempo pra ver se resolve
                         if tempo_maximo - time.time() > 0:
-                            logger.info(
-                                f'Relatório {report_name} em execução, aguardando no máximo '
-                                f'mais {int(tempo_maximo - time.time())} segundos...')
+                            # apenas faz print a cada LAUNCH_TIME_REPORT_MINUTES minutos
+                            minutos_decorridos = int((time.time() - inicio_execucao) / 60)
+                            if minutos_decorridos >= ultimo_tempo_mostrado + LAUNCHPAD_TIME_REPORT_MINUTES:
+                                ultimo_tempo_mostrado = minutos_decorridos
+                                logger.info(
+                                    f'Relatório {report_name} em execução, aguardando no máximo '
+                                    f'mais {int((tempo_maximo - time.time()) / 60)} minutos...')
                         self.__get_driver().switch_to.default_content()
                         self.__get_driver().switch_to.frame("servletBridgeIframe")
                         self.launchpad_lock.release()
@@ -1987,7 +2025,7 @@ class SeleniumWebScraper:
                                                          [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
                             logger.warning(f'Relatório {report_name} NÃO FOI BAIXADO, '
                                            f'talvez tenha ocorrido problema no Launchpad. Tente novamente mais tarde.')
-                            return None
+                            raise WebScraperTimeoutException(report_name)
                         time.sleep(LAUNCHPAD_TIME_WAIT_SECONDS)
 
                 logger.info(f'Relatório {report_name} pronto, tentarei fazer download...')
@@ -2042,12 +2080,15 @@ class SeleniumWebScraper:
                     window.write_event_value('-DATA-EXTRACTION-STATUS-',
                                              [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'END'])
                 return self.download_path / downloaded_file_name
+            except WebScraperException as wse:
+                raise wse
             except Exception as e:
                 if window:
                     window.write_event_value('-DATA-EXTRACTION-STATUS-',
                                              [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
                 logger.exception(f"Ocorreu um problema ao baixar relatório {report_name} no Launchpad")
-                raise WebScraperException(f"Ocorreu um problema ao baixar relatório {report_name} no Launchpad: {e}")
+                raise WebScraperException(f"Ocorreu um problema ao baixar relatório {report_name} no Launchpad: {e}") \
+                    from e
             finally:
                 if not self.launchpad_lock.locked():
                     self.launchpad_lock.acquire()
@@ -2060,9 +2101,12 @@ class SeleniumWebScraper:
                 except NoAlertPresentException:
                     pass
                 self.launchpad_lock.release()
+        except WebScraperException as wse:
+            raise wse
         except Exception as e:
-            logger.exception(f'Ocorreu um problema na execução de relatório {report_name} no Launchpad')
-            raise WebScraperException(f'Ocorreu um problema na execução de relatório {report_name} no Launchpad: {e}')
+            logger.exception(f'Ocorreu um problema na execução de relatório {report_name} no Launchpad: {e}')
+            raise WebScraperException(f'Ocorreu um problema na execução de relatório {report_name} no Launchpad') \
+                from e
 
     def get_expediente_sem_papel(self, expediente: str):
         try:

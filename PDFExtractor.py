@@ -1,31 +1,14 @@
-import signal
-
 import pandas as pd
 import re
 import datetime
-
-from psutil import NoSuchProcess
-
-import GeneralConfiguration
+from dateutil.rrule import rrule, MONTHLY
 import GeneralFunctions
-from io import BytesIO
 from pathlib import Path
-from PyPDF2 import PdfFileMerger, PdfFileReader, PdfFileWriter
-import os
-import psutil
-os.environ['TIKA_SERVER_JAR'] = Path('tika-server/tika-server-1.24.jar').resolve().as_uri()
-from tika import tika
-from tika import parser
+import fitz
 
-# Monkey patching!
-tika.Popen = GeneralFunctions.PopenWindows
 
-# workaround for PyPDF4 issue #24
-# https://github.com/claird/PyPDF4/issues/24
-class PdfFileWriterWithStreamAttribute(PdfFileWriter):
-    def __init__(self):
-        super().__init__()
-        self.stream = BytesIO()
+class PDFUtilitiesException(Exception):
+    pass
 
 
 def __fix_pdf_removing_trailing_scripts(pdf_file: Path):
@@ -45,47 +28,41 @@ def __fix_pdf_removing_trailing_scripts(pdf_file: Path):
             p.writelines(txtx)
 
 
-def parse_pdf(file: Path) -> list[str]:
+def parse_pdf(file: Path, sorted_pdf=False) -> list[str]:
+    doc = fitz.Document()
+    texto_pdf: list[str] = []
     try:
-        tika.TikaJava = f'"{(GeneralConfiguration.get().efd_java_path() / "java.exe").resolve()}"'
-        raw = parser.from_file(str(file.resolve()))
-    except RuntimeError as e:
-        raise e
+        doc = fitz.Document(file)
+        for page in doc:
+            texto_pdf.extend(page.get_text(
+                flags=~fitz.TEXT_PRESERVE_SPANS & ~fitz.TEXT_PRESERVE_IMAGES,
+                sort=sorted_pdf).splitlines())
     finally:
-        _close_tika_server()
-    texto = str(raw['content'])
-    return texto.splitlines()
-
-
-def _close_tika_server():
-    if tika.TikaServerProcess:
-        try:
-            process = psutil.Process(tika.TikaServerProcess.pid)
-            for child in process.children(recursive=True):
-                child.kill()
-            process.kill()
-        except NoSuchProcess:
-            pass
+        if doc is not None:
+            doc.close()
+    return texto_pdf
 
 
 def merge_pdfs(filename: Path, pdfs: list[Path], remove_original_pdfs: bool = True):
-    merger = PdfFileMerger(strict=False)
-    try:
-        for pdf in pdfs:
-            __fix_pdf_removing_trailing_scripts(pdf)
-            merger.append(str(pdf.absolute()), import_bookmarks=False)
-            # concatena todos os PDFs e apaga os individuais, por padrão
+    merger = fitz.Document()
+    for pdf_path in pdfs:
+        pdf = None
         try:
-            filename.unlink(missing_ok=True)
-            merger.write(str(filename.absolute()))
-            if remove_original_pdfs:
-                for f in pdfs:
-                    f.unlink(missing_ok=True)
-        except IOError:
-            # deixa os PDFs lá, se deu algum problema...
-            pass
-    finally:
-        merger.close()
+            pdf = fitz.Document(pdf_path)
+            __fix_pdf_removing_trailing_scripts(pdf_path)
+            merger.insert_pdf(pdf)
+        finally:
+            if pdf is not None:
+                pdf.close()
+
+    # concatena todos os PDFs e apaga os individuais, por padrão
+    filename.unlink(missing_ok=True)
+    merger.save(filename)
+    merger.close()
+
+    if remove_original_pdfs:
+        for f in pdfs:
+            f.unlink(missing_ok=True)
 
 
 def split_pdf(filename: Path, max_size: int) -> list[Path]:
@@ -97,37 +74,33 @@ def split_pdf(filename: Path, max_size: int) -> list[Path]:
         return [filename]
 
     GeneralFunctions.logger.info(f'Dividindo arquivo {filename.name} em arquivos de no máximo {max_size}Mb...')
-    original_pdf = PdfFileReader(str(filename.absolute()))
+    original_pdf = fitz.Document(filename)
     page_number = 0
     first_page = 0
     pdf_list = []
-    tmp_pdf = None
-    while page_number < original_pdf.numPages:
-        if not tmp_pdf:
-            tmp_pdf = PdfFileWriterWithStreamAttribute()
-            first_page = page_number
-        tmp_pdf.addPage(original_pdf.getPage(page_number))
-        tmp_pdf_path = filename.parent / 'tmp.pdf'
-        with tmp_pdf_path.open('wb') as tmp_parte:
-            tmp_pdf.write(tmp_parte)
+    while page_number < original_pdf.page_count:
+        tmp_pdf = fitz.Document()
+        new_pdf_path = Path(str(filename.parent.absolute() / filename.stem) + f' - Parte {len(pdf_list) + 1}.pdf')
+        tmp_pdf.insert_pdf(original_pdf, from_page=first_page, to_page=page_number)
+        file_size = len(tmp_pdf.tobytes())
+        tmp_pdf.close()
         page_number += 1
-        if tmp_pdf_path.stat().st_size / 1024 / 1024 > max_size:
+        if file_size / 1024 / 1024 > max_size:
             # achei a qtd de paginas maxima, monta o PDF parcial
-            tmp_pdf_path.unlink()
-            new_pdf_path = Path(str(filename.parent.absolute() / filename.stem) + f' - Parte {len(pdf_list) + 1}.pdf')
-            new_pdf = PdfFileWriterWithStreamAttribute()
-            for rpagenum in range(first_page, page_number - 1):
-                new_pdf.addPage(original_pdf.getPage(rpagenum))
-            with new_pdf_path.open('wb') as file_parte:
-                new_pdf.write(file_parte)
-            if page_number < original_pdf.numPages:
+            new_pdf = fitz.Document()
+            new_pdf.insert_pdf(original_pdf, from_page=first_page, to_page=page_number - 1)
+            new_pdf.save(new_pdf_path)
+            if page_number < original_pdf.page_count:
                 page_number -= 1
-                tmp_pdf = None
+                first_page = page_number
             pdf_list.append(new_pdf_path)
-        elif page_number == original_pdf.numPages:
-            new_pdf_path = Path(str(filename.parent.absolute() / filename.stem) + f' - Parte {len(pdf_list) + 1}.pdf')
-            tmp_pdf_path.rename(new_pdf_path)
+        elif page_number == original_pdf.page_count:
+            new_pdf = fitz.Document()
+            new_pdf.insert_pdf(original_pdf, from_page=first_page)
+            new_pdf.save(new_pdf_path)
             pdf_list.append(new_pdf_path)
+
+    original_pdf.close()
     filename.unlink(missing_ok=True)
     # pode acontecer da regeração reduzir o PDF e ficar só um...
     # aí muda o nome do único arquivo gerado pra ficar igual ao original
@@ -147,71 +120,57 @@ def vencimentos_de_PDF_CFICMS(file_cficms: Path, path_name: Path,
         return pd.read_json(cficms_json, orient='records',
                             dtype={'referencia': 'datetime64[D]', 'vencimento': 'datetime64[D]', 'saldo': 'Float64'})
 
-    referencias = []
-    vencimentos = []
-    saldos = []
+    referencias = {}
+    linha_gia = False
     referencia: datetime.date = None
     vencimento: datetime.date = None
     saldo: float = None
-    buscar_vencimento = False
-    for linha in parse_pdf(file_cficms):
-        if len(linha) == 0:
-            continue
-        match = re.match(r'^([A-ZÇ]+)\s+(\d{4})$', linha)
-        if match:
-            if referencia:
-                if vencimento and saldo:
-                    vencimentos.append(vencimento)
-                    saldos.append(saldo)
-                else:
-                    for periodo in periodos_rpa:
-                        if periodo[0] <= referencia <= periodo[1]:
-                            raise Exception(f'Não foi localizado vencimento ou saldo para a referência '
-                                            f'{referencia.strftime("%m/%Y")} '
-                                            f'no PDF da Conta Fiscal ICMS! Talvez segue um formato inesperado '
-                                            f'pelo sistema...')
-            referencia = GeneralFunctions.last_day_of_month(
-                datetime.date(int(match.group(2)), GeneralFunctions.meses.index(match.group(1).capitalize()) + 1, 1)
-            )
-            referencias.append(referencia)
-            vencimento = None
+    linhas = parse_pdf(file_cficms, sorted_pdf=True)
+    regex_referencia = re.compile(r'^([A-ZÇ]+)\s+(\d{4})$')
+    regex_valor = re.compile(r'^-*([\d.]+,\d{2})$')
+    regex_vencimento = re.compile(r'.*DATA DE VENCIMENTO \((\d{2})/(\d{2})/(\d{4})\)')
+    for idx in range(0, len(linhas)):
+        linha = linhas[idx]
+        if not referencia:
+            match = regex_referencia.match(linha)
+            if match:
+                referencia = GeneralFunctions.last_day_of_month(
+                    datetime.date(int(match.group(2)), GeneralFunctions.meses.index(match.group(1).capitalize()) + 1, 1)
+                )
+                vencimento = None
+                saldo = None
+        elif referencia and (not vencimento or saldo is None):
+            if linha == 'GIA':
+                if not linha_gia:
+                    linha_gia = True
+                    continue
+            if linha_gia:
+                if regex_valor.match(linha):
+                    saldo = -1 * float(linha.replace('.', '').replace(',', '.'))
+                match_vencimento = regex_vencimento.match(linha)
+                if match_vencimento:
+                    vencimento = datetime.date(int(match_vencimento.group(3)), int(match_vencimento.group(2)),
+                                               int(match_vencimento.group(1)))
+                if 'NAO APRESENTOU GIA' in linha:
+                    # caso não apresente GIA em uma referência, conforme planilha de glosas,
+                    # o saldo deve ser considerado zerado
+                    saldo = 0.0
+        if referencia and vencimento is not None and saldo is not None:
+            referencias[referencia] = {'vencimento': vencimento, 'saldo': saldo}
+            referencia = None
             saldo = None
-            buscar_vencimento = False
-        elif referencia and (not vencimento or not saldo):
-            matchgia = re.match(r'^GIA\s+\d+.*\s+-([\d.,]+)\s+.*DATA DE VENCIMENTO \((\d{2})/(\d{2})/(\d{4})\)', linha)
-            if matchgia:
-                saldo = float(matchgia.group(1).replace('.', '').replace(',', '.'))
-                vencimento = datetime.date(int(matchgia.group(4)), int(matchgia.group(3)), int(matchgia.group(2)))
-            else:
-                if buscar_vencimento:
-                    matchgia = re.match(r'906\*DATA DE VENCIMENTO \((\d{2})/(\d{2})/(\d{4})\)', linha)
-                    if matchgia:
-                        vencimento = datetime.date(int(matchgia.group(3)), int(matchgia.group(2)),
-                                                   int(matchgia.group(1)))
-                        buscar_vencimento = False
-                else:
-                    matchgia = re.match(r'^GIA\s+\d+.*\s+([\d.,]+)\s+1\d+.*SALDO CREDOR.*', linha)
-                    if matchgia:
-                        buscar_vencimento = True
-                        saldo = -1 * float(matchgia.group(1).replace('.', '').replace(',', '.'))
-                    else:
-                        matchgia = re.match(r'^GIA\s+\d+.*\s+-([\d.,]+)\s\d+.*', linha)
-                        if matchgia:
-                            buscar_vencimento = True
-                            saldo = float(matchgia.group(1).replace('.', '').replace(',', '.'))
+            vencimento = None
+            linha_gia = False
 
-    if vencimento and saldo:
-        vencimentos.append(vencimento)
-        saldos.append(saldo)
-    referencias_rpa_encontradas = [ref for ref in referencias
+    referencias_rpa_encontradas = [ref for ref in referencias.keys()
                                    if any([p[0] <= ref <= p[1] for p in periodos_rpa])]
-    if len(referencias_rpa_encontradas) != len(vencimentos) \
-            or len(referencias_rpa_encontradas) != len(saldos):
+    if len(referencias_rpa_encontradas) != sum([len(list(rrule(MONTHLY, dtstart=periodo[0], until=periodo[1])))
+                                                for periodo in periodos_rpa]):
         raise Exception('Não localizou todos os saldos de GIA ou vencimentos! Possivelmente são casos especiais '
                         'não tratados pelo sistema!')
-    cficms = pd.DataFrame(data={'referencia': referencias_rpa_encontradas,
-                                'vencimento': vencimentos,
-                                'saldo': saldos})
+    cficms = pd.DataFrame(data={'referencia': referencias.keys(),
+                                'vencimento': [vlw['vencimento'] for vlw in referencias.values()],
+                                'saldo': [vlw['saldo'] for vlw in referencias.values()]})
     cficms['referencia'] = cficms['referencia'].astype('datetime64[D]')
     cficms['vencimento'] = cficms['vencimento'].astype('datetime64[D]')
     cficms['saldo'] = cficms['saldo'].astype('Float64')
@@ -220,20 +179,61 @@ def vencimentos_de_PDF_CFICMS(file_cficms: Path, path_name: Path,
 
 
 def get_quadro_1_data(quadro1_file: Path):
-    linhas = parse_pdf(quadro1_file)
-    linhas = [linha for linha in linhas[linhas.index('18') + 1:] if re.match(r'^\d+\.?\s', linha)]
+    pdf = parse_pdf(quadro1_file, sorted_pdf=True)
+    itens = []
+    linhas = []
+    start_page = 0
+    last_page_idx = [idx for idx in range(0, len(pdf)) if pdf[idx].startswith('  **Valor da Ufesp')][0]
+    while True:
+        # remove partes desnecessárias
+        start_page = pdf.index('DIRETORIA EXECUTIVA DA ADMINISTRAÇÃO TRIBUTÁRIA', start_page) + 2
+        if start_page > last_page_idx:
+            break
+        end_page = pdf.index('AIIM', start_page + 1)
+        itens.extend(pdf[start_page:end_page])
+
+    # limpando os itens
+    itens = [item.replace('R$ ', '') for item in itens]
+    itens = [item for item in itens if len(item.strip()) > 0]
+    li_idxs = [idx for idx in range(0, len(itens)) if itens[idx] == 'LI']
+    for i in range(0, len(li_idxs)):
+        itens.insert(li_idxs[i] + 2 * i + 1, '0')
+        itens.insert(li_idxs[i] + 2 * i + 1, '0')
+
+    # agrupando textos em uma única linha, como na visualização do PDF
+    idx_itens = [idx for idx in range(0, len(itens)) if re.match(r'\d+\.?\s', itens[idx])]
+    # adiciona como inicio de linha os casos em que há uma descrição na multa (não tem data fim no final)
+    desc_idxs = [idx for idx in range(0, len(itens)) if re.match(r'^\d+\s+\w+', itens[idx].strip())]
+    for i in range(0, len(desc_idxs)):
+        idx_itens.append(desc_idxs[i] - 1)
+    idx_itens.sort()
+    # adiciona como inicio de linha os casos em que é número isolado
+    regex_num = re.compile(r'^\d+$')
+    regex_dt = re.compile(r'^\d{2}/\d{2}/\d{2}$')
+    for idx in range(0, len(itens)):
+        if regex_num.match(itens[idx]) and (idx == 0 or regex_dt.match(itens[idx-1])):
+            idx_itens.append(idx)
+    idx_itens = sorted(list(set(idx_itens)))
+
+    for i in range(0, len(idx_itens) - 1):
+        linhas.append(itens[idx_itens[i]:idx_itens[i + 1]])
+    linhas.append(itens[idx_itens[-1]:])
+    linhas = sorted(linhas, key=lambda x: (int(x[0].split('.')[0].strip()),
+                                           0 if len(x[0].split('.')) == 1 else int(x[0].split('.')[1].strip())))
+
     df = []
     item = 1
     for subitem in linhas:
-        subitem = subitem.replace('R$ ', '').replace('LI', 'LI 0 0')
-        novo_item = int(re.search(r'^\d+', subitem).group())
+        novo_item = int(re.search(r'^\d+', subitem[0]).group())
         if novo_item not in (item, item + 1):
             continue
         else:
             item = novo_item
-        subitem = re.sub(r'^(?P<item>\d+)\.\s+', r'\g<item>.', subitem)
-        subitem = re.sub(r'^(?P<item>\d+)\s+(\d+\s\w+)\s', r'\g<item> descricao ', subitem)
-        colunas = subitem.split()
+        subitem[0] = re.sub(r'^(?P<item>\d+)\.\s+', r'\g<item>.', subitem[0])
+        # serve para não dar pau numa fórmula da planilha...
+        if subitem[0].find('.') < 0:
+            subitem[0] += '.1'
+        colunas = subitem
         linha = []
         # tem grupo de valor original, imposto e multa, valor original e multa ou só multa
         if colunas[1].find(',') > 0:
@@ -289,3 +289,64 @@ def get_quadro_1_data(quadro1_file: Path):
 
         df.append(linha)
     return df
+
+
+def highlight_pdf(caminho_pdf: Path, textos: list[str]) -> Path:
+    doc = fitz.Document(str(caminho_pdf.resolve()))
+    selection = fitz.Document()
+
+    try:
+        header_end = 'CST/ICMS'
+        footer_beginning = 'Página'
+        beginning_regex = re.compile(r'.*' + header_end + r'\s(.*?)\s\d{2}/\d{2}/\d{4}')
+        textointeiro_regexes = [re.compile('.*(' + texto + r'.*?)\s\d{2}/\d{2}/\d{4}') for texto in textos]
+        textoparcial_regexes = [re.compile('.*(' + texto + r'.*?)\s' + footer_beginning) for texto in textos]
+        gets_beginning_page = False
+        textos_a_procurar = textos
+        for page in doc:
+            include_page = False
+            tp = page.get_textpage()
+            texto_pdf = page.get_text("text", textpage=tp).replace('\n', ' ')
+            if gets_beginning_page:
+                match = beginning_regex.match(texto_pdf)
+                if match:
+                    rect = page.search_for(match.group(1), quads=True, textpage=tp)
+                    page.add_highlight_annot(quads=rect)
+                    include_page = True
+                gets_beginning_page = False
+            textos_a_remover = []
+            for idx in range(0, len(textointeiro_regexes)):
+                match = textointeiro_regexes[idx].match(texto_pdf)
+                if match:
+                    rectangle = page.search_for(match.group(1), quads=True, textpage=tp)
+                    page.add_highlight_annot(quads=rectangle)
+                    include_page = True
+                    textos_a_remover.append(idx)
+            for idx in [idx for idx in range(0, len(textoparcial_regexes)) if idx not in textos_a_remover]:
+                match = textoparcial_regexes[idx].match(texto_pdf)
+                if match:
+                    rectangle = page.search_for(match.group(1), quads=True, textpage=tp)
+                    page.add_highlight_annot(quads=rectangle)
+                    gets_beginning_page = True
+                    include_page = True
+                    textos_a_remover.append(idx)
+            if include_page:
+                selection.insert_pdf(doc, from_page=page.number, to_page=page.number)
+            for idx in sorted(textos_a_remover, reverse=True):
+                textos_a_procurar.pop(idx)
+                textointeiro_regexes.pop(idx)
+                textoparcial_regexes.pop(idx)
+            if not textos_a_procurar and not gets_beginning_page:
+                break
+        if textos_a_procurar:
+            raise PDFUtilitiesException(
+                f'Não foram encontrados todos os textos no PDF {caminho_pdf.name}: '
+                f'{textos_a_procurar}')
+        doc.close()
+        caminho_selection = caminho_pdf.parent / f'{caminho_pdf.stem}-selecao.pdf'
+        selection.save(str(caminho_selection.resolve()))
+        return caminho_selection
+    finally:
+        if not doc.is_closed:
+            doc.close()
+        selection.close()
