@@ -189,13 +189,18 @@ class SQLWriter(SQLReader):
             GeneralFunctions.logger.info('Todas as tabelas de EFD foram criadas no banco de dados central, '
                                          'ajustando tipos de dados e índices...')
             self.run_ddl("efd_alter_tables.sql")
+            GeneralFunctions.logger.info('Apagando esquemas temporários de EFD no banco de dados central...')
+            self._cursor.execute(
+                "SELECT DISTINCT schema_name FROM information_schema.schemata, escrituracaofiscal "
+                f"WHERE schema_name LIKE '%{int(cnpj)}%'")
+            for esquema in self._cursor.fetchall():
+                self._cursor.execute(f'DROP SCHEMA %s CASCADE', (esquema, ))
+                self._conn.commit()
         except psycopg2.Error as e:
             self._conn.rollback()
             raise Exception(e.pgerror)
 
     def create_efd_schema(self, schema_name: str, sql_file: Path):
-        # TODO precisa testar se é assim mesmo, ou se tem como fazer via psycopg2
-        importar = 'psql -h server -d databasename -U username -f data.sql'
         try:
             self._cursor.execute(f'CREATE SCHEMA {schema_name}')
             self._cursor.execute(f'SET search_path = {schema_name};')
@@ -226,7 +231,7 @@ class SQLWriter(SQLReader):
             self._cursor.execute(f'CREATE SCHEMA IF NOT EXISTS {schema_name};')
             self._cursor.execute(f'SET search_path = {schema_name}, public;')
             self._cursor.execute("CREATE OR REPLACE FUNCTION cnpj_auditoria() RETURNS varchar AS " +
-                                 f"$$ SELECT '{cnpj}' $$ LANGUAGE SQL IMMUTABLE;")
+                                 f"$$ SELECT '{int(cnpj)}' $$ LANGUAGE SQL IMMUTABLE;")
             self._cursor.execute("CREATE OR REPLACE FUNCTION ie_auditoria() RETURNS bigint AS " +
                                  f"$$ SELECT {ie} $$ LANGUAGE SQL IMMUTABLE;")
             self._cursor.execute("CREATE OR REPLACE FUNCTION inicio_auditoria() RETURNS date AS " +

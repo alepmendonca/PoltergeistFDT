@@ -1,0 +1,33 @@
+CREATE TABLE IF NOT EXISTS SUFRAMA (
+  CHAVE					VARCHAR(44) NOT NULL PRIMARY KEY
+  ,INSCRICAO_SUFRAMA			VARCHAR(100)
+  ,UF_DESTINATARIO			CHAR(2) NOT NULL
+  ,CIDADE_DESTINATARIO			VARCHAR(100) NOT NULL
+  ,ZONA_FRANCA				VARCHAR(100) NOT NULL
+  ,EVENTO_INTERNALIZACAO		VARCHAR(100) NOT NULL
+  ,DATA_INTERNALIZACAO			DATE NOT NULL
+  ,EVENTO_VISTORIA			VARCHAR(100)
+  ,DATA_VISTORIA			VARCHAR(100)
+  ,INGRESSO_ARQUIVO_SUFRAMA		CHAR(1)
+  ,DATA_INGRESSO			DATE
+);
+
+CREATE TEMP TABLE SUFRAMA_TEMP (
+   CHAVE                                                VARCHAR
+  ,NUM						 VARCHAR
+  ,CNPJ_REM                                          VARCHAR
+  ,CNPJ_DEST					VARCHAR
+  ,INSCRICAO                                             VARCHAR
+  ,UF_DEST                                    VARCHAR
+  ,MUNICIPIO_DEST                                     VARCHAR
+  ,TIPO_ZONA                                        VARCHAR
+  ,EMISSAO                                      VARCHAR
+  ,EVENTO_INTERN                                      VARCHAR
+  ,DATA_INTERN                                     VARCHAR
+  ,EVENTO_VISTORIA				 VARCHAR
+  ,DATA_VISTORIA				VARCHAR
+  ,VALOR_NFE					VARCHAR
+  ,VALOR_REMESSA_ISENTA				VARCHAR
+  ,INGRESSO_SUFRAMA				VARCHAR
+  ,DATA_INGRESSO				VARCHAR
+);

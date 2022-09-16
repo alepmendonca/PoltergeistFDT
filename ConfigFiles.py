@@ -259,6 +259,8 @@ class AiimProof:
     proof_types = {
         'listagem': {'modulo': 'AiimProofGenerator', 'funcao': 'get_aiim_listing_from_sheet',
                      'nome': 'Planilha'},
+        'creditos': {'modulo': 'AiimProofGenerator', 'funcao': 'get_item_credit_sheet',
+                     'nome': 'Glosa de Créditos'},
         'LRE': {'modulo': 'AiimProofGenerator', 'funcao': 'get_lre', 'allows_sampling': True,
                 'nome': 'Livro de Entradas'},
         'LRS': {'modulo': 'AiimProofGenerator', 'funcao': 'get_lrs', 'allows_sampling': True,

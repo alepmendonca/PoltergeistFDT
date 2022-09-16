@@ -1,5 +1,4 @@
 pyautoit
-tika==1.24
 pandas
 pyodbc
 pywin32
@@ -9,12 +8,11 @@ beautifulsoup4
 requests
 urllib3
 pdfkit
-PyPDF2
+pymupdf
 PySimpleGUI
 python-dateutil
 numpy
 psycopg2
-psutil
 py4j
 pillow
 tkhtmlview

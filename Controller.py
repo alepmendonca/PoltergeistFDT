@@ -37,7 +37,6 @@ from GeneralFunctions import logger
 from WebScraper import SeleniumWebScraper, launchpad_report_options
 
 LAUNCHPAD_REPORT_WITHOUT_BREAKS = 1000
-LAUNCHPAD_MAX_CONCURRENT_REPORTS = 4
 
 data_groups = {
     'EFD': {'nome': 'EFD', 'progressos': [
@@ -128,28 +127,32 @@ def update_dados_osf(osf: str):
 
     # inicio e fim fiscalizacao podem simplesmente não estar na OSF
     inicio_auditoria = fim_auditoria = None
-    for linha in linhas[150:]:
-        periodo = re.match(r'.*(\d{2}/\d{4}).*(\d{2}/\d{4})', linha)
-        if periodo:
-            if int(periodo.group(1)[:2]) <= 12 and int(periodo.group(1)[3:]) > 2000 \
-                    and int(periodo.group(2)[:2]) <= 12 and int(periodo.group(2)[3:]) > 2000 \
-                    and datetime.strptime(periodo.group(1), '%m/%Y') <= datetime.strptime(periodo.group(2),
-                                                                                          '%m/%Y'):
-                inicio_auditoria = periodo.group(1)
-                fim_auditoria = periodo.group(2)
-                break
+    if linhas.index('Até:') >= 0 and re.match(r'\d{2}/\d{4}', linhas[linhas.index('Até:') + 1]):
+        inicio_auditoria = linhas[76]
+        fim_auditoria = linhas[77]
+    else:
+        for linha in linhas[linhas.index('Origem do Trabalho Fiscal:'):linhas.index('OBSERVAÇÕES')]:
+            periodo = re.match(r'.*(\d{2}/\d{4}).*(\d{2}/\d{4})', linha)
+            if periodo:
+                if int(periodo.group(1)[:2]) <= 12 and int(periodo.group(1)[3:]) > 2000 \
+                        and int(periodo.group(2)[:2]) <= 12 and int(periodo.group(2)[3:]) > 2000 \
+                        and datetime.strptime(periodo.group(1), '%m/%Y') <= datetime.strptime(periodo.group(2),
+                                                                                              '%m/%Y'):
+                    inicio_auditoria = periodo.group(1)
+                    fim_auditoria = periodo.group(2)
+                    break
 
     audit = Audit.get_current_audit()
-    audit.osf = linhas[42]
-    audit.empresa = linhas[82]
-    audit.logradouro = linhas[84]
-    audit.numero = linhas[90]
-    audit.bairro = linhas[86]
-    audit.cidade = ' '.join(linhas[88].split()[0:-1])
-    audit.cep = linhas[88].split()[-1]
-    audit.ie = linhas[92].split()[0]
-    audit.cnpj = linhas[92].split()[1]
-    audit.cnae = linhas[100]
+    audit.osf = linhas[1]
+    audit.empresa = linhas[24]
+    audit.logradouro = linhas[25]
+    audit.numero = linhas[29]
+    audit.bairro = linhas[26]
+    audit.cidade = linhas[27]
+    audit.cep = linhas[28]
+    audit.ie = linhas[30].strip()
+    audit.cnpj = linhas[31].strip()
+    audit.cnae = linhas[35]
     if inicio_auditoria:
         audit.inicio_auditoria = inicio_auditoria
         audit.fim_auditoria = fim_auditoria
@@ -175,40 +178,25 @@ def update_dados_osf(osf: str):
 
     audit = get_current_audit()
     audit.inicio_situacao = [s for s in linhas if 'Início da Situação' in s][0][-10:]
-    audit.empresa = [s for s in linhas if 'Nome Empresarial' in s][-1][18:]
-    audit.situacao = [s for s in linhas if 'IE' in s and 'Situação:' in s][0][31:]
+    audit.empresa = [s for s in linhas if 'Nome Empresarial' in s][-1][17:]
+    audit.situacao = [s for s in linhas if s.startswith('Situação:')][-1][9:].strip()
     audit.inicio_inscricao = [s for s in linhas if 'Data da Inscrição no Estado' in s][0][-10:]
-    audit.logradouro = linhas[linhas.index('Endereço do Estabelecimento') + 4][12:]
-    audit.numero = linhas[linhas.index('Endereço do Estabelecimento') + 6][3:linhas[
-        linhas.index('Endereço do Estabelecimento') + 6].index('Complemento')].strip()
-    audit.complemento = linhas[linhas.index('Endereço do Estabelecimento') + 6] \
-        [linhas[linhas.index('Endereço do Estabelecimento') + 6].index('Complemento:') + 12:].strip()
-    audit.bairro = linhas[linhas.index('Endereço do Estabelecimento') + 8][24:]
-    audit.cidade = linhas[linhas.index('Endereço do Estabelecimento') + 10][11:-7]
-    audit.uf = linhas[linhas.index('Endereço do Estabelecimento') + 10][-2:]
-    audit.cep = linhas[linhas.index('Endereço do Estabelecimento') + 8][5:15]
+    audit.logradouro = linhas[linhas.index('Endereço do Estabelecimento') + 2][11:]
+    audit.numero = linhas[linhas.index('Endereço do Estabelecimento') + 3][3:]
+    audit.complemento = linhas[linhas.index('Endereço do Estabelecimento') + 4][12:].strip()
+    audit.bairro = linhas[linhas.index('Endereço do Estabelecimento') + 6][7:].strip()
+    audit.cidade = linhas[linhas.index('Endereço do Estabelecimento') + 7][10:].strip()
+    audit.uf = linhas[linhas.index('Endereço do Estabelecimento') + 8][3:].strip()
+    audit.cep = linhas[linhas.index('Endereço do Estabelecimento') + 5][4:].strip()
 
-    historicos_txt = linhas[linhas.index('Histórico de Regime Estadual') + 6:
-                            linhas.index('Histórico de Participantes')]
+    historicos_txt = linhas[linhas.index('Histórico de Regime Estadual') + 7:
+                            linhas.index('Histórico de Participantes') - 1]
     historicos = []
-    inicio = fim = None
-    regime = ''
-    for r in historicos_txt:
-        registro = r.strip()
-        if registro:
-            index = 0
-            if not inicio:
-                inicio = registro[:10]
-                fim = registro[11:].split(' ')[0]
-                index = 11 + len(fim) + 1
-            if fim and len(registro) > index:
-                for word in registro[index:]:
-                    if word.islower():
-                        historicos.append([inicio, fim, regime[:regime.rindex(' ')]])
-                        inicio = fim = None
-                        regime = ''
-                        break
-                    regime += word
+    for idx in range(0, len(historicos_txt), 5):
+        inicio = historicos_txt[idx]
+        fim = historicos_txt[idx + 1]
+        regime = historicos_txt[idx + 2]
+        historicos.append([inicio, fim, regime])
     audit.historico_regime = historicos
     get_current_audit().save()
     logger.info('Dados da fiscalização extraídos dos sistemas com sucesso!')
@@ -454,7 +442,7 @@ def get_ddf_for_infraction(infraction: Infraction):
     logger.info(f'Gerando DDF para inciso {infraction.inciso}, alínea {infraction.alinea}')
     if aiim_item.planilha:
         return get_current_audit().get_sheet().get_ddf_from_sheet(aiim_item.planilha, infraction.inciso,
-                                                                  infraction.alinea)
+                                                                  infraction.alinea, aiim_item.item)
     else:
         return {'inciso': infraction.inciso, 'alinea': infraction.alinea,
                 'mensal': True,
@@ -610,6 +598,8 @@ def upload_aiim():
     export_aiim()
     aiim2003.gera_transmissao(aiim_number, __get_aiim_position_in_aiim2003(aiim_number),
                               get_current_audit().aiim_path())
+    get_current_audit().is_aiim_open = False
+    get_current_audit().save()
 
 
 def generate_audit_schema():
@@ -1005,37 +995,46 @@ def launchpad_relatorios_download(relatorios: list, ws: SeleniumWebScraper, wind
     # com no máximo LAUNCHPAD_MAX_CONCURRENT_REPORTS simultaneamente
     # é feita quebra de relatórios em diferentes períodos, conforme estimativa feita
     global is_downloading_reports
+    resultados = {}
     with ThreadPoolExecutor(thread_name_prefix='LaunchpadDownload',
-                            max_workers=LAUNCHPAD_MAX_CONCURRENT_REPORTS,
                             initializer=GeneralFunctions.initializePythonCom) as executor:
         is_downloading_reports = True
-        try:
-            for relatorio in relatorios:
-                __run_report(relatorio, evento, ws, executor, window)
-        except Exception as e:
-            logger.exception('Erro na submissão de relatório do Launchpad')
-            raise e
+        for relatorio in relatorios:
+            resultados[relatorio] = __run_report(relatorio, evento, ws, executor, window)
     # apenas continua quando todos os futuros estão completados
     # (podem ser encerrados antecipadamente setando o evento)
     is_downloading_reports = False
+    revised_groups = []
+    # muda a periodicidade de download de arquivos, caso algum grupo tenha dado timeout
+    for relatorio, execucoes in resultados.items():
+        group = launchpad_report_options[relatorio]['Grupo']
+        if group not in revised_groups:
+            for execucao in execucoes:
+                exception = execucao.exception()
+                if exception and isinstance(exception, WebScraper.WebScraperTimeoutException):
+                    # aumentar a periodicidade dos relatorios, pra proxima tentativa
+                    __revisa_periodicidade_relatorio(relatorio)
+                    revised_groups.append(group)
+                    break
     logger.info('Encerrado levantamento de dados no Launchpad!')
 
 
 def __run_report(relatorio: str, evento: threading.Event, ws: SeleniumWebScraper,
-                 executor: ThreadPoolExecutor, window: sg.Window):
+                 executor: ThreadPoolExecutor, window: sg.Window) -> list[Future]:
     parametros = __parametros_para_launchpad(relatorio)
     periodos = __estima_periodicidades_relatorio(relatorio, parametros)
+    execucoes = []
     if evento.is_set():
-        return
+        return execucoes
     report = launchpad_report_options[relatorio]
     if len(periodos) == 0:
         window.write_event_value('-DATA-EXTRACTION-STATUS-',
                                  [f"{launchpad_report_options[relatorio]['Grupo']}-DOWNLOAD", 'TOTAL1'])
-        executor.submit(ws.get_launchpad_report, relatorio,
-                        launchpad_download_filename(relatorio,
-                                                    (get_current_audit().inicio_auditoria,
-                                                     get_current_audit().fim_auditoria)),
-                        evento, window, *parametros)
+        execucoes.append(executor.submit(ws.get_launchpad_report, relatorio,
+                                         launchpad_download_filename(relatorio,
+                                                                     (get_current_audit().inicio_auditoria,
+                                                                      get_current_audit().fim_auditoria)),
+                                         evento, window, *parametros))
     else:
         window.write_event_value('-DATA-EXTRACTION-STATUS-',
                                  [f"{launchpad_report_options[relatorio]['Grupo']}-DOWNLOAD", f'TOTAL{len(periodos)}'])
@@ -1053,6 +1052,8 @@ def __run_report(relatorio: str, evento: threading.Event, ws: SeleniumWebScraper
                                                 launchpad_download_filename(relatorio, periodicidade),
                                                 evento, window,
                                                 *parametros_cp, relatorio_anterior=execucao_anterior)
+            execucoes.append(execucao_anterior)
+    return execucoes
 
 
 def launchpad_download_filename(nome_relatorio: str, periodicidade=None) -> str:
@@ -1178,9 +1179,10 @@ def __estima_periodicidades_relatorio(nome_relatorio: str, parametros: list) -> 
     return periodos
 
 
-def __revisa_periodicidade_relatorio_grupo(nome_grupo: str):
+def __revisa_periodicidade_relatorio(nome_relatorio: str):
+    nome_grupo = launchpad_report_options[nome_relatorio]['Grupo']
     atual = get_current_audit().reports.get(nome_grupo, 'Agrupado')
-    nomes_parametros = launchpad_report_options[nome_grupo]['Parametros']
+    nomes_parametros = launchpad_report_options[nome_relatorio]['Parametros']
     if 'inicio' not in nomes_parametros:
         # não há como revisar, o relatório já é agrupado
         return
@@ -1265,8 +1267,6 @@ def __check_reports_completed(relatorio_nome_inicio: str, relatorio_opcoes: dict
                 result = predecessor.exception(timeout=1)
                 # mas se deu exception, desiste
                 if result:
-                    # aumentar a periodicidade dos relatorios, pra proxima tentativa
-                    __revisa_periodicidade_relatorio_grupo(relatorio_opcoes['Grupo'])
                     raise concurrent.futures.CancelledError
                 logger.debug(f'Liberada importação do relatório {relatorio_nome_inicio},'
                              f' pois importação de tabela principal acabou')
@@ -1338,7 +1338,8 @@ def __import_report(relatorio_nome_inicio: str, relatorio_opcoes: dict, window: 
     except Exception as e:
         window.write_event_value('-DATA-EXTRACTION-STATUS-',
                                  [f"{relatorio_opcoes['Grupo']}-IMPORT", 'FAILURE'])
-        logger.exception(f'Ocorreu erro na importação do relatório {relatorio_nome_inicio} na base de dados central')
+        logger.exception(f'Ocorreu erro na importação do relatório {relatorio_nome_inicio} '
+                         f'na base de dados central: {e}')
         raise e
     else:
         window.write_event_value('-DATA-EXTRACTION-STATUS-',
@@ -1364,10 +1365,10 @@ def set_proxy():
     WebScraper.set_proxy()
 
 
-def install_efd_pva(efd_path: Path):
+def install_efd_pva(efd_path: Path, efd_port: int):
     logger.info('Instalando EFD PVA...')
     arquivo = WebScraper.get_efd_pva_version()
-    EFDPVAInstaller.upgrade_efd_pva(arquivo, efd_path)
+    EFDPVAInstaller.upgrade_efd_pva(arquivo, efd_path, efd_port)
 
 
 def update_efd_pva_version():
@@ -1379,7 +1380,8 @@ def update_efd_pva_version():
             GUIFunctions.update_splash(f'Baixando versão {versao} do EFD PVA ICMS...')
             arquivo = WebScraper.get_efd_pva_version(versao)
             GUIFunctions.update_splash(f'Instalando versão {versao} do EFD PVA ICMS...')
-            EFDPVAInstaller.upgrade_efd_pva(arquivo, GeneralConfiguration.get().efd_path)
+            EFDPVAInstaller.upgrade_efd_pva(arquivo, GeneralConfiguration.get().efd_path,
+                                            GeneralConfiguration.get().efd_port)
             GUIFunctions.update_splash(f'EFD PVA ICMS atualizado!')
     except:
         logger.exception('Falha na atualização do EFD PVA ICMS')

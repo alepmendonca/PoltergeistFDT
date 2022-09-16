@@ -5,7 +5,6 @@ import threading
 from pathlib import Path
 
 import pandas as pd
-from PyPDF2 import PdfWriter, PdfReader
 from pandas import Timestamp
 
 import ExcelDDFs
@@ -342,3 +341,12 @@ def get_efd_entregas(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed
                               get_current_audit().fim_auditoria,
                               file_path)
     return [file_path]
+
+
+def get_item_credit_sheet(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:
+    if item.infracao.inciso != 'II':
+        return []
+    else:
+        # TODO gerar PDF com as 2 planilhas de "Glosa do Item x.xlsx"
+        return []
+

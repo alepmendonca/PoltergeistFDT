@@ -5,6 +5,7 @@ import logging
 import threading
 import time
 
+import GUIFunctions
 import GeneralFunctions
 from GeneralFunctions import logger, QueueFormatter
 
@@ -81,7 +82,7 @@ class LogWindow(sg.Window):
                          resizable=True, finalize=True,
                          default_element_size=(15, 1),
                          enable_close_attempted_event=True,
-                         modal=True)
+                         modal=True, icon=GUIFunctions.app_icon)
         # Setup logging
         self._msg_handler = WindowEventHandler(self)
         self._msg_handler.setFormatter(QueueFormatter("%(asctime)s - %(message)s", datefmt="%H:%M:%S"))

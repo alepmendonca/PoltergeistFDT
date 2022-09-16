@@ -1,6 +1,5 @@
 import datetime
 import json
-import os
 import shutil
 from unittest import TestCase
 from pathlib import Path
@@ -13,34 +12,23 @@ class AuditTestSetup(TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls._main_path = Path(__file__).parent.resolve()
-        (cls._main_path / 'Dados').mkdir(exist_ok=True)
-        (cls._main_path / 'Achados').mkdir(exist_ok=True)
-        (cls._main_path / 'AIIM').mkdir(exist_ok=True)
+        cls._main_path = Path(__file__).parent.resolve() / 'Auditoria'
+        cls._template_path = Path(__file__).parent.resolve() / 'template'
 
     def setUp(self) -> None:
-        shutil.copyfile(os.path.join(self._main_path, 'template', 'dados_auditoria.json'),
-                        os.path.join(self._main_path, 'Dados', 'dados_auditoria.json'))
-        shutil.copyfile(os.path.join(self._main_path, 'template', 'Arrazoado - Teste.xlsm'),
-                        os.path.join(self._main_path, 'Achados', 'Arrazoado - Teste.xlsm'))
+        self._main_path.mkdir(exist_ok=True)
+        (self._main_path / 'Dados').mkdir(exist_ok=True)
+        (self._main_path / 'Achados').mkdir(exist_ok=True)
+        (self._main_path / 'AIIM').mkdir(exist_ok=True)
+        shutil.copyfile(self._template_path / 'dados_auditoria.json',
+                        self._main_path / 'Dados' / 'dados_auditoria.json')
+        shutil.copyfile(self._template_path / 'Arrazoado - Teste.xlsm',
+                        self._main_path / 'Achados' / 'Arrazoado - Teste.xlsm')
         Audit.set_audit(self._main_path)
 
     def tearDown(self) -> None:
         Audit.set_audit(None)
-        for subpasta in ['Dados', 'Achados', 'AIIM', 'Notificações']:
-            for path, _, arquivos in os.walk(self._main_path / subpasta):
-                for arquivo in arquivos:
-                    (Path(path) / arquivo).unlink(missing_ok=True)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        try:
-            shutil.rmtree(cls._main_path / 'Dados')
-            shutil.rmtree(cls._main_path / 'Achados')
-            shutil.rmtree(cls._main_path / 'AIIM')
-            shutil.rmtree(cls._main_path / 'Notificações')
-        except:
-            pass
+        shutil.rmtree(self._main_path, ignore_errors=True)
 
 
 class AuditTest(AuditTestSetup):
@@ -203,7 +191,7 @@ class AuditTest(AuditTestSetup):
 
     def test_create_audit_with_json_file_just_opens_it(self):
         Audit.get_current_audit().save()
-        with (self._main_path / 'template' / 'dados_auditoria.json').open(mode='r') as outfile:
+        with (self._template_path / 'dados_auditoria.json').open(mode='r') as outfile:
             template = outfile.read()
         with (self._main_path / 'Dados' / 'dados_auditoria.json').open(mode='r') as outfile:
             texto_final = outfile.read()
