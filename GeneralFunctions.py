@@ -24,7 +24,7 @@ from cryptography import x509
 from cryptography.hazmat._oid import ObjectIdentifier
 
 project_name = 'PoltergeistFDT'
-project_version = '0.1.1'
+project_version = '0.1.2'
 meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho',
          'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 infractions = {}
@@ -33,8 +33,8 @@ infractions = {}
 class PopenWindows(subprocess.Popen):
     # serve pra fazer monkey patch, de forma que no modo release não abra um shell
     def __init__(self, command, **popen_kwargs):
-        executable = command[0] if isinstance(command, list) else command
-        if executable.find('explorer.exe') >= 0 or executable.find('tika-server') >= 0:
+        executable = command[0] if isinstance(command, list) or isinstance(command, tuple) else command
+        if executable.find('explorer.exe') >= 0:
             super().__init__(command, **popen_kwargs)
         else:
             startupinfo_windows = subprocess.STARTUPINFO()

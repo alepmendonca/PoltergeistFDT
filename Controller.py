@@ -185,8 +185,8 @@ def update_dados_osf(osf: str):
     audit.numero = linhas[linhas.index('Endereço do Estabelecimento') + 3][3:]
     audit.complemento = linhas[linhas.index('Endereço do Estabelecimento') + 4][12:].strip()
     audit.bairro = linhas[linhas.index('Endereço do Estabelecimento') + 6][7:].strip()
-    audit.cidade = linhas[linhas.index('Endereço do Estabelecimento') + 7][10:].strip()
-    audit.uf = linhas[linhas.index('Endereço do Estabelecimento') + 8][3:].strip()
+    audit.cidade = linhas[linhas.index('Endereço do Estabelecimento') + 11][10:].strip()
+    audit.uf = linhas[linhas.index('Endereço do Estabelecimento') + 12][3:].strip()
     audit.cep = linhas[linhas.index('Endereço do Estabelecimento') + 5][4:].strip()
 
     historicos_txt = linhas[linhas.index('Histórico de Regime Estadual') + 7:

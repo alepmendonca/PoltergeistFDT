@@ -2,11 +2,13 @@ import datetime
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 from json import JSONDecodeError
 from zipfile import BadZipFile
 
+import PyInstaller.__main__
 import PySimpleGUI as sg
 import numpy as np
 
@@ -1012,7 +1014,16 @@ def window_event_handler():
     window.close()
 
 
+# para ser usado como forma de gerar o release por IDE
+def generate_release():
+    PyInstaller.__main__.run_build(None, spec_file='PoltergeistFDT.spec', noconfirm=True)
+
+
 if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == '--release':
+        generate_release()
+        sys.exit()
+
     extracoes = {}
     try:
         initialize_environment()
