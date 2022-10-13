@@ -201,7 +201,7 @@ def get_quadro_1_data(quadro1_file: Path):
         itens.insert(li_idxs[i] + 2 * i + 1, '0')
 
     # agrupando textos em uma única linha, como na visualização do PDF
-    idx_itens = [idx for idx in range(0, len(itens)) if re.match(r'\d+\.?\s', itens[idx])]
+    idx_itens = [idx for idx in range(0, len(itens)) if re.match(r'\d+\.\s+\d+$', itens[idx])]
     # adiciona como inicio de linha os casos em que há uma descrição na multa (não tem data fim no final)
     desc_idxs = [idx for idx in range(0, len(itens)) if re.match(r'^\d+\s+\w+', itens[idx].strip())]
     for i in range(0, len(desc_idxs)):

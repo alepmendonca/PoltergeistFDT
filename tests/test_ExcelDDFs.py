@@ -233,6 +233,15 @@ class ExcelDDFsTest(AuditTestSetup):
                                 ['TOTAL ITEM 1', None, 400, 'Total Geral']])
 
     @staticmethod
+    def _planilha_com_dois_agrupamentos():
+        return pd.DataFrame(columns=['Chave', 'Período', 'Valor Básico', 'Valor', 'mês'],
+                            data=[
+                                ['3517221155565466541255', datetime.date(2022, 1, 5), 50, 100, datetime.date(2022, 1, 31)],
+                                ['Total Subitem 1.1', None, 50, 100, datetime.date(2022, 1, 31)],
+                                ['3718546546566665561255', datetime.date(2022, 4, 2), 150, 300, datetime.date(2022, 4, 30)],
+                                ['Total Subitem 1.2', None, 150, 300, datetime.date(2022, 4, 30)],
+                                ['TOTAL ITEM 1', None, 200, 400, 'Total Geral']])
+    @staticmethod
     def _vencimentos_gia():
         gia = pd.DataFrame(columns=['referencia', 'vencimento', 'saldo'],
                            data=[[datetime.date(2022, 1, 31), datetime.date(2022, 2, 20), 150.2],
@@ -264,17 +273,23 @@ class ExcelDDFsTest(AuditTestSetup):
         df = pd.DataFrame(columns=['Chave', 'Nome qualquer', 'Valor'],
                           data=[['3517221155565466541255', datetime.date(2022, 1, 5), 100],
                                 ['3718546546566665561255', datetime.date(2022, 4, 2), 300]])
+        infractions = list(filter(lambda i: i.inciso == 'IV' and i.alinea == 'b', Infraction.all_default_infractions()))
+        self.assertGreaterEqual(len(infractions), 0)
+        infraction = infractions[0]
         with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=df):
             with self.assertRaises(ExcelArrazoadoIncompletoException) as cm:
-                Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'IV', 'b')
+                Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', infraction)
             self.assertEqual('Planilha planilha não tem coluna "Referência" ou "Período" (quando itens já '
                              'estão agrupados) ou ela tem vários itens da mesma referência, mas está sem '
                              'totalizadores!\nNo segundo caso, execute a macro com CTRL+SHIFT+E, salve, '
                              'feche a planilha e tente novamente!', str(cm.exception))
 
     def test_get_ddf_sem_agrupamento_planejado(self):
+        infractions = list(filter(lambda i: i.inciso == 'IV' and i.alinea == 'b', Infraction.all_default_infractions()))
+        self.assertGreaterEqual(len(infractions), 0)
+        infraction = infractions[0]
         with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_sem_agrupamento()):
-            ddf = Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'IV', 'b')
+            ddf = Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', infraction)
         self.assertIsInstance(ddf, dict)
         self.assertIsInstance(ddf['ddf'], pd.DataFrame)
         self.assertEqual(['31/01/22', '30/04/22'], ddf['ddf']['referencia'].tolist())
@@ -285,25 +300,29 @@ class ExcelDDFsTest(AuditTestSetup):
         Audit.get_current_audit().fim_auditoria = None
         Audit.get_current_audit().inicio_auditoria = datetime.date(2022, 1, 1)
         Audit.get_current_audit().fim_auditoria = datetime.date(2022, 4, 30)
-        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_sem_agrupamento()):
+        with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_com_dois_agrupamentos()):
             with mock.patch('ExcelDDFs.ExcelDDFs.get_vencimentos_GIA', return_value=self._vencimentos_gia()):
-                with self.assertRaises(ExcelArrazoadoIncompletoException):
-                    for infraction in Infraction.all_default_infractions():
-                        Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha',
-                                                                                 infraction.inciso, infraction.alinea)
+                for infraction in Infraction.all_default_infractions():
+                    Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', infraction)
 
     def test_get_ddf_I_a(self):
+        infractions = list(filter(lambda i: i.inciso == 'I' and i.alinea == 'a', Infraction.all_default_infractions()))
+        self.assertGreaterEqual(len(infractions), 0)
+        infraction = infractions[0]
         with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_com_agrupamento()):
-            ddf = Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'I', 'a')
+            ddf = Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', infraction)
         self.assertIsInstance(ddf, dict)
         self.assertIsInstance(ddf['ddf'], pd.DataFrame)
         self.assertEqual(['31/01/22', '30/04/22'], ddf['ddf']['referencia'].tolist())
         self.assertEqual(['100,00', '300,00'], ddf['ddf']['valor'].tolist())
 
     def test_get_ddf_I_b_agrupado(self):
+        infractions = list(filter(lambda i: i.inciso == 'I' and i.alinea == 'b', Infraction.all_default_infractions()))
+        self.assertGreaterEqual(len(infractions), 0)
+        infraction = infractions[0]
         with mock.patch('ExcelDDFs.ExcelDDFs.planilha', return_value=self._planilha_com_agrupamento()):
             with mock.patch('ExcelDDFs.ExcelDDFs.get_vencimentos_GIA', return_value=self._vencimentos_gia()):
-                ddf = Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', 'I', 'b')
+                ddf = Audit.get_current_audit().get_sheet().get_ddf_from_sheet('planilha', infraction)
         self.assertIsInstance(ddf, dict)
         self.assertIsInstance(ddf['ddf'], pd.DataFrame)
         self.assertEqual(['31/01/22', '30/04/22'], ddf['ddf']['referencia'].tolist())

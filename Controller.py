@@ -441,10 +441,9 @@ def get_ddf_for_infraction(infraction: Infraction):
     aiim_item = get_infraction_data_for_analysis_and_infraction(infraction)
     logger.info(f'Gerando DDF para inciso {infraction.inciso}, alínea {infraction.alinea}')
     if aiim_item.planilha:
-        return get_current_audit().get_sheet().get_ddf_from_sheet(aiim_item.planilha, infraction.inciso,
-                                                                  infraction.alinea, aiim_item.item)
+        return get_current_audit().get_sheet().get_ddf_from_sheet(aiim_item.planilha, infraction, aiim_item.item)
     else:
-        return {'inciso': infraction.inciso, 'alinea': infraction.alinea,
+        return {'infracao': infraction,
                 'mensal': True,
                 'ddf': aiim_item.verificacao.function_ddf(infraction, aiim_item.df)}
 
@@ -473,10 +472,6 @@ def send_notification_with_files_digital_receipt():
         get_current_audit().save()
     else:
         raise Exception('Ocorreu um erro na geração da notificação do recibo.')
-
-
-def troca_palavras_chave_no_relato(relato_padrao: str, infracao: Audit.PossibleInfraction):
-    raise Exception('eita')
 
 
 def __update_ufesp_on_aiim2003():
@@ -688,7 +683,7 @@ def nfe_inutilizados_download(ws: SeleniumWebScraper, window: sg.Window, evento:
     try:
         resultado = ws.get_nfe_inutilizacoes(get_current_audit().cnpj,
                                              get_current_audit().inicio_auditoria.year,
-                                             get_current_audit().fim_auditoria.year)
+                                             get_current_audit().fim_auditoria.year + 1)
         if evento.is_set():
             window.write_event_value('-DATA-EXTRACTION-STATUS-', ['NFeEmit-DOWNLOAD', 'STOP'])
         else:
@@ -708,13 +703,15 @@ def nfe_inutilizados_populate_database(inutilizacoes: list, evento: threading.Ev
             CREATE TABLE NFE_INUTILIZACAO (
                 SERIE INT NOT NULL,
                 INICIO INT NOT NULL,
-                FIM INT NOT NULL
+                FIM INT NOT NULL,
+                INUTILIZACAO DATE NOT NULL
             );""")
         for inutilizacao in inutilizacoes:
-            postgres.executa_transacao('INSERT INTO NFE_INUTILIZACAO VALUES (%s, %s, %s);',
+            postgres.executa_transacao('INSERT INTO NFE_INUTILIZACAO VALUES (%s, %s, %s, %s);',
                                        (int(inutilizacao['serie']),
                                         int(inutilizacao['inicio']),
-                                        int(inutilizacao['fim'])
+                                        int(inutilizacao['fim']),
+                                        datetime.strptime(inutilizacao['timestamp'].split()[0], '%d/%m/%Y')
                                         ))
 
 
@@ -946,7 +943,8 @@ def declare_operations_in_aiim():
     if get_current_audit().situacao == 'Ativo':
         last_expected_activity = GeneralFunctions.first_day_of_month_before(datetime.today())
     else:
-        last_expected_activity = get_current_audit().inicio_situacao
+        last_expected_activity = get_current_audit().inicio_situacao - timedelta(days=1)
+        last_expected_activity = date(last_expected_activity.year, last_expected_activity.month, 1)
     with SeleniumWebScraper(get_current_audit().reports_path(), hidden=False) as ws:
         while len(ops) < 12 or (len(ops) > 0 and ops.index[0].date() < last_expected_activity):
             # roda relatório com período de 1 ano pra tentar pegar 12 meses de movimento

@@ -332,7 +332,7 @@ class ExcelDDFs:
             if alinea in ['h', 'i', 'j']:
                 resultado['davb'] = resultado['dij']
             else:
-                raise Exception(f'Não sei ainda tratar o DAVB para a alinea {alinea}!')
+                raise Exception(f'Não sei ainda tratar o DAVB para planilha de glosa de créditos para a alinea {alinea}!')
             return resultado
         except Exception as e:
             logger.exception('Ocorreu uma falha ao copiar a planilha de créditos '
@@ -384,7 +384,7 @@ class ExcelDDFs:
                         cell.value = f'TOTAL ITEM {item}'
         self.salva_planilha()
 
-    def get_ddf_from_sheet(self, sheet_name: str, inciso: str, alinea: str, item: int = 1):
+    def get_ddf_from_sheet(self, sheet_name: str, infraction: Infraction, item: int = 1):
         sheet = self.planilha(sheet_name)
         is_monthly_grouped = len(list(filter(lambda k: k.upper() == 'MÊS', sheet.keys()))) > 0
         titulos_planilha = sheet.keys().tolist()
@@ -417,13 +417,13 @@ class ExcelDDFs:
 
         aba['referencia'] = aba['referencia'].astype('datetime64[ns]')
 
-        if inciso == 'I' and alinea == 'a':
+        if infraction.inciso == 'I' and infraction.alinea == 'a':
             aba['valor'] = aba['valor'].apply(lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
             ddf = aba[['valor', 'referencia']]
             ddf['dia_seguinte'] = ddf['referencia'].apply(
                 lambda d: f'{(d + datetime.timedelta(days=1)).strftime("%d/%m/%y")}'
             )
-        elif inciso == 'I' and alinea in ['b', 'c', 'd', 'i', 'j', 'l']:
+        elif infraction.inciso == 'I' and infraction.alinea in ['b', 'c', 'd', 'i', 'j', 'l']:
             if is_monthly_grouped:
                 vencimentos = self.get_vencimentos_GIA()
                 aba['valor'] = aba['valor'].apply(lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
@@ -444,14 +444,14 @@ class ExcelDDFs:
                 ddf['vencimento'] = ddf['referencia'].apply(
                     lambda d: f'{(d + datetime.timedelta(days=1)).strftime("%d/%m/%y")}'
                 )
-        elif inciso == 'I' and alinea == 'e':
+        elif infraction.inciso == 'I' and infraction.alinea == 'e':
             aba['valor'] = aba['valor'].apply(lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
             ddf = aba[['valor', 'referencia']]
             ddf['davb'] = ddf['referencia'].apply(
                 lambda d: f'{(d + datetime.timedelta(days=1)).strftime("%d/%m/%y")}'
             )
-        elif inciso == 'II':
-            if alinea != 'j' and len(aba.columns) < 4:
+        elif infraction.inciso == 'II':
+            if infraction.alinea != 'j' and len(aba.columns) < 4:
                 raise ExcelArrazoadoIncompletoException(
                     'Planilha precisa ter 2 subtotais: valor básico e imposto, nesta ordem. '
                     'Refaça a totalização da planilha selecionando as 2 colunas simultaneamente, '
@@ -459,14 +459,17 @@ class ExcelDDFs:
             vencimentos = self.get_vencimentos_GIA()
             self.create_creditos_sheet(vencimentos)
             ddf = aba.merge(vencimentos, on='referencia', how='right')
-            ddf = self.generate_creditos_ddf(ddf, alinea, item)
-        elif inciso == 'IV' and alinea == 'b':
+            ddf = self.generate_creditos_ddf(ddf, infraction.alinea, item)
+        elif infraction.inciso == 'IV' and infraction.alinea == 'b':
             aba['valor'] = aba['valor'].apply(lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
             ddf = aba[['referencia', 'valor']]
-        elif inciso == 'V' and alinea in ['a', 'c', 'm']:
+        elif infraction.inciso == 'IV' and infraction.alinea in ['z2', 'z3']:
+            aba['valor'] = aba['valor'].apply(lambda v: f'{v}')
+            ddf = aba[['referencia', 'valor']]
+        elif infraction.inciso == 'V' and infraction.alinea in ['a', 'c', 'm']:
             aba['valor'] = aba['valor'].apply(lambda v: '{:.2f}'.format(float(v)).replace('.', ','))
             ddf = aba[['referencia', 'valor']]
-        elif inciso == 'VII' and alinea == 'a':
+        elif infraction.inciso == 'VII' and infraction.alinea == 'a':
             if len(aba.columns) == 4:
                 aba.columns = ['referencia', 'entrega', 'atraso', 'valor']
                 ddf = aba[['referencia', 'valor', 'atraso']]
@@ -476,7 +479,8 @@ class ExcelDDFs:
                 ddf = aba[['referencia', 'valor']]
                 ddf['atraso'] = None
         else:
-            raise ExcelArrazoadoCriticalException(f'Inciso/alinea não mapeados: {inciso}, {alinea}')
+            raise ExcelArrazoadoCriticalException(f'Inciso/alinea não mapeados: '
+                                                  f'{infraction.inciso}, {infraction.alinea}')
 
         assert type(ddf) == pd.DataFrame, \
             'Não gerou uma listagem: não deve ter dados na planilha, ou os dados não foram bem filtrados'
@@ -486,7 +490,7 @@ class ExcelDDFs:
             lambda d: f'{d.strftime("%d/%m/%y")}'
         )
 
-        return {'inciso': inciso, 'alinea': alinea, 'ddf': ddf, 'mensal': is_monthly_grouped}
+        return {'infracao': infraction, 'ddf': ddf, 'mensal': is_monthly_grouped}
 
     def generate_dados_efds_e_imprime(self, path: Path):
         logger.info('Gerando listagem de EFDs...')
@@ -565,7 +569,8 @@ class ExcelDDFs:
             else:
                 raise Exception(f'Não achei coluna na aba {sheet_name} com um campo contendo "Modelo" ou "Chave"')
         else:
-            modelos = aba[colunas_modelo[0]][aba[colunas_modelo[0]].map(lambda v: np.isfinite(v) and
+            modelos = aba[colunas_modelo[0]][aba[colunas_modelo[0]].map(lambda v: not isinstance(v, str) and
+                                                                                  np.isfinite(v) and
                                                                                   round(v - int(v), 2) == 0)]
         return modelos.sort_values().unique()
 

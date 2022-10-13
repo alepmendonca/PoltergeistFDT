@@ -824,7 +824,7 @@ class SeleniumWebScraper:
             logger.exception("Erro ao consultar cupons SAT na consulta pública")
             raise WebScraperException(f"Erro ao consultar cupons SAT na consulta pública: {e}")
 
-    def get_nfe_inutilizacoes(self, cnpj: str, ano_inicial: int, ano_final: int) -> list[dict]:
+    def get_nfe_inutilizacoes(self, cnpj: str, ano_inicial: int, ano_final: int, print=False) -> list[dict|Path]:
         logger.info("Consultando NF-e Inutilizações")
         self.__get_driver().get(nfe_consulta_url)
 
@@ -860,7 +860,11 @@ class SeleniumWebScraper:
                 tabela = self.__get_driver().find_element(By.CLASS_NAME, "gridViewTable")
                 if len(tabela.find_elements(By.XPATH, './/tbody/tr')) == 1 \
                         and tabela.find_element(By.XPATH, './/tbody/tr/td').text == 'Nenhum registro encontrado':
-                    return inutilizacoes
+                    if print:
+                        pdf_file = self.tmp_path / f'sem_inutilizacoes_{ano}.pdf'
+                        self.__save_as_pdf(pdf_file)
+                        inutilizacoes.append(pdf_file)
+                    continue
                 try:
                     paginador = self.__get_driver().find_element(By.CLASS_NAME, "gridViewPager")
                     paginas = len(paginador.find_elements(By.XPATH, '//td/table/tbody/tr/td'))
@@ -869,12 +873,18 @@ class SeleniumWebScraper:
                 for pagina in range(1, paginas + 1):
                     linhas = self.__get_driver().find_elements(By.CLASS_NAME, 'gridViewRow')
                     linhas.extend(self.__get_driver().find_elements(By.CLASS_NAME, 'gridViewRowAlternate'))
-                    inutilizacoes.extend(
-                        {
-                            'serie': linha.find_elements(By.TAG_NAME, 'td')[1].text,
-                            'inicio': linha.find_elements(By.TAG_NAME, 'td')[2].text,
-                            'fim': linha.find_elements(By.TAG_NAME, 'td')[3].text
-                        } for linha in linhas)
+                    if print:
+                        pdf_file = self.tmp_path / f'inutilizacoes_{ano}_{pagina}.pdf'
+                        self.__save_as_pdf(pdf_file)
+                        inutilizacoes.append(pdf_file)
+                    else:
+                        inutilizacoes.extend(
+                            {
+                                'serie': linha.find_elements(By.TAG_NAME, 'td')[1].text,
+                                'inicio': linha.find_elements(By.TAG_NAME, 'td')[2].text,
+                                'fim': linha.find_elements(By.TAG_NAME, 'td')[3].text,
+                                'timestamp': linha.find_elements(By.TAG_NAME, 'td')[5].text
+                            } for linha in linhas)
                     if pagina < paginas:
                         self.__get_driver().find_element(
                             By.XPATH, f'//*[@class="gridViewPager"]/td/table/tbody/tr/td[{pagina + 1}]').click()
@@ -1441,8 +1451,20 @@ class SeleniumWebScraper:
                 .select_by_visible_text("Pessoa Jurídica")
             cnpj_digits = re.sub(r"[^\d]", "", cnpj)
             self.__get_driver().find_element(By.ID, "ConteudoPagina_txtDoc").send_keys(cnpj_digits)
-            self.__get_driver().find_element(By.ID, "ConteudoPagina_btnDadosMensagem").click()
-            self.__get_driver().find_element(By.ID, "ConteudoPagina_btnDadosEstabelecimento").click()
+            try:
+                self.__get_driver().find_element(By.ID, "ConteudoPagina_btnDadosMensagem").click()
+                self.__get_driver().find_element(By.ID, "ConteudoPagina_btnDadosEstabelecimento").click()
+            except UnexpectedAlertPresentException:
+                alert = self.__get_driver().switch_to.alert
+                alert_text = alert.text
+                alert.accept()
+                self.__get_driver().switch_to.default_content()
+                if 'estado impeditivo' in alert_text:
+                    raise WebScraperException('Contribuinte está com situação cadastral que impede uso do DEC!'
+                                              ' Atualize os dados da Fiscalizada no menu Editar!')
+                else:
+                    raise WebScraperException(f'Ocorreu problema inesperado no DEC: {alert_text}')
+
 
             # Preenchidos os metadados da notificação, enxerta o HTML da notificação diretamente
             # Relembrando HTML...

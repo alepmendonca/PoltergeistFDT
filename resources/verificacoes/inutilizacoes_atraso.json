@@ -1,0 +1,23 @@
+{
+  "consulta": "/**\n * Verifica casos de inutilização intempestiva\n */\nWITH inutilizadas AS (\n\tSELECT generate_series(inicio, fim) AS numero, serie, inutilizacao FROM nfe_inutilizacao\n), next_nfe AS (\n\tSELECT min(nfe.numero) AS nfe_quebra, ni.serie, ni.numero, ni.inutilizacao\n\tFROM nfe JOIN inutilizadas ni ON nfe.numero > ni.numero AND nfe.serie = ni.serie \n\tWHERE nfe.cnpj_emit = cnpj_auditoria()\n\tGROUP BY 2, 3, 4\n)\nSELECT 55 as \"Modelo\", next_nfe.numero AS \"Número Inutilizado\", next_nfe.serie AS \"Série\", \n\tnext_nfe.nfe_quebra AS \"Primeira NF-e ap\u00f3s Quebra da Sequ\u00eancia\", \n\tnfe.emissao AS \"Primeira Emiss\u00e3o ap\u00f3s Quebra\",\n\tend_of_month(nfe.emissao) + 10 AS \"Limite para inutilização\",\n\tnext_nfe.inutilizacao AS \"Data da Inutilização\"\nFROM nfe JOIN next_nfe ON nfe.numero = next_nfe.nfe_quebra AND nfe.serie = next_nfe.serie\nWHERE end_of_month(nfe.emissao) + 10 < next_nfe.inutilizacao\nORDER BY 7",
+  "infracoes": {
+    "IVz2-nao_inutilizacao": {
+      "provas": [
+        {
+          "descricao": "Listagem de inutilizações realizadas com atraso",
+          "tipo": "listagem"
+        },
+        {
+          "descricao": "Extrato de inutilizações realizadas pelo contribuinte",
+          "tipo": "NFe-Inutilizacao"
+        }
+      ],
+      "nome": "Atraso Inutilização",
+      "relato": "Realizou com atraso, em desacordo com o prazo regulamentar, a inutilização de documentos fiscais eletrônicos <modelos>, conforme se comprova pelos documentos juntados no Anexo do item.",
+      "relatorio_circunstanciado": "o contribuinte foi autuado por ter realizado a inutilização de numeração de documentos fiscais eletrônicos com atraso, comparativamente ao prazo regulamentar definido em Portaria CAT, tendo sido verificado o atraso comparando a data da inutilização com a data da quebra de sequência de numeração, por meio de levantamento de documentos fiscais emitidos pelo contribuinte com numeração seguinte aos números inutilizados.",
+      "tipo": "Solicitação após transcurso de prazo"
+    }
+  },
+  "planilha_nome": "Inutilização atraso",
+  "verificacao": "Inutilizações de NF-e com atraso"
+}

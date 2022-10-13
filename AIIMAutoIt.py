@@ -58,7 +58,7 @@ class AIIMAutoIt:
         if autoit.control_get_text(window, handle) != texto:
             autoit.control_set_text(window, handle, texto)
 
-    def __focus_and_send(self, handle: str, nome_handle: str, texto: str, janela=None):
+    def __focus_and_send(self, handle: str, nome_handle: str, texto: str, janela=None, combo=False):
         window = janela if janela is not None else self.titulo_janela
         autoit.win_activate(window)
         try:
@@ -66,7 +66,11 @@ class AIIMAutoIt:
         except AutoItError:
             raise Exception(f'Não conseguiu achar caixa de texto de {nome_handle} no AIIM2003. '
                             f'Será que você não andou mexendo no computador?')
-        autoit.control_send(window, handle, texto)
+        if combo and len(texto) > 1:
+            position = autoit.control_command(window, handle, 'FindString', extra=texto)
+            autoit.control_command(window, handle, 'SetCurrentSelection', extra=position)
+        else:
+            autoit.control_send(window, handle, texto)
 
     def __save_and_exit(self):
         autoit.win_activate(self.titulo_janela)
@@ -171,7 +175,7 @@ class AIIMAutoIt:
         autoit.control_send(dialogo, handle, '{HOME}')
         for i in range(1, opcao):
             autoit.control_send(dialogo, handle, '{DOWN}')
-        time.sleep(int(0.5*opcao))
+        time.sleep(int(0.5 * opcao))
 
     def __wait_dialog_and_click(self, dialogo, button, wait=True):
         if wait:
@@ -212,6 +216,17 @@ class AIIMAutoIt:
     def preenche_ddf_com_livros_meses(self, livros, meses):
         self.__focus_and_set_text('[CLASS:ThunderRT6TextBox; INSTANCE:16]', 'Livros', livros)
         self.__focus_and_set_text('[CLASS:ThunderRT6TextBox; INSTANCE:15]', 'Meses', meses)
+        self.__click_and_wait("[CLASS:ThunderRT6CommandButton; INSTANCE:11]")
+
+    def preenche_ddf_documentos_tipo(self, referencia, documentos, tipo):
+        self.__focus_and_set_text('[CLASS:ThunderRT6TextBox; INSTANCE:16]', 'Documentos', documentos)
+        self.__focus_and_set_text("[CLASS:MSMaskWndClass; INSTANCE:5]", 'Fato Gerador', referencia)
+        if tipo == 'Falta de solicitação':
+            item = 1
+        else:
+            item = 2
+        self.__wait_dialog_and_select_item(self.titulo_janela, '[CLASS:ThunderRT6ComboBox; INSTANCE:5]',
+                                           'Tipo de Operação', item)
         self.__click_and_wait("[CLASS:ThunderRT6CommandButton; INSTANCE:11]")
 
     def preenche_ddf_tipo_operacao(self, dcm, valor, atraso):
@@ -383,8 +398,8 @@ class AIIMAutoIt:
             raise Exception(f'Não foi localizado o item {item} no AIIM, verifique se não foi mudado manualmente.')
         self.limpa_ddf()
         logger.info('Preenchendo DDF do item no AIIM2003')
-        inciso = dicionario['inciso']
-        alinea = dicionario['alinea']
+        inciso = dicionario['infracao'].inciso
+        alinea = dicionario['infracao'].alinea
         if inciso == 'I' and alinea == 'a':
             for index, row in dicionario['ddf'].iterrows():
                 self.preenche_ddf_dci_davb(row['valor'], row['referencia'], row['dia_seguinte'])
@@ -405,6 +420,9 @@ class AIIMAutoIt:
         elif inciso == 'IV' and alinea == 'b':
             for index, row in dicionario['ddf'].iterrows():
                 self.preenche_ddf_valor_basico(row['referencia'], row['valor'], row['referencia'])
+        elif inciso == 'IV' and alinea in ['z2', 'z3']:
+            for index, row in dicionario['ddf'].iterrows():
+                self.preenche_ddf_documentos_tipo(row['referencia'], row['valor'], dicionario['infracao'].ddf_type)
         elif inciso == 'V' and alinea in ['a', 'c']:
             for index, row in dicionario['ddf'].iterrows():
                 if len(row) == 1:
@@ -457,7 +475,7 @@ class AIIMAutoIt:
         self.__click_and_wait('[CLASS:ThunderRT6CommandButton; INSTANCE:29]')
         self.__focus_and_send('[CLASS:ThunderRT6ComboBox; INSTANCE:13]', 'Inciso',
                               str(aiim_item.infracao.inciso_number()))
-        self.__focus_and_send('[CLASS:ThunderRT6ComboBox; INSTANCE:12]', 'Alínea', aiim_item.infracao.alinea)
+        self.__focus_and_send('[CLASS:ThunderRT6ComboBox; INSTANCE:12]', 'Alínea', aiim_item.infracao.alinea, combo=True)
 
         if aiim_item.infracao.operation_type:
             if aiim_item.infracao.operation_type == "Tributada":

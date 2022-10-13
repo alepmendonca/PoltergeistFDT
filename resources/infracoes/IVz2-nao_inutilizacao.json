@@ -1,0 +1,14 @@
+{
+	"ttpa": [1],
+	"relato": "Deixou de realizar a inutilização de documentos fiscais eletrônicos <modelos>, conforme se comprova pelos documentos juntados no Anexo do item.",
+	"relatorio_circunstanciado": "o contribuinte foi autuado por não ter realizado a inutilização de numeração de documentos fiscais eletrônicos, tendo sido verificada a quebra de sequência de numeração ao levantar os documentos fiscais emitidos pelo contribuinte.",
+	"nome": "Sem Inutilização",
+	"tipo": "Falta de solicitação",
+	"capitulacao": {
+		"limpa": false
+	},
+	"provas": [
+        {"tipo": "listagem", "descricao": "Listagem de números de documentos fiscais não emitidos pelo contribuinte, constituindo quebra de sequência"},
+		{"tipo": "NFe-Inutilizacao", "descricao": "Listagem de inutilizações de NF-e realizadas pelo contribuinte"}
+      ]
+}

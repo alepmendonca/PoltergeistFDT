@@ -5,6 +5,7 @@
     <file url="file://$PROJECT_DIR$/resources/infracoes/IIj-destaque_maior_df.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/IIj.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/IVb.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/IVz2-nao_inutilizacao.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Ia.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Ib.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Ic-aliq_errada.json" charset="windows-1252" />
@@ -46,8 +47,10 @@
     <file url="file://$PROJECT_DIR$/resources/verificacoes/falta_livros.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/gia_atrasada.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/gia_nao_entregue.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/inutilizacoes_atraso.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/nao_exibicao_LRI.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/nao_exibicao_livros.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/nfe_nao_inutilizada.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/outros_creditos.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/saidas_RPA_indicacao_SN.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/saidas_aliq_errada.json" charset="windows-1252" />

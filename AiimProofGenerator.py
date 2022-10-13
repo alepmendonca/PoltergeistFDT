@@ -343,10 +343,16 @@ def get_efd_entregas(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed
     return [file_path]
 
 
+def get_nfe_inutilizacoes(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:
+    return ws.get_nfe_inutilizacoes(get_current_audit().cnpj,
+                                    get_current_audit().inicio_auditoria.year,
+                                    get_current_audit().fim_auditoria.year + 1,
+                                    print=True)
+
+
 def get_item_credit_sheet(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:
     if item.infracao.inciso != 'II':
         return []
     else:
         # TODO gerar PDF com as 2 planilhas de "Glosa do Item x.xlsx"
         return []
-

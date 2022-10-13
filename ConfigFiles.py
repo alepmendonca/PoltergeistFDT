@@ -227,7 +227,7 @@ class Analysis:
         return self.name < other.name
 
     def infraction_names(self) -> list[str]:
-        return [i.name for i in self.infractions]
+        return [i.nome for i in self.infractions]
 
     def get_infraction(self, searched_infraction: str):
         infractions = list(filter(lambda i: i.name == searched_infraction, self.infractions))
@@ -282,7 +282,9 @@ class AiimProof:
         'EFD-Obrigatoriedade': {'modulo': 'AiimProofGenerator', 'funcao': 'get_efd_obrigatoriedade',
                                 'nome': 'EFD - Obrigatoriedade'},
         'EFD-Extrato': {'modulo': 'AiimProofGenerator', 'funcao': 'get_efd_entregas',
-                        'nome': 'EFD - Entregas'}
+                        'nome': 'EFD - Entregas'},
+        'NFe-Inutilizacao': {'modulo': 'AiimProofGenerator', 'funcao': 'get_nfe_inutilizacoes',
+                             'nome': 'NF-e - Inutilização'}
     }
 
     @classmethod
@@ -355,7 +357,7 @@ class Infraction:
         self._analysis = None
         self.planilha_titulo = None
         self.inciso = re.search(r'^[A-Z]+', self.filename).group()
-        self.alinea = re.search(r'[a-z]+', self.filename).group()
+        self.alinea = re.search(r'[a-z]+[1-9]*', self.filename).group()
         self.relatorio_circunstanciado = None
         self.provas: list[AiimProof] = []
         try:
@@ -376,6 +378,10 @@ class Infraction:
             if self.operation_type and self.operation_type not in ('Tributada', 'Não Tributada', 'Isenta'):
                 raise ConfigFileDecoderException(f'Arquivo de infração {json_file} tem um '
                                                  f'tipo de operação inválido: {self.operation_type}')
+            self.ddf_type = dados.get('tipo')
+            if self.ddf_type and self.ddf_type not in ('Falta de solicitação', 'Solicitação após transcurso de prazo'):
+                raise ConfigFileDecoderException(f'Arquivo de infração {json_file} tem um '
+                                                 f'tipo de DDF inválido: {self.ddf_type}')
             if dados.get('capitulacao'):
                 self.capitulation = InfractionCapitulation(self.filename, dados['capitulacao'])
             if dados.get('relatorio_circunstanciado'):
@@ -386,10 +392,14 @@ class Infraction:
                                              f'um parâmetro obrigatório: {e.args}')
 
     def update(self, dicionario: dict):
+        if dicionario.get('nome'):
+            self.nome = dicionario['nome']
         if dicionario.get('relato'):
             self.report = dicionario['relato']
         if dicionario.get('ordem'):
             self.order = dicionario['ordem']
+        if dicionario.get('tipo'):
+            self.ddf_type = dicionario['tipo']
         if dicionario.get('ttpa'):
             self.ttpa = dicionario['ttpa']
         if dicionario.get('capitulacao'):
@@ -432,7 +442,7 @@ class Infraction:
                (self.inciso_number() == other.inciso_number() and self.alinea < other.alinea)
 
     def __repr__(self):
-        return f'{self.inciso},"{self.alinea}"' if not self.nome else f'{self.inciso},"{self.alinea}" - {self.nome}'
+        return self.__str__()
 
     def __str__(self):
         return f'{self.inciso},"{self.alinea}"' if not self.nome else f'{self.inciso},"{self.alinea}" - {self.nome}'
