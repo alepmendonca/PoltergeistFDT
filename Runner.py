@@ -325,7 +325,7 @@ def verification_chosen_for_notification(notification: PossibleInfraction = None
         window['-NOTIFICATION-EDIT-'].update(notification.verificacao.notification_body, disabled=False)
         if notification.verificacao.has_notification_any_attachments():
             window['-NOTIFICATION-ATTACHMENTS-'].update(disabled=False)
-        window['-NOTIFICATION-SEND-'].update(disabled=False)
+        window['-NOTIFICATION-SEND-'].update(disabled=not get_current_audit().is_contribuinte_ativo())
         window['-NOTIFICATION-MANUAL-SEND-'].update(disabled=False)
     else:
         window['-NOTIFICATION-EDIT-TITLE-'].update('', disabled=True)
@@ -375,7 +375,8 @@ def aiim_item_chosen(aiim_item: AiimItem):
                 if aiim_item.notificacao_resposta:
                     window['-AIIM-ITEM-DATA-'].update(f' (Resposta: {aiim_item.notificacao_resposta})', append=True)
                 window['-AIIM-ITEM-DATA-'].update('\n', append=True)
-                window['-AIIM-UPDATE-NOTIF-ANSWER-'].update(visible=not aiim_item.notificacao_resposta)
+                window['-AIIM-UPDATE-NOTIF-ANSWER-'].update(visible=aiim_item.notificacao and
+                                                                    not aiim_item.notificacao_resposta)
             if aiim_item.relatorio_circunstanciado():
                 window['-AIIM-ITEM-DATA-'].update('Relatório Circunstanciado: ',
                                                   font_for_value=('Arial', 10, 'bold'), append=True)
@@ -851,8 +852,6 @@ def window_event_handler():
                 analysis_chosen(values[event][0])
             else:
                 refresh_analysis_tab()
-        elif event == '-NEW-ANALYSIS-':
-            AnalysisWizardWindow()
         elif event == '-QUERY-':
             run_query(values['-ANALYSIS-CHOSEN-'][0], values['-SQL-'])
         elif event == '-NOTIFICATION-TAB-':
@@ -953,6 +952,8 @@ def window_event_handler():
             WaitWindow.open_wait_window(Controller.update_dados_osf, 'Atualizar Dados do Contribuinte',
                                         get_current_audit().osf)
             __refresh_tabs(get_current_audit().path())
+        elif event.endswith('-MENU-CREATE-ANALYSIS-'):
+            AnalysisWizardWindow()
         elif event.endswith('-MENU-OPEN-SHEET-'):
             subprocess.Popen(f"{GeneralFunctions.get_default_windows_app('.xlsx')} "
                              f'"{get_current_audit().get_sheet().planilha_path.absolute()}"')

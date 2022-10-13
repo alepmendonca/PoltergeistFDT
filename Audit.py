@@ -417,6 +417,9 @@ class Audit:
             endereco += f' - {self.complemento}'
         return endereco + f' - {self.bairro} - {self.cidade}/{self.uf} - CEP {self.cep}'
 
+    def is_contribuinte_ativo(self) -> bool:
+        return self.situacao == 'Ativo'
+
     def __eq__(self, other):
         return self._path_name == other._path_name
 

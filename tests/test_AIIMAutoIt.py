@@ -23,12 +23,10 @@ class AIIMAutoItTest(unittest.TestCase):
         mock_autoit.control_get_text.side_effect = _get_text_mock
         ddf_one_for_all = pd.DataFrame(columns=['referencia', 'valor', 'valor_basico', 'dci', 'dij',
                                                 'dcm', 'davb', 'dia_seguinte', 'vencimento',
-                                                'Livros', 'Meses', 'atraso'],
+                                                'Livros', 'Meses', 'atraso', 'documentos', ],
                                        data=[['01/01/2022', '100,20', '50,00', '01/01/2022', '01/01/2022',
                                               '31/01/2022', '31/12/2022', '02/01/2022', '20/02/2022',
-                                              '1', '2', '150']])
+                                              '1', '2', '150', '1']])
         for infraction in Infraction.all_default_infractions():
             aiim2003.preenche_ddf('1.111.111-1', 1, 1,
-                                  {'inciso': infraction.inciso,
-                                   'alinea': infraction.alinea,
-                                   'ddf': ddf_one_for_all})
+                                  {'infracao': infraction, 'ddf': ddf_one_for_all})
