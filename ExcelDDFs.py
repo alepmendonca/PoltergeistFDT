@@ -611,9 +611,9 @@ class ExcelDDFs:
         # refresh via com, para salvar os valores calculados
         refresh_planilha(caminho)
 
-    def exporta_relatorio_para_planilha(self, sheet_name: str, analysis: Analysis, df: pd.DataFrame):
+    def exporta_relatorio_para_planilha(self, sheet_name: str, analysis: Analysis, df: pd.DataFrame, principal=True):
         self._exporta_relatorio_para_planilha(sheet_name, analysis, df)
-        if len(analysis.filter_columns()) > 0:
+        if principal and len(analysis.filter_columns()) > 0:
             for infraction in analysis.infractions:
                 self._exporta_relatorio_para_planilha(sheet_name, analysis, df, infraction=infraction)
         self.salva_planilha()

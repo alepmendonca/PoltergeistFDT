@@ -78,7 +78,15 @@ def get_aiim_listing_from_sheet(item: AiimItem, ws: SeleniumWebScraper, pva: EFD
         return []
     logger.info('Gerando listagem inicial a partir da planilha...')
     return [get_current_audit().get_sheet().imprime_planilha(item.planilha,
-                                                             ws.tmp_path / f'lista{item.item}.pdf',
+                                                             ws.tmp_path / f'lista{item.item}.pdf')]
+
+
+def get_aiim_detailed_listing_from_sheet(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:
+    if not item.planilha_detalhe:
+        return []
+    logger.info('Gerando listagem detalhada a partir da planilha...')
+    return [get_current_audit().get_sheet().imprime_planilha(item.planilha_detalhe,
+                                                             ws.tmp_path / f'lista_detalhe{item.item}.pdf',
                                                              item=item.item)]
 
 

@@ -234,10 +234,13 @@ def print_sheet(notification: PossibleInfraction, max_size: int = 0) -> list[Pat
     pdf_path = Path('tmp') / (notification.verificacao.notification_attachments + '.pdf')
     pdf_path = pdf_path.absolute()
     get_current_audit().get_sheet().imprime_planilha(notification.planilha, pdf_path)
-    if max_size == 0:
-        return [pdf_path]
-    else:
-        return PDFExtractor.split_pdf(pdf_path, max_size)
+    paths = PDFExtractor.split_pdf(pdf_path, max_size)
+    if notification.planilha_detalhe is not None:
+        pdf_path = Path('tmp') / f'{notification.verificacao.notification_attachments}-detalhe.pdf'
+        pdf_path = pdf_path.absolute()
+        get_current_audit().get_sheet().imprime_planilha(notification.planilha_detalhe, pdf_path)
+        paths.extend(PDFExtractor.split_pdf(pdf_path, max_size))
+    return paths
 
 
 def print_sheet_and_open(notification: PossibleInfraction):
@@ -295,8 +298,8 @@ def get_possible_infractions_osf() -> list[PossibleInfraction]:
         return []
 
 
-def add_analysis_to_audit(analysis: Analysis, planilha=None, df: pd.DataFrame = None):
-    notificacao = Audit.PossibleInfraction(analysis, planilha, df)
+def add_analysis_to_audit(analysis: Analysis, planilha=None, df: pd.DataFrame = None, planilha_detalhe=None):
+    notificacao = Audit.PossibleInfraction(analysis, planilha, df, planilha_detalhe)
     get_current_audit().notificacoes.append(notificacao)
     get_current_audit().save()
     resultado = analysis.choose_between_notification_and_infraction()
@@ -320,7 +323,7 @@ def move_analysis_from_notification_to_aiim(notification: PossibleInfraction, nu
             if notification.df is not None or \
                     (planilha and planilha in get_current_audit().get_sheet().get_sheet_names()):
                 aiim_item = Audit.AiimItem(infraction.filename, notification.verificacao, 0, num_dec, None,
-                                           planilha, notification.df)
+                                           planilha, notification.df, notification.planilha_detalhe)
                 full_path = aiim_item.notification_response_path()
                 get_current_audit().aiim_itens.append(aiim_item)
     remove_notification(notification)

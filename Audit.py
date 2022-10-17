@@ -15,9 +15,10 @@ from WordReport import WordReport
 
 
 class PossibleInfraction:
-    def __init__(self, analysis: Analysis, planilha: str, df: pd.DataFrame | list[list]):
+    def __init__(self, analysis: Analysis, planilha: str, df: pd.DataFrame | list[list], planilha_detalhe: str):
         self.verificacao: Analysis = analysis
         self.planilha = planilha
+        self.planilha_detalhe = planilha_detalhe
         if isinstance(df, pd.DataFrame) or df is None:
             self.df = df
         else:
@@ -106,8 +107,9 @@ class PossibleInfraction:
 class AiimItem(PossibleInfraction):
 
     def __init__(self, infraction_name: str, analysis: Analysis, item: int, notificacao: str,
-                 notificacao_resposta: str, planilha: str, df: pd.DataFrame | list[list]):
-        super().__init__(analysis, planilha, df)
+                 notificacao_resposta: str, planilha: str, df: pd.DataFrame | list[list],
+                 planilha_detalhe: str):
+        super().__init__(analysis, planilha, df, planilha_detalhe)
         self._proofs_dfs_list = None
         self.infracao: Infraction
         infracao = list(filter(lambda i: i.filename == infraction_name, self.verificacao.infractions))
@@ -301,7 +303,8 @@ class Audit:
                 if not analysis:
                     raise ConfigFileDecoderException(f'Não existe verificação chamada {x["verificacao"]}. '
                                                      f'Altere manualmente o arquivo de configurações da auditoria.')
-                self.notificacoes.append(PossibleInfraction(analysis, x.get('planilha', None), x.get('df', None)))
+                self.notificacoes.append(PossibleInfraction(analysis, x.get('planilha', None), x.get('df', None),
+                                                            x.get('planilha_detalhe', None)))
         self.aiim_itens = []
         if self._dicionario.get('infracoes', None):
             self.aiim_itens = []
@@ -312,7 +315,8 @@ class Audit:
                                                      f'Altere manualmente o arquivo de configurações da auditoria.')
                 self.aiim_itens.append(AiimItem(x['infracao'], analysis, x.get('item', None),
                                                 x.get('notificacao', None), x.get('notificacao_resposta', None),
-                                                x.get('planilha', None), x.get('df', None)))
+                                                x.get('planilha', None), x.get('df', None),
+                                                x.get('planilha_detalhe', None)))
 
     def aiim_number_no_digit(self) -> int:
         return int(re.sub(r'[^\d]', '', self.aiim_number)[:-1])
