@@ -70,7 +70,7 @@ def split_pdf(filename: Path, max_size: int) -> list[Path]:
     if not filename.is_file():
         return []
 
-    if int(filename.stat().st_size / 1024 / 1024) < max_size:
+    if max_size <= 0 or int(filename.stat().st_size / 1024 / 1024) < max_size:
         return [filename]
 
     GeneralFunctions.logger.info(f'Dividindo arquivo {filename.name} em arquivos de no máximo {max_size}Mb...')

@@ -71,6 +71,12 @@ def open_query_result_window(total: int, resultado: pd.DataFrame, query: str, an
                     if query and len(resultado) != total:
                         _, resultado = Controller.executa_consulta_BD(query)
                     excel.exporta_relatorio_para_planilha(values['-NEW-SHEET-NAME-'], analysis, resultado)
+                    if analysis.query_detail is not None:
+                        _, resultado = Controller.executa_consulta_BD(analysis.query_detail)
+                        detalhe = f"{values['-NEW-SHEET-NAME-']} - Detalhe"
+                        excel.exporta_relatorio_para_planilha(detalhe,
+                                                              analysis, resultado, principal=False)
+                        retorno['planilha_detalhe'] = detalhe
                 except Exception as e:
                     sg.popup_error(f'Erro na exportação da tabela para Excel: {str(e)}', title='Erro')
             retorno['planilha'] = values['-NEW-SHEET-NAME-']

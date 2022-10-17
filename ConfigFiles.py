@@ -190,6 +190,7 @@ class Analysis:
                                      f"Verifique o cadastro da verificação {self.name}")
                 self.ddf_headers = dados['funcao'].get('cabecalho', ['Referência'])
                 self.query = None
+                self.query_detail = None
             self.fix_database_function = None
             if dados.get('acerto_base', None):
                 self.fix_database_function = getattr(modulo, dados['acerto_base'])
@@ -259,6 +260,8 @@ class AiimProof:
     proof_types = {
         'listagem': {'modulo': 'AiimProofGenerator', 'funcao': 'get_aiim_listing_from_sheet',
                      'nome': 'Planilha'},
+        'listagem-detalhe': {'modulo': 'AiimProofGenerator', 'funcao': 'get_aiim_detailed_listing_from_sheet',
+                             'nome': 'Planilha Detalhada'},
         'creditos': {'modulo': 'AiimProofGenerator', 'funcao': 'get_item_credit_sheet',
                      'nome': 'Glosa de Créditos'},
         'LRE': {'modulo': 'AiimProofGenerator', 'funcao': 'get_lre', 'allows_sampling': True,

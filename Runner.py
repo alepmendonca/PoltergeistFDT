@@ -127,7 +127,9 @@ def __refresh_tabs(pasta: Path):
         window['pasta'].update(f"Pasta inicial da fiscalização: {get_current_audit().path()}")
         window['osf'].update(f'OSF: {get_current_audit().osf}')
         window['empresa'].update(f'{get_current_audit().empresa} - CNPJ {get_current_audit().cnpj} - '
-                                 f'IE {get_current_audit().ie if get_current_audit() else "Não Informada"}')
+                                 f'IE {get_current_audit().ie if get_current_audit() else "Não Informada"} - '
+                                 f'Situação {get_current_audit().situacao} '
+                                 f'desde {get_current_audit().inicio_situacao.strftime("%d/%m/%Y")}')
         window['endereco'].update(f'Endereço: {get_current_audit().endereco_completo()}')
         window['periodo'].update(f'Período de Fiscalização: '
                                  f'{get_current_audit().inicio_auditoria.strftime("%m/%Y")} '
@@ -313,7 +315,9 @@ def run_query(analysis: Analysis, query: str):
                 try:
                     Controller.add_analysis_to_audit(
                         analysis,
-                        planilha=dic_query.get('planilha', None), df=dic_query.get('df', None))
+                        planilha=dic_query.get('planilha', None), df=dic_query.get('df', None),
+                        planilha_detalhe=dic_query.get('planilha_detalhe', None)
+                    )
                 except Controller.AIIMGeneratorUserWarning as e:
                     GUIFunctions.popup_erro(str(e), titulo='Aviso')
                 refresh_analysis_tab()
@@ -355,6 +359,9 @@ def aiim_item_chosen(aiim_item: AiimItem):
             if aiim_item.planilha:
                 window['-AIIM-ITEM-DATA-'].update(f'Planilha: ', font_for_value=('Arial', 10, 'bold'), append=True)
                 window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.planilha}\n', append=True)
+            if aiim_item.planilha_detalhe:
+                window['-AIIM-ITEM-DATA-'].update(f'Planilha Detalhada: ', font_for_value=('Arial', 10, 'bold'), append=True)
+                window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.planilha_detalhe}\n', append=True)
             if aiim_item.has_aiim_item_number():
                 window['-AIIM-ITEM-DATA-'].update('Item no AIIM 2003: ', font_for_value=('Arial', 10, 'bold'),
                                                   append=True)
