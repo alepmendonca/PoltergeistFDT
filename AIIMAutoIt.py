@@ -14,7 +14,7 @@ import GeneralFunctions
 from autoit import AutoItError
 from Audit import Audit, AiimItem
 from GeneralFunctions import logger
-from MDBReader import MDBReader
+from MDBReader import AIIM2003MDBReader
 
 
 def dismiss_browser_alert(parte_titulo: str):
@@ -769,7 +769,7 @@ class AIIMAutoIt:
             self.__wait_dialog_and_select_item(popup, '[CLASS:ListView20WndClass; INSTANCE:1]',
                                                'Autos cadastrados', aiim_posicao)
         self.__click_and_wait('[CLASS:ThunderRT6CommandButton; INSTANCE:1]', janela=popup)
-        with MDBReader() as aiim2003:
+        with AIIM2003MDBReader() as aiim2003:
             is_aiim_open = aiim2003.is_aiim_open_to_edition(numero_sem_serie)
         if is_aiim_open:
             if data_lavratura:

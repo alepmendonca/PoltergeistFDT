@@ -1,3 +1,4 @@
+import datetime
 import json
 import re
 import keyring
@@ -27,6 +28,8 @@ class Configuration:
         'DRT-15': 'DELEGACIA REGIONAL TRIBUTÁRIA DE ARARAQUARA',
         'DRT-16': 'DELEGACIA REGIONAL TRIBUTÁRIA DE JUNDIAÍ'
     }
+    meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho',
+             'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
     def __init__(self):
         self._dicionario: dict
@@ -53,6 +56,9 @@ class Configuration:
         self._efd_path = Path(self._dicionario['efd_path']) if self._dicionario.get('efd_path') else Path('efd-pva')
         self._efd_port = self._dicionario.get('efd_port', 3337)  # essa é a porta padrão do EFD PVA
         self.max_epat_attachment_size = 8
+        self.cadesp_last_update = self._dicionario.get('cadesp_last_update', datetime.date(2000, 1, 1))
+        self.inidoneos_last_update = self._dicionario.get('inidoneos_last_update', datetime.date(2000, 1, 1))
+        self.gia_last_update = self._dicionario.get('gia_last_update', datetime.date(2000, 1, 1))
 
     @property
     def intranet_pass(self) -> str:
@@ -94,7 +100,7 @@ class Configuration:
     def drt_sigla(self, sigla):
         if sigla:
             matches = re.search(r"(DRT[C\-\dI]+)", sigla)
-            if not matches or len(matches.groups()) < 1:
+            if not matches or len(matches.groups()) < 1 or matches.group(1) not in self.nomes_delegacias.keys():
                 raise ValueError(f'Sigla de delegacia inválida: {sigla}')
             self._drt = matches.group(1)
 
@@ -116,6 +122,90 @@ class Configuration:
             self._equipe_fiscal = int(matches.group(1))
 
     @property
+    def inidoneos_last_update(self) -> datetime.date:
+        return self._inidoneos_last_update
+
+    @inidoneos_last_update.setter
+    def inidoneos_last_update(self, data):
+        if isinstance(data, datetime.date):
+            self._inidoneos_last_update = data
+        elif isinstance(data, str):
+            if re.search(r'\d{2}/\d{2}/\d{4}', data):
+                self._inidoneos_last_update = datetime.datetime.strptime(data, '%d/%m/%Y').date()
+            else:
+                raise ValueError(f'Data para atualização de inidôneos inválida: {data}')
+
+    def inidoneos_date_from_file(self, arquivo: Path) -> datetime.date:
+        matches = re.search(r"Inid[oô]neos (\w+)[\s-](\d+)\.(rar|zip)", arquivo.name)
+        if not matches or len(matches.groups()) < 3:
+            raise ValueError('Nome de arquivo de inidôneos inválido - deve ter mês e ano no nome!')
+        mes = matches.group(1)
+        if len(mes) == 3:
+            meses = [x[:3] for x in self.meses]
+        else:
+            meses = self.meses
+        if mes.lower() not in meses:
+            raise ValueError(f"Não localizei o mês de geração do arquivo no nome, achei que era {mes}")
+        mes = meses.index(mes.lower()) + 1
+        return datetime.date(int(matches.group(2)), mes, 1)
+
+    @property
+    def gia_last_update(self) -> datetime.date:
+        return self._gia_last_update
+
+    @gia_last_update.setter
+    def gia_last_update(self, data):
+        if isinstance(data, datetime.date):
+            self._gia_last_update = data
+        elif isinstance(data, str):
+            if re.search(r'\d{2}/\d{2}/\d{4}', data):
+                self._gia_last_update = datetime.datetime.strptime(data, '%d/%m/%Y').date()
+            else:
+                raise ValueError(f'Data para atualização de GIAs inválida: {data}')
+
+    def gia_date_from_file(self, arquivo: Path) -> datetime.date:
+        matches = re.search(r"GIAs.*\s(\w+)[\s-](\d+)\.(rar|zip)", arquivo.name)
+        if not matches or len(matches.groups()) < 3:
+            raise ValueError('Nome de arquivo de GIAs inválido - deve ter mês e ano no nome!')
+        mes = matches.group(1)
+        if len(mes) == 3:
+            meses = [x[:3] for x in self.meses]
+        else:
+            meses = self.meses
+        if mes.lower() not in meses:
+            raise ValueError(f"Não localizei o mês de geração do arquivo no nome, achei que era {mes}")
+        mes = meses.index(mes.lower()) + 1
+        return datetime.date(int(matches.group(2)), mes, 1)
+
+    @property
+    def cadesp_last_update(self) -> datetime.date:
+        return self._cadesp_last_update
+
+    @cadesp_last_update.setter
+    def cadesp_last_update(self, data):
+        if isinstance(data, datetime.date):
+            self._cadesp_last_update = data
+        elif isinstance(data, str):
+            if re.search(r'\d{2}/\d{2}/\d{4}', data):
+                self._cadesp_last_update = datetime.datetime.strptime(data, '%d/%m/%Y').date()
+            else:
+                raise ValueError(f'Data para atualização de Cadesp inválida: {data}')
+
+    def cadesp_date_from_file(self, arquivo: Path) -> datetime.date:
+        matches = re.search(r"CadSefaz.*\s(\w+)[\s-](\d+)\.(rar|zip)", arquivo.name)
+        if not matches or len(matches.groups()) < 3:
+            raise ValueError('Nome de arquivo de Cadesp inválido - deve ter mês e ano no nome!')
+        mes = matches.group(1)
+        if len(mes) == 3:
+            meses = [x[:3] for x in self.meses]
+        else:
+            meses = self.meses
+        if mes.lower() not in meses:
+            raise ValueError(f"Não localizei o mês de geração do arquivo no nome, achei que era {mes}")
+        mes = meses.index(mes.lower()) + 1
+        return datetime.date(int(matches.group(2)), mes, 1)
+
+    @property
     def postgres_port(self) -> int:
         return self._postgres_port
 
@@ -134,7 +224,7 @@ class Configuration:
 
     @property
     def drt_nome(self) -> str:
-        return self.nomes_delegacias[self.drt_sigla]
+        return self.nomes_delegacias[self.drt_sigla] if self.drt_sigla else None
 
     @drt_nome.setter
     def drt_nome(self, nome: str):
@@ -186,6 +276,9 @@ class Configuration:
         dadosAFR['ultima_pasta'] = str(self.ultima_pasta.absolute())
         dadosAFR['efd_path'] = str(self.efd_path.absolute())
         dadosAFR['efd_port'] = self.efd_port
+        dadosAFR['inidoneos_last_update'] = self._inidoneos_last_update.strftime('%d/%m/%Y')
+        dadosAFR['gia_last_update'] = self._gia_last_update.strftime('%d/%m/%Y')
+        dadosAFR['cadesp_last_update'] = self._cadesp_last_update.strftime('%d/%m/%Y')
         for k in [k for k in dadosAFR.keys() if k.startswith('_') or not dadosAFR[k]]:
             dadosAFR.pop(k)
         with GeneralFunctions.get_local_dados_afr_path().open(mode='w') as outfile:

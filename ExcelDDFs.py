@@ -747,7 +747,7 @@ class ExcelDDFs:
             ws['C2'].value = Audit.get_current_audit().cnpj
             ws['G2'].value = Audit.get_current_audit().empresa
             ws['C4'].value = Audit.get_current_audit().aiim_number
-            with MDBReader.MDBReader() as aiim2003:
+            with MDBReader.AIIM2003MDBReader() as aiim2003:
                 ws['Q4'].value = aiim2003.get_last_ufesp_stored()
             ws_row = 9
             for linha in df:

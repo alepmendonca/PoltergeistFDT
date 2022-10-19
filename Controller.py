@@ -5,6 +5,7 @@ import re
 import subprocess
 import threading
 import time
+import zipfile
 
 import pandas as pd
 import PySimpleGUI as sg
@@ -106,7 +107,7 @@ def get_dados_osf():
 
 def get_local_dados_osf_up_to_date_with_aiim2003():
     if get_current_audit().aiim_number:
-        with MDBReader.MDBReader() as aiim2003:
+        with MDBReader.AIIM2003MDBReader() as aiim2003:
             is_open = aiim2003.is_aiim_open_to_edition(get_current_audit().aiim_number_no_digit())
             get_current_audit().is_aiim_open = is_open
     get_current_audit().save()
@@ -351,7 +352,7 @@ def create_aiim_item(aiim_item: AiimItem):
 
 
 def __get_open_aiim_data_from_aiim2003() -> (str, int):
-    with MDBReader.MDBReader() as aiim2003:
+    with MDBReader.AIIM2003MDBReader() as aiim2003:
         aiim_number = get_current_audit().aiim_number
         numero_sem_serie = get_current_audit().aiim_number_no_digit()
         if not aiim2003.is_aiim_open_to_edition(numero_sem_serie):
@@ -420,7 +421,7 @@ def link_aiim_to_audit(aiim_number: str):
         raise Exception('Não foi gerado um número de AIIM válido, tente novamente mais tarde!')
     get_current_audit().aiim_number = aiim_number
     get_current_audit().is_aiim_open = True
-    with MDBReader.MDBReader() as aiim2003:
+    with MDBReader.AIIM2003MDBReader() as aiim2003:
         posicao = aiim2003.get_aiim_position(get_current_audit().aiim_number_no_digit())
         if posicao == 0:
             AIIMAutoIt().cria_aiim(aiim_number, get_current_audit())
@@ -478,7 +479,7 @@ def send_notification_with_files_digital_receipt():
 
 
 def __update_ufesp_on_aiim2003():
-    with MDBReader.MDBReader() as m:
+    with MDBReader.AIIM2003MDBReader() as m:
         last_ufesp_stored = m.get_year_of_last_ufesp_stored()
         if last_ufesp_stored < date.today().year:
             # antes de dar pau, vê se acha as UFESPs mais recentes...
@@ -490,7 +491,7 @@ def __update_ufesp_on_aiim2003():
 
 
 def __update_selic_on_aiim2003():
-    with MDBReader.MDBReader() as m:
+    with MDBReader.AIIM2003MDBReader() as m:
         ultima = m.get_last_selic_stored()
         # apenas atualiza SELIC se não tem cadastrado ainda a taxa do mês passado
         if ultima < GeneralFunctions.first_day_of_month_before(date.today()):
@@ -509,7 +510,7 @@ class AIIMNotExistsException(Exception):
 
 
 def __get_aiim_position_in_aiim2003(aiim_number: str) -> int:
-    with MDBReader.MDBReader() as aiim2003:
+    with MDBReader.AIIM2003MDBReader() as aiim2003:
         numero_sem_serie = int(re.sub(r'[^\d]', '', aiim_number)[:-1])
         posicao = aiim2003.get_aiim_position(numero_sem_serie)
         if posicao == 0:
@@ -967,7 +968,7 @@ def declare_operations_in_aiim():
                                                     'Valor_Total_Documentos_Fiscais_x_GIA.xlsx',
                                                     threading.Event(), None, *parametros)
             ops = get_current_audit().get_sheet().get_operations_for_aiim(operacoes_xls)
-    with MDBReader.MDBReader() as aiim2003:
+    with MDBReader.AIIM2003MDBReader() as aiim2003:
         logger.info('Cadastrando operações direto no banco do AIIM2003')
         aiim2003.insert_operations(get_current_audit().aiim_number_no_digit(), ops)
 
@@ -975,7 +976,7 @@ def declare_operations_in_aiim():
 def declare_observations_in_aiim():
     obs_configs = GeneralFunctions.get_dados_observacoes_aiim()
     obs = []
-    with MDBReader.MDBReader() as aiim2003:
+    with MDBReader.AIIM2003MDBReader() as aiim2003:
         logger.info('Cadastrando observações direto no banco do AIIM2003')
         for dic in obs_configs:
             revised_text = dic['descricao']
@@ -1354,7 +1355,7 @@ def executa_consulta_BD(sql: str, max_linhas=None) -> (int, pd.DataFrame):
 
 
 def existing_open_aiims_for_osf() -> list:
-    with MDBReader.MDBReader() as aiim2003:
+    with MDBReader.AIIM2003MDBReader() as aiim2003:
         return aiim2003.get_aiims_for_osf(get_current_audit().osf_only_digits())
 
 
@@ -1387,3 +1388,118 @@ def update_efd_pva_version():
     except:
         logger.exception('Falha na atualização do EFD PVA ICMS')
         GUIFunctions.update_splash('Falha na atualização do EFD PVA ICMS, tentarei depois...')
+
+
+def update_cadesp(zip_path: Path):
+    ultima_atualizacao = GeneralConfiguration.get().cadesp_last_update
+    data_arquivo = GeneralConfiguration.get().cadesp_date_from_file(zip_path)
+    if ultima_atualizacao < data_arquivo:
+        logger.info('Extraindo arquivos do zip...')
+        with zipfile.ZipFile(zip_path, "r") as f:
+            arquivos = f.namelist()
+            if len(list(filter(lambda a: a.startswith('CadSefaz'), arquivos))) == 0:
+                raise Exception('Arquivo de Cadesp não continha arquivo de texto começando por CadSefaz!')
+            if len(list(filter(lambda a: a.startswith('CadRegimes'), arquivos))) == 0:
+                raise Exception('Arquivo de Cadesp não continha arquivo de texto começando por CadRegimes!')
+            f.extractall(GeneralFunctions.get_tmp_path())
+        try:
+            with SQLWriter() as postgres:
+                logger.info('Criando tabelas do Cadesp...')
+                postgres.create_cadesp_tables()
+
+                cadastro = list(filter(lambda a: a.startswith('CadSefaz'), arquivos))[0]
+                logger.info(f'Carregando arquivo de Cadastro do Cadesp...')
+                postgres.import_dump_file(GeneralFunctions.get_tmp_path() / cadastro, 'cadesp_temp',
+                                          delimiter='|', encoding='ISO-8859-1',
+                                          null_string="Nihil", quote_char="E'\\b'")
+                # apaga a primeira linha carregada, que é com metadados
+                postgres.executa_transacao("DELETE FROM cadesp_temp WHERE IE = 'xxxxxxxxxxxxxx' OR IE IS NULL")
+                importados = 0
+                limite = 500000
+                total = postgres.table_rowcount('cadesp_temp')
+                while importados < total:
+                    importados += postgres.insert_cadesp(importados, limite)
+                    logger.info(f'Importados {100 * importados / total:.2f}% registros de Cadesp...')
+
+                regimes = list(filter(lambda a: a.startswith('CadRegimes'), arquivos))[0]
+                logger.info(f'Carregando arquivo de Regimes do Cadesp...')
+                postgres.import_dump_file(GeneralFunctions.get_tmp_path() / regimes, 'cad_reg_temp',
+                                          delimiter='|', encoding='ISO-8859-1')
+                importados = 0
+                limite = 500000
+                ultima_importacao = -1
+                total = postgres.table_rowcount('cad_reg_temp')
+                while ultima_importacao != 0:
+                    ultima_importacao = postgres.insert_cadesp_regime(importados, limite)
+                    importados += limite
+                    logger.info(f'Importados {100 * importados / total:.2f}% registros de Cadesp Regime...')
+            GeneralConfiguration.get().cadesp_last_update = data_arquivo
+            GeneralConfiguration.get().save()
+        finally:
+            for arq in arquivos:
+                (GeneralFunctions.get_tmp_path() / arq).unlink(missing_ok=True)
+    else:
+        raise Exception(f'Banco de dados do Cadesp já estava atualizado até {data_arquivo.strftime("%m/%Y")}!')
+
+
+def update_gias(zip_path: Path):
+    ultima_atualizacao = GeneralConfiguration.get().gia_last_update
+    data_arquivo = GeneralConfiguration.get().gia_date_from_file(zip_path)
+    if ultima_atualizacao < data_arquivo:
+        logger.info('Extraindo arquivos do zip...')
+        with zipfile.ZipFile(zip_path, "r") as f:
+            arquivos = f.namelist()
+            f.extractall(GeneralFunctions.get_tmp_path())
+        try:
+            with SQLWriter() as postgres:
+                logger.info('Criando tabela de GIAs...')
+                postgres.create_gias_table()
+                for arquivo in sorted(arquivos):
+                    ano = int(arquivo[5:9])
+                    logger.info(f'Carregando arquivo de GIAs do ano {ano}...')
+                    postgres.import_dump_file(GeneralFunctions.get_tmp_path() / arquivo, 'gia_temp',
+                                              delimiter='|', encoding='ISO-8859-1')
+                    importados = 0
+                    limite = 100000
+                    total = postgres.table_rowcount('gia_temp')
+                    while importados < total:
+                        importados += postgres.insert_gia(ano, importados, limite)
+                        logger.info(f'Importados {100 * importados / total:.2f}% registros de GIA de {ano}...')
+            GeneralConfiguration.get().gia_last_update = data_arquivo
+            GeneralConfiguration.get().save()
+        finally:
+            for arq in arquivos:
+                (GeneralFunctions.get_tmp_path() / arq).unlink(missing_ok=True)
+    else:
+        raise Exception(f'Banco de dados de GIAs já estava atualizado até {data_arquivo.strftime("%m/%Y")}!')
+
+
+def update_inidoneos(zip_path: Path):
+    ultima_atualizacao = GeneralConfiguration.get().inidoneos_last_update
+    data_arquivo = GeneralConfiguration.get().inidoneos_date_from_file(zip_path)
+    if ultima_atualizacao < data_arquivo:
+        logger.info('Extraindo arquivos do zip...')
+        with zipfile.ZipFile(zip_path, "r") as f:
+            arquivos = f.namelist()
+            mdb_file = list(filter(lambda arq: Path(arq).suffix == '.mdb', arquivos))
+            if len(mdb_file) == 0:
+                raise Exception(f'Não foi encontrado arquivo Access de inidôneos dentro do arquivo {zip_path.name}!')
+            f.extractall(GeneralFunctions.get_tmp_path())
+        try:
+            with SQLWriter() as postgres:
+                logger.info('Criando tabela de inidoneo...')
+                postgres.create_inidoneos_table()
+                with MDBReader.InidoneosMDBImporter(GeneralFunctions.get_tmp_path() / mdb_file[0]) as mdb:
+                    i = 0
+                    for linha in mdb.get_inidoneos_table():
+                        if i % 1000 == 0:
+                            logger.info(f'Importados {i} registros de inidôneos...')
+                        postgres.insert_inidoneo(linha)
+                        i += 1
+            GeneralConfiguration.get().inidoneos_last_update = data_arquivo
+            GeneralConfiguration.get().save()
+        finally:
+            for arq in arquivos:
+                (GeneralFunctions.get_tmp_path() / arq).unlink(missing_ok=True)
+    else:
+        raise Exception(f'Banco de dados de inidôneos já estava atualizado até {data_arquivo.strftime("%m/%Y")}!')
