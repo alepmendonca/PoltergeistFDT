@@ -626,7 +626,9 @@ def menu_layout(tipo_menu: str):
                 ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
                               'Abrir Auditoria::-MENU-OPEN-AUDIT-',
                               'Sair::-MENU-EXIT-']],
-                ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-']],
+                ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-', '---',
+                             'Importa Inidôneos::-MENU-INIDONEOS-',
+                             'Importa GIAs::-MENU-GIAS-', 'Importa Cadesp::-MENU-CADESP-']],
                 ['A&juda', ['Abrir Pasta do Usuário::-MENU-USER-FOLDER-', 'Sobre::-MENU-ABOUT-']]
             ]
         case 'AUDITORIA_SEM_AIIM':
@@ -635,9 +637,11 @@ def menu_layout(tipo_menu: str):
                               'Abrir Auditoria::-MENU-OPEN-AUDIT-',
                               'Abrir Pasta da Auditoria::-MENU-AUDIT-FOLDER-',
                               'Sair::-MENU-EXIT-']],
-                ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
-                             'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
+                ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-', '---',
+                             'Importa Inidôneos::-MENU-INIDONEOS-',
+                             'Importa GIAs::-MENU-GIAS-', 'Importa Cadesp::-MENU-CADESP-',
                              '---',
+                             'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
                              'Abrir Planilha::-MENU-OPEN-SHEET-',
                              'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
                 ['E&FD', ['Imprimir LRE::-MENU-PRINT-LRE-',
@@ -668,9 +672,11 @@ def menu_layout(tipo_menu: str):
                               'Abrir Auditoria::-MENU-OPEN-AUDIT-',
                               'Abrir Pasta da Auditoria::-MENU-AUDIT-FOLDER-',
                               'Sair::-MENU-EXIT-']],
-                ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-',
-                             'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
+                ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-', '---',
+                             'Importa Inidôneos::-MENU-INIDONEOS-',
+                             'Importa GIAs::-MENU-GIAS-', 'Importa Cadesp::-MENU-CADESP-',
                              '---',
+                             'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
                              'Abrir Planilha::-MENU-OPEN-SHEET-',
                              'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
                 ['E&FD', ['Imprimir LRE::-MENU-PRINT-LRE-',
@@ -1007,6 +1013,27 @@ def window_event_handler():
         elif event.endswith('-MENU-AIIM-UPLOAD-'):
             WaitWindow.open_wait_window(Controller.upload_aiim, 'Transmitir AIIM')
             refresh_menu()
+        elif event.endswith('-MENU-GIAS-'):
+            caminho = sg.popup_get_file('Escolha o arquivo de GIAs mais recente', 'GIAs',
+                                        initial_folder=str(Path.home()),
+                                        default_extension='.zip',
+                                        icon=GUIFunctions.app_icon,
+                                        file_types=(('Arquivos compactados', '.zip'),), no_window=True)
+            WaitWindow.open_wait_window(Controller.update_gias, 'Importar GIAs', Path(caminho))
+        elif event.endswith('-MENU-CADESP-'):
+            caminho = sg.popup_get_file('Escolha o arquivo de Cadesp mais recente', 'Cadesp',
+                                        initial_folder=str(Path.home()),
+                                        default_extension='.zip',
+                                        icon=GUIFunctions.app_icon,
+                                        file_types=(('Arquivos compactados', '.zip'),), no_window=True)
+            WaitWindow.open_wait_window(Controller.update_cadesp, 'Importar Cadesp', Path(caminho))
+        elif event.endswith('-MENU-INIDONEOS-'):
+            caminho = sg.popup_get_file('Escolha o arquivo de inidôneos mais recente', 'Inidôneos',
+                                        initial_folder=str(Path.home()),
+                                        default_extension='.zip',
+                                        icon=GUIFunctions.app_icon,
+                                        file_types=(('Arquivos compactados', '.zip'),), no_window=True)
+            WaitWindow.open_wait_window(Controller.update_inidoneos, 'Importar Inidôneos', Path(caminho))
         elif event.endswith('-MENU-USER-FOLDER-'):
             subprocess.run([os.path.join(os.getenv('WINDIR'), 'explorer.exe'),
                             GeneralFunctions.get_user_path().absolute()])

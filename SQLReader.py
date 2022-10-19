@@ -107,6 +107,13 @@ class SQLReader:
                                    'WHERE table_schema = %s AND table_name = %s;',
                                    (self._schema, table_name))
 
+    def table_rowcount(self, table_name: str) -> int:
+        try:
+            self._cursor.execute(f'SELECT COUNT(*) FROM {table_name};')
+        except psycopg2.Error as e:
+            raise Exception(e.pgerror)
+        return self._cursor.fetchone()[0]
+
     def is_efd_unified(self) -> bool:
         return self.does_table_exist('reg_k990')
 
@@ -137,10 +144,20 @@ class SQLWriter(SQLReader):
         self._cursor.execute((scripts_path / sql_script_name).open(mode='r', encoding='UTF-8').read())
         self._conn.commit()
 
-    def import_dump_file(self, file: Path, temp_table: str):
+    def drop_table(self, table_name: str):
+        self._cursor.execute(f'DROP TABLE IF EXISTS {table_name} CASCADE;')
+
+    def import_dump_file(self, file: Path, temp_table: str, delimiter=',',
+                         encoding='UTF-8', null_string=None, quote_char=None):
         try:
-            self._cursor.copy_expert(f"COPY {temp_table} FROM STDIN DELIMITER ',' CSV HEADER ENCODING 'UTF-8';",
-                                     file.open(mode='r', encoding='UTF-8'))
+            self._cursor.execute(f"TRUNCATE TABLE {temp_table};")
+            sql_command = f"COPY {temp_table} FROM STDIN DELIMITER '{delimiter}' CSV HEADER"
+            if null_string:
+                sql_command += f" NULL '{null_string}'"
+            if quote_char:
+                sql_command += f" QUOTE {quote_char}"
+            sql_command += f" ENCODING '{encoding}'"
+            self._cursor.copy_expert(sql_command + ';', file.open(mode='r', encoding=encoding))
             self._conn.commit()
         except psycopg2.errors.BadCopyFileFormat:
             raise QueryAnalysisException(f'Erro na importação do arquivo {str(file)}: ele está num formato '
@@ -149,7 +166,7 @@ class SQLWriter(SQLReader):
 
     def prepare_table_escrituracaofiscal(self):
         try:
-            self._cursor.execute('DROP TABLE IF EXISTS escrituracaofiscal;')
+            self.drop_table('escrituracaofiscal')
             self._cursor.execute('CREATE TABLE escrituracaofiscal AS ' +
                                  'SELECT * FROM master.escrituracaofiscal ' +
                                  "WHERE cpf_cnpj LIKE '%' || cnpj_auditoria();")
@@ -177,7 +194,7 @@ class SQLWriter(SQLReader):
                 "WHERE table_schema = %s and column_name = 'efd'",
                 (self._schema,))
             for tabela in self._cursor.fetchall():
-                self._cursor.execute(f'DROP TABLE {tabela[0]};')
+                self.drop_table(tabela[0])
             self._conn.commit()
             qtd_tabelas = 0
             while not self.is_efd_unified():
@@ -243,3 +260,147 @@ class SQLWriter(SQLReader):
             self._conn.rollback()
             raise Exception(e.pgerror)
 
+    def create_inidoneos_table(self):
+        try:
+            self.drop_table('inidoneo')
+            self._cursor.execute("CREATE TABLE inidoneo (oficio_num varchar(10) NULL, numord int4 NULL,	"
+                                 "ie varchar(17) NULL, cnpj varchar(17) NULL, nome varchar(255) NULL, "
+                                 "oficio_data date NULL, inicio_inidoneidade date NULL, "
+                                 "uf varchar(2) NULL, ocorrencias text NULL, endereco varchar(255) NULL, "
+                                 "municipio varchar(60) NULL, processo varchar(60) NULL);")
+            self._cursor.execute("CREATE INDEX inidoneo_cnpj ON public.inidoneo USING btree (cnpj);")
+            self._cursor.execute("CREATE INDEX inidoneo_cnpj_filled ON public.inidoneo "
+                                 "USING btree (lpad((cnpj)::text, 14, '0'::text));")
+            self._cursor.execute("CREATE INDEX inidoneo_ie ON public.inidoneo USING btree (ie);")
+            self._cursor.execute("CREATE INDEX inidoneo_nome ON public.inidoneo USING btree (nome);")
+            self._conn.commit()
+        except psycopg2.Error as e:
+            self._conn.rollback()
+            raise Exception(e.pgerror)
+
+    def insert_inidoneo(self, registro):
+        try:
+            registro[2] = str(int(registro[2].strip())) if re.search(r"^\d+$", registro[2].strip()) else None
+            registro[3] = str(int(registro[3].strip())) if re.search(r"^\d+$", registro[3].strip()) else None
+            self._cursor.execute("INSERT INTO inidoneo (oficio_num, numord, ie, cnpj, nome,"
+                                 "oficio_data, inicio_inidoneidade, uf, ocorrencias, endereco,"
+                                 "municipio, processo) values (%s, %s, %s, %s, %s,"
+                                 "%s, %s, %s, %s, %s,"
+                                 "%s, %s);", registro)
+            self._conn.commit()
+        except psycopg2.Error as e:
+            self._conn.rollback()
+            raise Exception(e.pgerror)
+
+    def create_gias_table(self):
+        try:
+            self.drop_table('gia')
+            self._cursor.execute("CREATE TABLE GIA (IE BIGINT NOT NULL, REFERENCIA DATE NOT NULL, "
+                                 "ENVIO INTEGER NOT NULL DEFAULT 0, DEBITO NUMERIC(15,2), CREDITO NUMERIC(15,2));")
+            self._cursor.execute("CREATE UNIQUE INDEX gia_ie_idx ON GIA (ie,referencia,envio);")
+            self._cursor.execute("CREATE TEMP TABLE GIA_TEMP (IE VARCHAR, MES VARCHAR, ENVIO VARCHAR, "
+                                 "DEBITO VARCHAR, CREDITO VARCHAR);")
+            self._conn.commit()
+        except psycopg2.Error as e:
+            self._conn.rollback()
+            raise Exception(e.pgerror)
+
+    def insert_gia(self, ano: int, offset: int, limit: int) -> int:
+        try:
+            self._cursor.execute(f"INSERT INTO gia "
+                                 f"SELECT IE::BIGINT, ('01/' || MES || '/{ano}')::DATE, "
+                                 f"ENVIO::INTEGER, DEBITO::NUMERIC(15,2), CREDITO::NUMERIC(15,2) "
+                                 f"FROM GIA_TEMP "
+                                 f"ORDER BY IE, MES LIMIT {limit} OFFSET {offset}")
+            inseridos = self._cursor.rowcount
+            self._conn.commit()
+            return inseridos
+        except psycopg2.Error as e:
+            self._conn.rollback()
+            raise Exception(e.pgerror)
+
+    def create_cadesp_tables(self):
+        try:
+            self.drop_table('cadesp_regime')
+            self.drop_table('cadesp')
+            self.drop_table('cadesp_situacao')
+            self._cursor.execute("CREATE TABLE cadesp_situacao (codigo int2 NOT NULL, descricao varchar(40) NOT NULL);")
+            self._cursor.execute("CREATE UNIQUE INDEX cadesp_situacao_codigo_idx ON cadesp_situacao "
+                                 "USING btree (codigo);")
+            situacoes = [(0, 'ATIVO'), (800, 'PRODUTOR AGROPECUÁRIO'), (900, 'CANCELADO'),
+                         (948, 'CASSADO/NÃO LOCALIZADO'), (949, 'CASSADO/FALIDO'), (950, 'CASSADO'),
+                         (973, 'INIDÔNEO'), (974, 'NÃO RECADASTRADO'), (975, 'ATIVIDADE SUSPENSA'),
+                         (976, 'BLOQUEADO/FALIDO'), (977, 'BLOQUEADO'), (987, 'NÃO LOCALIZADO'),
+                         (992, 'FALIDO'), (993, 'NÃO LOCALIZADO / FALIDO')]
+            for situacao in situacoes:
+                self._cursor.execute("INSERT INTO cadesp_situacao(codigo, descricao) VALUES (%s, %s)", situacao)
+
+            self._cursor.execute("CREATE TABLE CADESP (CNPJ CHAR(14), IE BIGINT NOT NULL PRIMARY KEY, "
+                                 "RAZAO_SOCIAL VARCHAR, INICIO_ATIVIDADES DATE, CANCELAMENTO DATE,"
+                                 "SITUACAO INTEGER REFERENCES cadesp_situacao(codigo), CNAE INTEGER);")
+            self._cursor.execute("CREATE INDEX cadesp_cnpj_idx ON cadesp USING btree (cnpj);")
+            self._cursor.execute("CREATE TEMP TABLE CADESP_TEMP (CNPJ VARCHAR, IE VARCHAR, RAZAO_SOCIAL VARCHAR, "
+                                 "INICIO_ATIVIDADES VARCHAR, CANCELAMENTO VARCHAR, SITUACAO VARCHAR, CNAE VARCHAR)")
+
+            self._cursor.execute("CREATE TABLE CADESP_REGIME (IE BIGINT REFERENCES CADESP(IE) NOT NULL, "
+                                 "REGIME VARCHAR, INICIO_REGIME DATE, FIM_REGIME DATE);")
+            self._cursor.execute("CREATE INDEX cadesp_regime_ie_idx ON public.cadesp_regime (ie);")
+            self._cursor.execute("ALTER TABLE cadesp_regime ADD CONSTRAINT cadesp_regime_un "
+                                 "UNIQUE (ie,regime,inicio_regime,fim_regime);")
+            self._cursor.execute("CREATE TEMP TABLE CAD_REG_TEMP (IE VARCHAR, COD_REGIME VARCHAR, "
+                                 "INICIO VARCHAR, FIM VARCHAR);")
+            self._conn.commit()
+        except psycopg2.Error as e:
+            self._conn.rollback()
+            raise Exception(e.pgerror)
+
+    def insert_cadesp(self, offset: int, limit: int) -> int:
+        try:
+            self._cursor.execute(f"INSERT INTO cadesp "
+                                 f"SELECT CNPJ::BIGINT::VARCHAR, IE::BIGINT, RAZAO_SOCIAL, "
+                                 f"INICIO_ATIVIDADES::DATE, "
+                                 f"CASE WHEN CANCELAMENTO::date::varchar = '1899-12-31' THEN NULL "
+                                 f"ELSE CANCELAMENTO::DATE END, "
+                                 f"SITUACAO::INTEGER, CNAE::INTEGER "
+                                 f"FROM CADESP_TEMP "
+                                 f"LIMIT {limit} OFFSET {offset}")
+            inseridos = self._cursor.rowcount
+            self._conn.commit()
+            return inseridos
+        except psycopg2.Error as e:
+            self._conn.rollback()
+            raise Exception(e.pgerror)
+
+    def insert_cadesp_regime(self, offset: int, limit: int) -> int:
+        try:
+            self._cursor.execute(f"INSERT INTO cadesp_regime "
+                                 f"SELECT CADESP.IE, "
+                                 f"CASE COD_REGIME"
+                                 f" WHEN '1' THEN 'Cadastro Especial Contribuinte' "
+                                 f" WHEN '2' THEN 'RPA'"
+                                 f" WHEN '3' THEN 'Estimativa'"
+                                 f" WHEN '4' THEN 'Regime Simplificado'"
+                                 f" WHEN '5' THEN 'Microempresa'"
+                                 f" WHEN '9' THEN 'RPA Dispensado'"
+                                 f" WHEN 'A' THEN 'RPA Decendial'"
+                                 f" WHEN 'C' THEN 'CEC Decendial'"
+                                 f" WHEN 'G' THEN 'EPP A'"
+                                 f" WHEN 'H' THEN 'EPP B'"
+                                 f" WHEN 'M' THEN 'EPP'"
+                                 f" WHEN 'N' THEN 'Simples Nacional' "
+                                 f" WHEN 'O' THEN 'Simples Nacional' "
+                                 f" WHEN 'X' THEN 'Inscrição Não Informada/Pessoa Física' END, "
+                                 f"CASE WHEN INICIO = '190001' THEN NULL "
+                                 f"ELSE ('01/' || SUBSTRING(INICIO,5,2) || '/' || SUBSTRING(INICIO,1,4))::DATE END,"
+                                 f"CASE WHEN FIM = '999912' THEN NULL "
+                                 f"ELSE (date_trunc('month',('01/' || SUBSTRING(FIM,5,2) || '/' "
+                                 f"|| SUBSTRING(FIM,1,4))::DATE) + INTERVAL '1 month' - INTERVAL '1 day')::DATE END "
+                                 f"FROM CAD_REG_TEMP JOIN CADESP ON CAD_REG_TEMP.IE::BIGINT = CADESP.IE "
+                                 f"LIMIT {limit} OFFSET {offset} "
+                                 f"ON CONFLICT DO NOTHING")
+            inseridos = self._cursor.rowcount
+            self._conn.commit()
+            return inseridos
+        except psycopg2.Error as e:
+            self._conn.rollback()
+            raise Exception(e.pgerror)

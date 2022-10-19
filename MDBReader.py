@@ -1,5 +1,4 @@
 import datetime
-import re
 
 import pyodbc
 import pandas as pd
@@ -7,7 +6,7 @@ from GeneralFunctions import logger
 from pathlib import Path
 
 
-class MDBReader:
+class AIIM2003MDBReader:
     def __init__(self):
         drivers = [x for x in pyodbc.drivers() if x == 'Microsoft Access Driver (*.mdb)']
         if len(drivers) == 0:
@@ -135,3 +134,36 @@ class MDBReader:
             f'and item.id_auto_item = cap.id_auto_item '
             f'and inciso.inciso = ? and alinea.alinea = ?;', inciso, alinea
         ).fetchall()
+
+
+class InidoneosMDBImporter:
+
+    def __init__(self, mdb_file: Path):
+        drivers = [x for x in pyodbc.drivers() if x == 'Microsoft Access Driver (*.mdb)']
+        if len(drivers) == 0:
+            logger.critical(
+                'Não encontrei o driver ODBC pra Access de 32-bits! ' \
+                'Pode ser que esteja rodando Python 64bits, ' \
+                'ou pode ser que não esteja instalado o ODBC Access antigo!')
+            raise Exception('Impossível ler banco de dados de Inidôneos')
+
+        url_con = 'DRIVER={};DBQ={}'.format(drivers[0], str(mdb_file.absolute()))
+        logger.debug(f'Conectando ao Access de Inidôneos existente em {mdb_file}')
+
+        # connect to db
+        self.con = pyodbc.connect(url_con)
+        self.cur = self.con.cursor()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.cur:
+            self.cur.close()
+        if self.con:
+            self.con.rollback()
+            self.con.close()
+
+    def get_inidoneos_table(self):
+        return self.cur.execute('SELECT OFICIO, NUMORD, IE, CGC, NOME, `dataof`, `dtinidon`, UF, OCORRENCIAS, '
+                                'ENDERECO, MUNICIPIO, PROCESSO FROM INIDONEO;')
