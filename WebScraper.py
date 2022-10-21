@@ -94,10 +94,12 @@ launchpad_report_options = {
         'Pesquisa': 'Manifestações',
         'Parametros': ['inicio', 'fim', 'cnpj', 'osf'],
         'Tipo': "Dados", 'Relatorios': ["Nota Fiscal Eletronica"], 'Grupo': 'NFeEmit'},
-    "NF-es exportação com evento de averbação por CNPJ x periodo": {
+    "NF-es exportação com evento de averbação por CNPJ X periodo": {
         'Pesquisa': 'NF-es exportação',
         'Parametros': ['cnpj', '', 'inicioAAAAMM', 'fimAAAAMM', 'osf'],
-        'Tipo': "Dados", 'Relatorios': ['Consulta 1 com SIEX'], 'Grupo': 'COMEX'},
+        'Tipo': "Dados", 'Relatorios': ['Consulta 1 com SIEX', 'Consulta 2 com SIEX',
+                                        'Consulta 3 com Nota Fiscal Eletronica'],
+        'Grupo': 'COMEX'},
     "NFe Docs Referenciados Destinatário": {
         'Pesquisa': 'Referenciados',
         'Parametros': ['cnpj', 'inicioAAAAMM', 'fimAAAAMM'],
@@ -1945,7 +1947,12 @@ class SeleniumWebScraper:
                             break
                     except NoSuchElementException:
                         tentativas = tentativas + 1
-                        time.sleep(3)
+                        time.sleep(2)
+
+                if tentativas == 3:
+                    raise WebScraperException(f'Não consegui localizar na busca do Launchpad '
+                                              f'relatório de nome "{report_name}" - verifique se '
+                                              f'não há algum erro de digitação!')
 
                 # subframe é o frame da aba selecionada
                 self.__get_driver().switch_to.default_content()

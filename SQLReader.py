@@ -346,7 +346,7 @@ class SQLWriter(SQLReader):
                                  "REGIME VARCHAR, INICIO_REGIME DATE, FIM_REGIME DATE);")
             self._cursor.execute("CREATE INDEX cadesp_regime_ie_idx ON public.cadesp_regime (ie);")
             self._cursor.execute("ALTER TABLE cadesp_regime ADD CONSTRAINT cadesp_regime_un "
-                                 "UNIQUE (ie,regime,inicio_regime,fim_regime);")
+                                 "UNIQUE (ie,regime,inicio_regime);")
             self._cursor.execute("CREATE TEMP TABLE CAD_REG_TEMP (IE VARCHAR, COD_REGIME VARCHAR, "
                                  "INICIO VARCHAR, FIM VARCHAR);")
             self._conn.commit()

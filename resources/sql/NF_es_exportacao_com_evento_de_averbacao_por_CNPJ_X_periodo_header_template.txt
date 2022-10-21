@@ -1,0 +1,1 @@
+"Chave Acesso Nota Fiscal","Data Emissão","Núm. CNPJ Emissor","Ind. Averbação Total NF","Valor Total NFe","Valor Não Exportado","Descr. Natureza Operação","Núm. Documento Fiscal","Ind. Referencia outra NF-e 7 Averbada"

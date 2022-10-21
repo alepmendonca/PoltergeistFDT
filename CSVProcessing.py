@@ -67,11 +67,11 @@ def __verify_header(report_name: str, file: Path):
     if header_template.is_file():
         with header_template.open(mode='r', encoding='UTF-8') as f:
             texto_template = f.readline().strip()
+            template_cols = [x.strip().replace('"', '') for x in texto_template.split(',')]
         with file.open(mode='r', encoding='UTF-8') as f:
             texto_file = f.readline().strip()
-        if texto_template != texto_file:
-            template_cols = texto_template.split(',')
-            file_cols = texto_file.split(',')
+            file_cols = [x.strip().replace('"', '') for x in texto_file.split(',')]
+        if template_cols != file_cols:
             if len(template_cols) != len(file_cols):
                 raise CSVProcessingWrongHeader(f'Esperava que relatório {report_name} tivesse {template_cols} colunas,'
                                                f' mas veio com {file_cols}!')
@@ -139,8 +139,8 @@ def __Consulta_DI_por_CNPJ_import_file(file: Path, postgres: SQLWriter):
     # existem 2 estruturas de dados diferentes no arquivo
     with file.open(mode='r', encoding='UTF-8') as f:
         texto = f.read()
-    quebra_relatorios = list(re.finditer(r'"Núm. DI","Núm. Adição.*', texto))
-    texto1 = texto[:quebra_relatorios[1].regs[0][0]]
+    quebra_relatorios = list(re.finditer(r'"Núm\. DI","Núm\. Adição.*', texto))
+    texto1 = texto[:quebra_relatorios[0].regs[0][0]]
     tmp1 = Path('tmp') / 'di.csv'
     if len(texto1.splitlines()) > 1:
         try:
@@ -149,7 +149,7 @@ def __Consulta_DI_por_CNPJ_import_file(file: Path, postgres: SQLWriter):
             postgres.import_dump_file(tmp1, 'di_temp')
         finally:
             tmp1.unlink()
-    texto2 = texto[quebra_relatorios[1].regs[0][0]:]
+    texto2 = texto[quebra_relatorios[0].regs[0][0]:]
     tmp2 = Path('tmp') / 'di_adicao.csv'
     if len(texto2.splitlines()) > 1:
         try:
@@ -315,17 +315,46 @@ def __NFe_Docs_Referenciados_Emitente_missing_prerequisite(postgres: SQLWriter):
     return 'NF-e' if not postgres.does_table_exist('nfe') else None
 
 
-def __NF_es_exportacao_com_evento_de_averbacao_por_CNPJ_x_periodo_already_did_import(postgres: SQLWriter):
-    # TODO ver como importar esse relatorio
-    raise CSVProcessingWrongHeader('Ainda não sei como importar esse relatório!')
+def __NF_es_exportacao_com_evento_de_averbacao_por_CNPJ_X_periodo_already_did_import(postgres: SQLWriter):
+    return postgres.does_table_exist('exportacao') and postgres.has_return_set('select 1 from exportacao')
 
 
-def __NF_es_exportacao_com_evento_de_averbacao_por_CNPJ_x_periodo_missing_prerequisite(postgres: SQLWriter):
+def __NF_es_exportacao_com_evento_de_averbacao_por_CNPJ_X_periodo_missing_prerequisite(postgres: SQLWriter):
     return None
 
 
-def __NF_es_exportacao_com_evento_de_averbacao_por_CNPJ_x_periodo_import_file(file: Path, postgres: SQLWriter):
-    return None
+def __NF_es_exportacao_com_evento_de_averbacao_por_CNPJ_X_periodo_import_file(file: Path, postgres: SQLWriter):
+    # existem 3 estruturas de dados diferentes no arquivo
+    with file.open(mode='r', encoding='UTF-8') as f:
+        texto = f.read()
+    quebra_relatorios = list(re.finditer(r'"Chave Acesso.*', texto))
+    texto1 = texto[:quebra_relatorios[1].regs[0][0]]
+    tmp1 = Path('tmp') / 'exportacao.csv'
+    if len(texto1.splitlines()) > 1:
+        try:
+            with tmp1.open(mode='w', encoding='UTF-8') as f:
+                f.write(texto1)
+            postgres.import_dump_file(tmp1, 'exportacao_temp')
+        finally:
+            tmp1.unlink()
+    texto2 = texto[quebra_relatorios[1].regs[0][0]:quebra_relatorios[2].regs[0][0]]
+    tmp2 = Path('tmp') / 'exportacao_item.csv'
+    if len(texto2.splitlines()) > 1:
+        try:
+            with tmp2.open(mode='w', encoding='UTF-8') as f:
+                f.write(texto2)
+            postgres.import_dump_file(tmp2, 'exportacao_item_temp')
+        finally:
+            tmp2.unlink()
+
+    texto3 = texto[quebra_relatorios[2].regs[0][0]:]
+    tmp3 = Path('tmp') / 'exportacao_item_due.csv'
+    try:
+        with tmp3.open(mode='w', encoding='UTF-8') as f:
+            f.write(texto3)
+        postgres.import_dump_file(tmp3, 'exportacao_item_due_temp')
+    finally:
+        tmp3.unlink()
 
 
 def __REDF_consulta_Cupons_Fiscais_ECF_already_did_import(postgres: SQLWriter):
