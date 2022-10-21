@@ -1,6 +1,11 @@
 # PoltergeistFDT
 Ferramenta automatizadora de verificações em auditorias fiscais na Sefaz-SP
 
+Novidades
+v.0.2.1
+  - Novos menus para importar arquivos de cadastros do SAFI (GIA, Cadesp e Inidôneos)
+  - Análises podem ter uma planilha detalhada, a ser juntada em provas ou notificações
+  
 Ferramenta tem as seguintes principais funcionalidades:
   - download de relatórios do Infoview e escriturações EFD extraídas do portal Arquivos Digitais;
   - importação em um banco de dados PostgreSQL (não incluso) dos arquivos baixados (relatórios e EFDs);
