@@ -1,4 +1,3 @@
-import io
 import sys
 import textwrap
 from pathlib import Path
@@ -8,10 +7,10 @@ import GUIFunctions
 import GeneralConfiguration
 import GeneralFunctions
 import WaitWindow
+from GUIFunctions import get_splash_image
 from SQLReader import SQLReader, QueryAnalysisException
 from WebScraper import SeleniumWebScraper
 import PySimpleGUI as sg
-from PIL import Image
 
 
 def __create_wizard_window(layout: list) -> sg.Window:
@@ -24,18 +23,6 @@ def __get_dados_from_web(config):
     with SeleniumWebScraper() as ws:
         ws.get_dados_afr(config)
     return True
-
-
-def splash_image_path() -> str:
-    return r'resources/splash.jpg'
-
-
-def get_splash_image() -> bytes:
-    image = Image.open(splash_image_path())
-    image.thumbnail((480, 270))
-    bio = io.BytesIO()
-    image.save(bio, format='PNG')
-    return bio.getvalue()
 
 
 def create_config_file():

@@ -4,6 +4,7 @@ import sys
 
 from pathlib import Path
 
+import GeneralFunctions
 from GeneralFunctions import logger
 from SQLReader import SQLWriter
 
@@ -38,7 +39,7 @@ def import_report(relatorio_nome_inicio: str, files_path: Path, schema: str):
 
         # executa query que cria tabelas definitivas e temporárias
         logger.info(f'Iniciando importação do relatório {relatorio_nome_inicio}...')
-        postgres.run_ddl(f'{relatorio}_create.sql')
+        postgres.run_ddl(GeneralFunctions.get_sql_path() / f'{relatorio}_create.sql')
         for file in files_path.glob(f'{relatorio_nome_inicio}*.csv'):
             __verify_header(relatorio, file)
             try:
@@ -53,7 +54,7 @@ def import_report(relatorio_nome_inicio: str, files_path: Path, schema: str):
                     before_cleaning_file.rename(file)
                 raise e
         logger.info(f'Jogando dados processados do relatório {relatorio_nome_inicio} no banco de dados central...')
-        postgres.run_ddl(f'{relatorio}_insert.sql')
+        postgres.run_ddl(GeneralFunctions.get_sql_path() / f'{relatorio}_insert.sql')
 
 
 def to_ascii(report_name: str) -> str:

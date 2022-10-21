@@ -1,9 +1,15 @@
+import io
 import textwrap
 import time
+import webbrowser
 
 import PySimpleGUI as sg
+import markdown
+from PIL import Image
+from tkhtmlview import html_parser
 
 import GeneralFunctions
+import WebScraper
 
 
 def popup_erro(texto: str, titulo='Erro'):
@@ -25,6 +31,52 @@ def popup_sim_nao(texto: str, titulo='Atenção') -> str:
                                 sg.Push()]], disable_close=True, modal=True,
                       icon=app_icon).read(close=True)
     return botao[0] if botao else None
+
+
+def get_splash_image() -> bytes:
+    image = Image.open(r'resources/splash.jpg')
+    image.thumbnail((480, 270))
+    bio = io.BytesIO()
+    image.save(bio, format='PNG')
+    return bio.getvalue()
+
+
+def popup_about():
+    layout = [
+        [sg.Image(get_splash_image())],
+        [sg.T(f'{GeneralFunctions.project_name} versão {GeneralFunctions.project_version}')]
+    ]
+    versao = None
+    notas = None
+    url = None
+    try:
+        size = (600, 500)
+        versao, url, notas = WebScraper.get_latest_version_link_and_notes()
+        layout.append([sg.Multiline(key='-NOVIDADES-', auto_size_text=True,
+                                    disabled=True, expand_y=True, expand_x=True)])
+    except WebScraper.WebScraperException:
+        size = (None, None)
+    if versao is not None and versao != GeneralFunctions.project_version:
+        layout.append([sg.OK(s=10), sg.Button(f'Baixar nova versão {versao}', key='-NEW-VERSION-')])
+    else:
+        layout.append([sg.OK(s=10)])
+    w = sg.Window(GeneralFunctions.project_name, layout, size=size,
+                  element_justification='c', icon=app_icon, finalize=True)
+    if notas is not None:
+        widget = w['-NOVIDADES-'].Widget
+        parser = html_parser.HTMLTextParser()
+        html = markdown.markdown(notas)
+        html = html.replace('<h1>', '</span><h3>').replace('</h1>', '</h3><span style="font-size: 10px">')[7:] + '</span>'
+        prev_state = widget.cget('state')
+        widget.config(state=sg.tk.NORMAL)
+        widget.delete('1.0', sg.tk.END)
+        widget.tag_delete(widget.tag_names)
+        parser.w_set_html(widget, html, strip=True)
+        widget.config(state=prev_state)
+
+    evento, _ = w.read(close=True)
+    if evento == '-NEW-VERSION-':
+        webbrowser.open(url)
 
 
 def update_splash(text: str):
