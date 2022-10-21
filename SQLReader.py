@@ -139,9 +139,8 @@ class SQLWriter(SQLReader):
         self.executa_transacao('DROP SCHEMA master CASCADE;')
         self._conn.commit()
 
-    def run_ddl(self, sql_script_name: str):
-        scripts_path = Path('resources') / 'sql'
-        self._cursor.execute((scripts_path / sql_script_name).open(mode='r', encoding='UTF-8').read())
+    def run_ddl(self, sql_script: Path):
+        self._cursor.execute(sql_script.open(mode='r', encoding='UTF-8').read())
         self._conn.commit()
 
     def drop_table(self, table_name: str):
@@ -163,6 +162,17 @@ class SQLWriter(SQLReader):
             raise QueryAnalysisException(f'Erro na importação do arquivo {str(file)}: ele está num formato '
                                          f'inesperado para importar na tabela temporária {temp_table}! '
                                          'Contatar desenvolvedor para corrigir!')
+
+    def prepare_database(self):
+        try:
+            for script in GeneralFunctions.get_tables_path().glob('*.sql'):
+                log_msg = 'Criando funções...' if script == 'functions.sql' \
+                    else f'Criando tabela {script.stem.upper()}...'
+                GeneralFunctions.logger.info(log_msg)
+                self.run_ddl(script)
+        except psycopg2.Error as e:
+            self._conn.rollback()
+            raise Exception(e.pgerror)
 
     def prepare_table_escrituracaofiscal(self):
         try:
@@ -198,14 +208,14 @@ class SQLWriter(SQLReader):
             self._conn.commit()
             qtd_tabelas = 0
             while not self.is_efd_unified():
-                self.run_ddl("efd_unify_tables.sql")
+                self.run_ddl(GeneralFunctions.get_sql_path() / "efd_unify_tables.sql")
                 # script tem o número 50 definido para ir criando aos poucos,
                 # e evitar dar um out of memory
                 qtd_tabelas += 50
                 GeneralFunctions.logger.info(f'Criadas {qtd_tabelas} tabelas de EFD no banco de dados central...')
             GeneralFunctions.logger.info('Todas as tabelas de EFD foram criadas no banco de dados central, '
                                          'ajustando tipos de dados e índices...')
-            self.run_ddl("efd_alter_tables.sql")
+            self.run_ddl(GeneralFunctions.get_sql_path() / "efd_alter_tables.sql")
             GeneralFunctions.logger.info('Apagando esquemas temporários de EFD no banco de dados central...')
             self._cursor.execute(
                 "SELECT DISTINCT schema_name FROM information_schema.schemata, escrituracaofiscal "

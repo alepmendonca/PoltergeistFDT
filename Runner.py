@@ -627,7 +627,7 @@ def menu_layout(tipo_menu: str):
                               'Abrir Auditoria::-MENU-OPEN-AUDIT-',
                               'Sair::-MENU-EXIT-']],
                 ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-', '---',
-                             'Importa Inidôneos::-MENU-INIDONEOS-',
+                             'Prepara Base de Dados::-MENU-PREPARE-BD-', 'Importa Inidôneos::-MENU-INIDONEOS-',
                              'Importa GIAs::-MENU-GIAS-', 'Importa Cadesp::-MENU-CADESP-']],
                 ['A&juda', ['Abrir Pasta do Usuário::-MENU-USER-FOLDER-', 'Sobre::-MENU-ABOUT-']]
             ]
@@ -638,7 +638,7 @@ def menu_layout(tipo_menu: str):
                               'Abrir Pasta da Auditoria::-MENU-AUDIT-FOLDER-',
                               'Sair::-MENU-EXIT-']],
                 ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-', '---',
-                             'Importa Inidôneos::-MENU-INIDONEOS-',
+                             'Prepara Base de Dados::-MENU-PREPARE-BD-', 'Importa Inidôneos::-MENU-INIDONEOS-',
                              'Importa GIAs::-MENU-GIAS-', 'Importa Cadesp::-MENU-CADESP-',
                              '---',
                              'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
@@ -673,7 +673,7 @@ def menu_layout(tipo_menu: str):
                               'Abrir Pasta da Auditoria::-MENU-AUDIT-FOLDER-',
                               'Sair::-MENU-EXIT-']],
                 ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-', '---',
-                             'Importa Inidôneos::-MENU-INIDONEOS-',
+                             'Prepara Base de Dados::-MENU-PREPARE-BD-', 'Importa Inidôneos::-MENU-INIDONEOS-',
                              'Importa GIAs::-MENU-GIAS-', 'Importa Cadesp::-MENU-CADESP-',
                              '---',
                              'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
@@ -1013,6 +1013,8 @@ def window_event_handler():
         elif event.endswith('-MENU-AIIM-UPLOAD-'):
             WaitWindow.open_wait_window(Controller.upload_aiim, 'Transmitir AIIM')
             refresh_menu()
+        elif event.endswith('-MENU-PREPARE-BD-'):
+            WaitWindow.open_wait_window(Controller.prepare_database, 'Preparar base de dados')
         elif event.endswith('-MENU-GIAS-'):
             caminho = sg.popup_get_file('Escolha o arquivo de GIAs mais recente', 'GIAs',
                                         initial_folder=str(Path.home()),
@@ -1041,11 +1043,7 @@ def window_event_handler():
             subprocess.run([os.path.join(os.getenv('WINDIR'), 'explorer.exe'),
                             get_current_audit().path().absolute()])
         elif event.endswith('-MENU-ABOUT-'):
-            sg.Window(GeneralFunctions.project_name,
-                      [
-                          [sg.Image(InitialConfigurationWizard.get_splash_image())],
-                          [sg.T(f'{GeneralFunctions.project_name} versão {GeneralFunctions.project_version}')],
-                          [sg.OK(s=10)]], element_justification='c', icon=GUIFunctions.app_icon).read(close=True)
+            GUIFunctions.popup_about()
     window.close()
 
 

@@ -28,8 +28,6 @@ class Configuration:
         'DRT-15': 'DELEGACIA REGIONAL TRIBUTÁRIA DE ARARAQUARA',
         'DRT-16': 'DELEGACIA REGIONAL TRIBUTÁRIA DE JUNDIAÍ'
     }
-    meses = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho',
-             'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
 
     def __init__(self):
         self._dicionario: dict
@@ -141,9 +139,9 @@ class Configuration:
             raise ValueError('Nome de arquivo de inidôneos inválido - deve ter mês e ano no nome!')
         mes = matches.group(1)
         if len(mes) == 3:
-            meses = [x[:3] for x in self.meses]
+            meses = [x[:3].lower() for x in GeneralFunctions.meses]
         else:
-            meses = self.meses
+            meses = GeneralFunctions.meses
         if mes.lower() not in meses:
             raise ValueError(f"Não localizei o mês de geração do arquivo no nome, achei que era {mes}")
         mes = meses.index(mes.lower()) + 1
@@ -169,9 +167,9 @@ class Configuration:
             raise ValueError('Nome de arquivo de GIAs inválido - deve ter mês e ano no nome!')
         mes = matches.group(1)
         if len(mes) == 3:
-            meses = [x[:3] for x in self.meses]
+            meses = [x[:3].lower() for x in GeneralFunctions.meses]
         else:
-            meses = self.meses
+            meses = GeneralFunctions.meses
         if mes.lower() not in meses:
             raise ValueError(f"Não localizei o mês de geração do arquivo no nome, achei que era {mes}")
         mes = meses.index(mes.lower()) + 1
@@ -197,9 +195,9 @@ class Configuration:
             raise ValueError('Nome de arquivo de Cadesp inválido - deve ter mês e ano no nome!')
         mes = matches.group(1)
         if len(mes) == 3:
-            meses = [x[:3] for x in self.meses]
+            meses = [x[:3] for x in GeneralFunctions.meses]
         else:
-            meses = self.meses
+            meses = GeneralFunctions.meses
         if mes.lower() not in meses:
             raise ValueError(f"Não localizei o mês de geração do arquivo no nome, achei que era {mes}")
         mes = meses.index(mes.lower()) + 1

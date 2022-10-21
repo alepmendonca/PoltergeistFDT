@@ -24,7 +24,7 @@ from cryptography import x509
 from cryptography.hazmat._oid import ObjectIdentifier
 
 project_name = 'PoltergeistFDT'
-project_version = '0.2.1'
+project_version = '0.3.1'
 meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho',
          'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 infractions = {}
@@ -97,6 +97,14 @@ def get_folders_history_json_path():
 
 def get_tmp_path() -> Path:
     return Path('tmp')
+
+
+def get_sql_path() -> Path:
+    return Path('resources') / 'sql'
+
+
+def get_tables_path() -> Path:
+    return Path('resources') / 'tables'
 
 
 logger = logging.getLogger(project_name)

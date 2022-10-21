@@ -1503,3 +1503,8 @@ def update_inidoneos(zip_path: Path):
                 (GeneralFunctions.get_tmp_path() / arq).unlink(missing_ok=True)
     else:
         raise Exception(f'Banco de dados de inidôneos já estava atualizado até {data_arquivo.strftime("%m/%Y")}!')
+
+
+def prepare_database():
+    with SQLWriter() as postgres:
+        postgres.prepare_database()

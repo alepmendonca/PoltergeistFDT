@@ -2,7 +2,11 @@
 Ferramenta automatizadora de verificações em auditorias fiscais na Sefaz-SP
 
 Novidades
-v.0.2.1
+v0.3.1
+  - Novo menu para preparar base de dados: 
+    - cria tabelas gerais de CFOP, CNAE, NCM, CST e alíquotas de ICMS interestaduais
+    - cria funções auxiliares, como cnpj_cpf_formatted, aliquota, para uso nas queries
+v0.2.1
   - Novos menus para importar arquivos de cadastros do SAFI (GIA, Cadesp e Inidôneos)
   - Análises podem ter uma planilha detalhada, a ser juntada em provas ou notificações
   

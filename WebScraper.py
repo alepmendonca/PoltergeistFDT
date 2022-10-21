@@ -52,6 +52,7 @@ LAUNCHPAD_MAX_CONCURRENT_REPORTS = 4
 LAUNCHPAD_TIME_WAIT_SECONDS = 15
 LAUNCHPAD_TIME_REPORT_MINUTES = 2
 
+project_releases_url = "https://api.github.com/repos/alepmendonca/PoltergeistFDT/releases"
 pgsf_url = "https://portal60.sede.fazenda.sp.gov.br/"
 nfe_consulta_url = "https://nfe.fazenda.sp.gov.br/ConsultaNFe/consulta/publica/ConsultarNFe.aspx#tabConsInut"
 pfe_url = "https://www3.fazenda.sp.gov.br/CAWEB/Account/Login.aspx"
@@ -285,6 +286,17 @@ def get_latest_ufesps_from(ano: int):
     tuplas = [(tr.next, tr.next.nextSibling) for tr in linhas][:10]
     tuplas.reverse()
     return [(int(t[0].text[-4:]), float(t[1].text[-5:].replace(',', '.'))) for t in tuplas if int(t[0].text[-4:]) > ano]
+
+
+def get_latest_version_link_and_notes() -> (str, str, str):
+    try:
+        resposta = requests.get(project_releases_url, timeout=5)
+        resposta.raise_for_status()
+    except requests.exceptions.HTTPError as err:
+        logger.exception('Falha no acesso ao GitHub')
+        raise WebScraperException(f'Falha no acesso ao GitHub: {err}')
+    dados = resposta.json()[0]
+    return re.sub(r'[a-zA-Z]', '', dados['tag_name']), dados['html_url'], dados['body']
 
 
 def get_cnpj_data(cnpj: str):
