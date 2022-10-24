@@ -20,6 +20,7 @@ from urllib.request import urlopen
 
 import pandas as pd
 import PySimpleGUI as sg
+import pepe
 import requests
 import autoit
 import selenium
@@ -52,7 +53,7 @@ LAUNCHPAD_MAX_CONCURRENT_REPORTS = 4
 LAUNCHPAD_TIME_WAIT_SECONDS = 15
 LAUNCHPAD_TIME_REPORT_MINUTES = 2
 
-project_releases_url = "https://api.github.com/repos/alepmendonca/PoltergeistFDT/releases"
+project_releases_url = "https://api.github.com/repos/alepmendonca/PoltergeistFDT/releases/latest"
 pgsf_url = "https://portal60.sede.fazenda.sp.gov.br/"
 nfe_consulta_url = "https://nfe.fazenda.sp.gov.br/ConsultaNFe/consulta/publica/ConsultarNFe.aspx#tabConsInut"
 pfe_url = "https://www3.fazenda.sp.gov.br/CAWEB/Account/Login.aspx"
@@ -295,7 +296,7 @@ def get_latest_version_link_and_notes() -> (str, str, str):
     except requests.exceptions.HTTPError as err:
         logger.exception('Falha no acesso ao GitHub')
         raise WebScraperException(f'Falha no acesso ao GitHub: {err}')
-    dados = resposta.json()[0]
+    dados = resposta.json()
     return re.sub(r'[a-zA-Z]', '', dados['tag_name']), dados['html_url'], dados['body']
 
 
@@ -405,13 +406,13 @@ def set_password_for_certificate_in_browser(password: str):
 
 def set_password_in_browser(parte_titulo: str, username: str, password: str):
     navegador = f"[CLASS:Chrome_WidgetWin_1; REGEXPTITLE:(?i)(.*{parte_titulo}.*)]"
-    autoit.win_wait(navegador, 5)
-    autoit.win_activate(navegador)
-    autoit.send(username + "{TAB}")
-    senha_corrigida = re.sub(r"([!#+^{}])", r"{\1}", password)
-    autoit.send(senha_corrigida + "{ENTER}")
-
     try:
+        autoit.win_wait(navegador, 5)
+        autoit.win_activate(navegador)
+        autoit.send(username + "{TAB}")
+        senha_corrigida = re.sub(r"([!#+^{}])", r"{\1}", password)
+        autoit.send(senha_corrigida + "{ENTER}")
+
         # dá 2 chances pra mudar o título da janela (sinal que fez login)
         time.sleep(2)
         autoit.win_wait(navegador, 1)
@@ -694,6 +695,25 @@ class SeleniumWebScraper:
             except NoSuchElementException:
                 pass
 
+    def get_full_OSF_pepe(self, osf: str, filename='EmissaoOSF.pdf'):
+        # está dando erro de SSL ao tentar usar no PyInstaller
+        logger.info('Acessando PGSF para pegar OSF completa...')
+        try:
+            pgsf = pepe.Pgsf(usar_proxy=False)
+            pgsf.login(GeneralConfiguration.get().intranet_login, GeneralConfiguration.get().intranet_pass)
+            idOSF = pgsf.obter_id_osf(osf)
+            full_osf_link = 'https://portal60.sede.fazenda.sp.gov.br/pgsf/EmissaoOSF.rp?IDOSF='
+            response = pgsf.session.get(full_osf_link + idOSF)
+
+            with (self.download_path / filename).open('wb') as o:
+                o.write(response.content)
+            logger.warn('Realizado download da OSF completa!')
+        except KeyError:
+            raise WebScraperException(f'Não localizada OSF aberta com este número: {osf}')
+        except Exception as e:
+            logger.exception("Erro ao baixar PDF da OSF " + osf + " no PGSF")
+            raise WebScraperException(f"Erro ao baixar PDF da OSF {osf} no PGSF: {e}")
+
     def get_full_OSF(self, osf: str, filename: str):
         logger.info('Acessando PGSF para pegar OSF completa...')
         self.__pgsf_login()
@@ -838,7 +858,7 @@ class SeleniumWebScraper:
             logger.exception("Erro ao consultar cupons SAT na consulta pública")
             raise WebScraperException(f"Erro ao consultar cupons SAT na consulta pública: {e}")
 
-    def get_nfe_inutilizacoes(self, cnpj: str, ano_inicial: int, ano_final: int, print=False) -> list[dict|Path]:
+    def get_nfe_inutilizacoes(self, cnpj: str, ano_inicial: int, ano_final: int, print=False) -> list[dict | Path]:
         logger.info("Consultando NF-e Inutilizações")
         self.__get_driver().get(nfe_consulta_url)
 
@@ -1365,8 +1385,8 @@ class SeleniumWebScraper:
 
         self.__get_driver().get("https://sefaznet11.intra.fazenda.sp.gov.br/pgsf.net/Telas/Relatorios.aspx")
         Select(self.__get_driver().find_element(By.ID, "ctl00_MainContent_ddlRelatorios")).select_by_index(1)
-        WebDriverWait(self.__get_driver(), 10).until(
-            EC.visibility_of_element_located((By.ID, "ctl00_MainContent_filtroCombos_ddlDrt")))
+        wait_driver = WebDriverWait(self.__get_driver(), 10)
+        wait_driver.until(EC.visibility_of_element_located((By.ID, "ctl00_MainContent_filtroCombos_ddlDrt")))
 
         unidades = self.__get_driver().find_element(By.ID, "ctl00_MainContent_filtroCombos_ddlUnidade")
         seletor = Select(unidades)
@@ -1374,6 +1394,8 @@ class SeleniumWebScraper:
             if any([opcao.text.startswith('FDT DRT') for opcao in seletor.options]):
                 seletor.select_by_visible_text(
                     [opcao.text for opcao in seletor.options if opcao.text.startswith('FDT DRT')][0])
+                wait_driver.until(EC.text_to_be_present_in_element(
+                    (By.ID, "ctl00_MainContent_filtroCombos_ddlDrt"), "DRT"))
             else:
                 raise WebScraperException('Não foi encontrada opção de FDT em DRT no PGSF, para pegar a DRT do AFRE!')
 
@@ -1478,7 +1500,6 @@ class SeleniumWebScraper:
                                               ' Atualize os dados da Fiscalizada no menu Editar!')
                 else:
                     raise WebScraperException(f'Ocorreu problema inesperado no DEC: {alert_text}')
-
 
             # Preenchidos os metadados da notificação, enxerta o HTML da notificação diretamente
             # Relembrando HTML...

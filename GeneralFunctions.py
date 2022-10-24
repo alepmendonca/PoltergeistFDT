@@ -24,7 +24,7 @@ from cryptography import x509
 from cryptography.hazmat._oid import ObjectIdentifier
 
 project_name = 'PoltergeistFDT'
-project_version = '0.3.1'
+project_version = '0.3.2'
 meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho',
          'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 infractions = {}

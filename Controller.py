@@ -128,7 +128,7 @@ def update_dados_osf(osf: str):
 
     # inicio e fim fiscalizacao podem simplesmente não estar na OSF
     inicio_auditoria = fim_auditoria = None
-    if linhas.index('Até:') >= 0 and re.match(r'\d{2}/\d{4}', linhas[linhas.index('Até:') + 1]):
+    if 'Até:' in linhas and re.match(r'\d{2}/\d{4}', linhas[linhas.index('Até:') + 1]):
         inicio_auditoria = linhas[76]
         fim_auditoria = linhas[77]
     else:
@@ -207,6 +207,7 @@ def update_dados_osf(osf: str):
         AIIMAutoIt().atualiza_aiim(get_current_audit().aiim_number,
                                    __get_aiim_position_in_aiim2003(get_current_audit().aiim_number),
                                    get_current_audit())
+    return audit
 
 
 def is_aiim_on_AIIM2003() -> bool:
