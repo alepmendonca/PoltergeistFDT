@@ -4,7 +4,6 @@ import re
 import subprocess
 import sys
 import threading
-import time
 from json import JSONDecodeError
 from zipfile import BadZipFile
 
@@ -187,7 +186,10 @@ def create_audit(pasta: Path):
         del popup
 
     if buscar:
-        WaitWindow.open_wait_window(Controller.update_dados_osf, 'Carregar dados da OSF', numosf)
+        retorno = WaitWindow.open_wait_window(Controller.update_dados_osf, 'Carregar dados da OSF', numosf)
+        if retorno is None:
+            __clean_tabs()
+            return
         if get_current_audit().inicio_auditoria is None:
             inicio = None
             while inicio is None:

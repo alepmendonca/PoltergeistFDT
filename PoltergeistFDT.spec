@@ -11,7 +11,7 @@ a = Analysis(
     datas=[('resources', 'resources'), ('mysqldump', 'mysqldump'),
         ('efd-pva-inspector/bin', 'efd-pva-inspector/bin'),
         ('venv/Lib/site-packages/autoit/lib/*', 'autoit/lib')],
-    hiddenimports=['py4j.java_collections', 'AiimProofGenerator'],
+    hiddenimports=['py4j.java_collections', 'AiimProofGenerator', 'pepe'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
