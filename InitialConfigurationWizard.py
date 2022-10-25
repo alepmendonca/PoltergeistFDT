@@ -14,7 +14,7 @@ import PySimpleGUI as sg
 
 
 def __create_wizard_window(layout: list) -> sg.Window:
-    return sg.Window(GeneralFunctions.project_name, layout, size=(600, 550),
+    return sg.Window(GeneralFunctions.get_project_name(), layout, size=(600, 550),
                      resizable=False, finalize=True, text_justification='center',
                      element_justification='center', icon=GUIFunctions.app_icon)
 
@@ -28,7 +28,7 @@ def __get_dados_from_web(config):
 def create_config_file():
     layout = [
         [sg.Image(get_splash_image())],
-        [sg.Text(f'Este é o {GeneralFunctions.project_name}, que faz a possessão do seu computador ')],
+        [sg.Text(f'Este é o {GeneralFunctions.get_project_name()}, que faz a possessão do seu computador ')],
         [sg.Text('para fazer as tarefas mais repetitivas de uma auditoria fiscal.')],
         [sg.Text(f'Como não localizei nenhuma informação sua (sem entrar na sua cabeça), para começar, ')],
         [sg.Text(f'vou pedir alguns dados seus, que vão ficar guardados em um arquivo chamado ')],
@@ -179,7 +179,7 @@ def create_config_file():
 
     layout = [
         [sg.Text(f'Muito bem, {GeneralConfiguration.get().nome.split()[0].capitalize()}, já sei bem quem você é!')],
-        [sg.Text(f'O {GeneralFunctions.project_name} está configurado para uso! Bom proveito!')],
+        [sg.Text(f'O {GeneralFunctions.get_project_name()} está configurado para uso! Bom proveito!')],
         [sg.Push(), sg.Button('Vamos lá!'), sg.Push()]
     ]
     window = __create_wizard_window(layout)

@@ -60,35 +60,35 @@ class Configuration:
 
     @property
     def intranet_pass(self) -> str:
-        return keyring.get_password(GeneralFunctions.project_name, 'intranet')
+        return keyring.get_password(GeneralFunctions.get_project_name(), 'intranet')
 
     @intranet_pass.setter
     def intranet_pass(self, password: str):
-        keyring.set_password(GeneralFunctions.project_name, 'intranet', password)
+        keyring.set_password(GeneralFunctions.get_project_name(), 'intranet', password)
 
     @property
     def certificado_pass(self) -> str:
-        return keyring.get_password(GeneralFunctions.project_name, 'certificate')
+        return keyring.get_password(GeneralFunctions.get_project_name(), 'certificate')
 
     @certificado_pass.setter
     def certificado_pass(self, password: str):
-        keyring.set_password(GeneralFunctions.project_name, 'certificate', password)
+        keyring.set_password(GeneralFunctions.get_project_name(), 'certificate', password)
 
     @property
     def sigadoc_pass(self) -> str:
-        return keyring.get_password(GeneralFunctions.project_name, 'sigadoc')
+        return keyring.get_password(GeneralFunctions.get_project_name(), 'sigadoc')
 
     @sigadoc_pass.setter
     def sigadoc_pass(self, password: str):
-        keyring.set_password(GeneralFunctions.project_name, 'sigadoc', password)
+        keyring.set_password(GeneralFunctions.get_project_name(), 'sigadoc', password)
 
     @property
     def postgres_pass(self) -> str:
-        return keyring.get_password(GeneralFunctions.project_name, 'postgres')
+        return keyring.get_password(GeneralFunctions.get_project_name(), 'postgres')
 
     @postgres_pass.setter
     def postgres_pass(self, password: str):
-        keyring.set_password(GeneralFunctions.project_name, 'postgres', password)
+        keyring.set_password(GeneralFunctions.get_project_name(), 'postgres', password)
 
     @property
     def drt_sigla(self) -> str:
@@ -335,8 +335,8 @@ def configuration_window():
                       expand_x=True)],
             [sg.Text("Usuário (padrão postgres):"), sg.Input(key='postgres_user', default_text=get().postgres_user,
                                                              expand_x=True)],
-            [sg.Text("Senha (AUD-Postgres vazia):"), sg.Input(key='postgres_pass', default_text=get().postgres_pass,
-                                                              expand_x=True, password_char='*')],
+            [sg.Text("Senha (AUD-Postgres postgres):"), sg.Input(key='postgres_pass', default_text=get().postgres_pass,
+                                                                 expand_x=True, password_char='*')],
         ], expand_x=True)],
         [sg.Frame(title='EFD PVA ICMS', layout=[
             [sg.Text("Pasta do EFD PVA ICMS:"), sg.Input(key='efd_path', default_text=get().efd_path,

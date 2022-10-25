@@ -19,7 +19,7 @@ def popup_erro(texto: str, titulo='Erro'):
                         sg.Push()]], modal=True, icon=app_icon).read(close=True)
 
 
-def popup_ok(texto: str, titulo=GeneralFunctions.project_name):
+def popup_ok(texto: str, titulo=GeneralFunctions.get_project_name()):
     sg.Window(titulo, [[sg.Text('\n'.join(textwrap.wrap(texto, 100)))],
                        [sg.Push(), sg.Button('OK', s=10),
                         sg.Push()]], modal=True, icon=app_icon).read(close=True)
@@ -44,7 +44,7 @@ def get_splash_image() -> bytes:
 def popup_about():
     layout = [
         [sg.Image(get_splash_image())],
-        [sg.T(f'{GeneralFunctions.project_name} versão {GeneralFunctions.project_version}')]
+        [sg.T(f'{GeneralFunctions.get_project_name()} versão {GeneralFunctions.get_project_version()}')]
     ]
     versao = None
     notas = None
@@ -56,11 +56,11 @@ def popup_about():
                                     disabled=True, expand_y=True, expand_x=True)])
     except WebScraper.WebScraperException:
         size = (None, None)
-    if versao is not None and versao != GeneralFunctions.project_version:
+    if versao is not None and versao != GeneralFunctions.get_project_version():
         layout.append([sg.OK(s=10), sg.Button(f'Baixar nova versão {versao}', key='-NEW-VERSION-')])
     else:
         layout.append([sg.OK(s=10)])
-    w = sg.Window(GeneralFunctions.project_name, layout, size=size,
+    w = sg.Window(GeneralFunctions.get_project_name(), layout, size=size,
                   element_justification='c', icon=app_icon, finalize=True)
     if notas is not None:
         widget = w['-NOVIDADES-'].Widget

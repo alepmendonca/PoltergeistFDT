@@ -52,6 +52,7 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
     icon='resources\\ghost.ico',
+    version='file_version_info.py',
 )
 coll = COLLECT(
     exe,

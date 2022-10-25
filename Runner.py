@@ -777,7 +777,7 @@ def initialize_environment():
     try:
         GeneralFunctions.logger.debug("Inicializando ambiente...")
         Controller.set_proxy()
-        GUIFunctions.update_splash(f'{GeneralFunctions.project_name} v{GeneralFunctions.project_version}')
+        GUIFunctions.update_splash(f'{GeneralFunctions.get_project_name()} v{GeneralFunctions.get_project_version()}')
 
         # tenta excluir diretorio tmp no início
         GeneralFunctions.clean_tmp_folder()
@@ -793,7 +793,7 @@ def initialize_environment():
 
         # Criar janela
         global window
-        window = sg.Window(GeneralFunctions.project_name, window_layout(), size=(1024, 768),
+        window = sg.Window(GeneralFunctions.get_project_name(), window_layout(), size=(1024, 768),
                            resizable=True, finalize=True,
                            enable_close_attempted_event=True, icon=GUIFunctions.app_icon)
         window.set_min_size((800, 500))
@@ -1065,4 +1065,4 @@ if __name__ == "__main__":
         window_event_handler()
     except Exception as e:
         GeneralFunctions.logger.exception(f'Exceção inesperada: {e}')
-        GUIFunctions.popup_erro(f'Erro inesperado na execução do {GeneralFunctions.project_name}: {e}')
+        GUIFunctions.popup_erro(f'Erro inesperado na execução do {GeneralFunctions.get_project_name()}: {e}')

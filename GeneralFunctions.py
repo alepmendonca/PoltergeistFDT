@@ -4,6 +4,7 @@ import json
 import logging
 import ssl
 import subprocess
+import sys
 import threading
 from io import TextIOWrapper
 from logging.handlers import RotatingFileHandler
@@ -19,16 +20,16 @@ from pathlib import Path
 
 import pandas as pd
 import pythoncom
+import win32api
 import wincertstore as wincertstore
 from cryptography import x509
 from cryptography.hazmat._oid import ObjectIdentifier
 
-project_name = 'PoltergeistFDT'
-project_version = '0.3.2'
+_project_name = None
+_project_version = None
 meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho',
          'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 infractions = {}
-
 
 class PopenWindows(subprocess.Popen):
     # serve pra fazer monkey patch, de forma que no modo release não abra um shell
@@ -79,8 +80,38 @@ class ThreadWithReturnValue(threading.Thread):
         return self._return
 
 
+def get_project_name() -> str:
+    global _project_name
+    if _project_name is None:
+        version_file = Path('file_version_info.py')
+        if version_file.is_file():
+            with version_file.open('r') as f:
+                _project_name = re.search(r"ProductName'.*'(\w+)'", f.read()).group(1)
+        else:
+            # quando roda em modo executavel do PyInstaller
+            lang, codepage = win32api.GetFileVersionInfo(sys.executable, '\\VarFileInfo\\Translation')[0]
+            _project_name = win32api.GetFileVersionInfo(sys.executable, u'\\StringFileInfo\\%04X%04X\\%s' %
+                                                        (lang, codepage, 'ProductName'))
+    return _project_name
+
+
+def get_project_version() -> str:
+    global _project_version
+    if _project_version is None:
+        version_file = Path('file_version_info.py')
+        if version_file.is_file():
+            with version_file.open('r') as f:
+                _project_version = re.search(r'ProductVersion.*(\d+\.\d+\.\d+)', f.read()).group(1)
+        else:
+            # quando roda em modo executavel do PyInstaller
+            lang, codepage = win32api.GetFileVersionInfo(sys.executable, '\\VarFileInfo\\Translation')[0]
+            _project_version = win32api.GetFileVersionInfo(sys.executable, u'\\StringFileInfo\\%04X%04X\\%s' %
+                                                        (lang, codepage, 'ProductVersion'))
+    return _project_version
+
+
 def get_user_path() -> Path:
-    return (Path.home() / project_name).absolute()
+    return (Path.home() / get_project_name()).absolute()
 
 
 def get_local_dados_afr_path() -> Path:
@@ -107,10 +138,10 @@ def get_tables_path() -> Path:
     return Path('resources') / 'tables'
 
 
-logger = logging.getLogger(project_name)
+logger = logging.getLogger(get_project_name())
 logger.setLevel(logging.DEBUG)
 get_user_path().mkdir(exist_ok=True)
-fh = RotatingFileHandler(filename=get_user_path() / f'{project_name}.log', encoding='iso-8859-1',
+fh = RotatingFileHandler(filename=get_user_path() / f'{get_project_name()}.log', encoding='iso-8859-1',
                          backupCount=3, maxBytes=10485760)
 fh.setLevel(logging.ERROR)
 fh.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
