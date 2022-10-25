@@ -35,7 +35,7 @@ class ExcelDDFsTest(AuditTestSetup):
         self.assertEqualsContents(aiim_number, caminho_q3, self._main_path / 'AIIM' / 'Quadro 3.pdf')
 
     def test_gera_quadro_3(self):
-        with mock.patch('MDBReader.MDBReader.get_last_ufesp_stored', return_value=31.97):
+        with mock.patch('MDBReader.AIIM2003MDBReader.get_last_ufesp_stored', return_value=31.97):
             self._verifica_quadro_3('41477900')
             self._verifica_quadro_3('41500581')
             self._verifica_quadro_3('41427889')

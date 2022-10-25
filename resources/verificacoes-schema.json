@@ -166,6 +166,7 @@
                         "tipo": {
                           "enum": [
                             "listagem",
+                            "listagem-detalhe",
                             "LRE",
                             "LRS",
                             "LRI",

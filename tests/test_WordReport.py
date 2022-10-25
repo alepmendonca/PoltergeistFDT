@@ -4,6 +4,7 @@ from pathlib import Path
 import win32com
 import win32com.client
 
+import GeneralConfiguration
 import GeneralFunctions
 from Audit import get_current_audit
 from WordReport import WordReport
@@ -33,14 +34,18 @@ class WordReportTest(AuditTestSetup):
                     pass
 
     def test_create_report_from_template(self):
+        GeneralConfiguration.get().drt_sigla = 'DRT-07'
+        GeneralConfiguration.get().equipe_fiscal = 57
+        GeneralConfiguration.get().nome = 'FISCAL TESTE'
+        GeneralConfiguration.get().funcional = '25.456-8'
         report = get_current_audit().get_report()
         self.assertEqual(get_current_audit().path() / 'AIIM' / 'Relatório Circunstanciado.docx', report.report_path)
         self.assertTrue(report.report_path.is_file())
         self.assertMultiLineEqual(report.report.sections[0].header.tables[0].rows[0].cells[0].text,
                                   "SECRETARIA DA FAZENDA E PLANEJAMENTO\n"
                                   "SUBSECRETARIA DA RECEITA ESTADUAL\n"
-                                  "DELEGACIA REGIONAL TRIBUTÁRIA DA CAPITAL-I - DRTC-I\n"
-                                  "NÚCLEO DE FISCALIZAÇÃO 4 - EQUIPE 46")
+                                  "DELEGACIA REGIONAL TRIBUTÁRIA DE BAURU - DRT-7\n"
+                                  "NÚCLEO DE FISCALIZAÇÃO 5 - EQUIPE 57")
         titulos = report.titulos_inseridos()
         self.assertListEqual([WordReport.titulos[t] for t in titulos.keys()],
                              ['DA CONCLUSÃO DO TRABALHO FISCAL'])
@@ -51,10 +56,10 @@ class WordReportTest(AuditTestSetup):
                          'AIIM nº 1.111.111-2, nos termos da Lei 6.374/89. Foram juntadas ao presente AIIM '
                          'as provas citadas necessárias para comprovar as infrações praticadas.',
                          paragrafos_finais[0])
-        self.assertEqual(f'DRTC-I/NF-4/Equipe 46, em', paragrafos_finais[2][:paragrafos_finais[2].index(',')+4])
-        self.assertEqual('ALEXANDRE PALMEIRA MENDONÇA', paragrafos_finais[4])
+        self.assertEqual(f'DRT-7/NF-5/Equipe 57, em', paragrafos_finais[2][:paragrafos_finais[2].index(',')+4])
+        self.assertEqual('FISCAL TESTE', paragrafos_finais[4])
         self.assertEqual('AUDITOR FISCAL DA RECEITA ESTADUAL', paragrafos_finais[5])
-        self.assertEqual('IF: 16.801-4', paragrafos_finais[6])
+        self.assertEqual('IF: 25.456-8', paragrafos_finais[6])
 
     def test_insert_titles(self):
         word = get_current_audit().get_report()

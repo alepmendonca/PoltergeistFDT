@@ -62,9 +62,14 @@ class TestConfiguration(TestCase):
         self.assertEqual('Sigla de delegacia inválida: nada a ver', str(ctx.exception))
         with self.assertRaises(ValueError) as ctx:
             self.config.drt_sigla = 'DRT-17'
+        self.config.drt_sigla = ' 05 - DRT-05 - CAMPINAS\n'
+        self.assertEqual('DRT-5', self.config.drt_sigla)
+        self.config.drt_sigla = ' 10 - DRT15 - araraquara\n'
+        self.assertEqual('DRT-15', self.config.drt_sigla)
         self.config.drt_sigla = 'DRT-12'
         self.assertEqual('DRT-12', self.config.drt_sigla)
-        self.assertEqual('DELEGACIA REGIONAL TRIBUTÁRIA DO ABCD', self.config.drt_nome)
+        self.config.drt_sigla = 'C1 - DRTC-I - SAO PAULO'
+        self.assertEqual('DRTC-I', self.config.drt_sigla)
 
     def test_equipe_fiscal(self):
         self.assertEqual(0, self.config.nucleo_fiscal())
@@ -192,6 +197,7 @@ class TestConfiguration(TestCase):
 
     def test_save(self):
         self.assertFalse(self.path.is_file())
+        GeneralConfiguration._singleton = None
         with mock.patch('GeneralConfiguration.GeneralFunctions.get_local_dados_afr_path',
                         return_value=self.path):
             self.assertIsNone(GeneralConfiguration.get())

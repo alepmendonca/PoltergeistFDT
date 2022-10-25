@@ -97,10 +97,14 @@ class Configuration:
     @drt_sigla.setter
     def drt_sigla(self, sigla):
         if sigla:
-            matches = re.search(r"(DRT[C\-\dI]+)", sigla)
-            if not matches or len(matches.groups()) < 1 or matches.group(1) not in self.nomes_delegacias.keys():
+            matches = re.search(r"DRT(C[\s\-]*I+|[\s\-]*\d+)", sigla)
+            if not matches or len(matches.groups()) < 1:
                 raise ValueError(f'Sigla de delegacia inválida: {sigla}')
-            self._drt = matches.group(1)
+            numero = re.match(r'[\s\-]*(\d+)', matches.group(1))
+            match = f'DRT{matches.group(1) if not numero else "-" + str(int(numero.group(1)))}'
+            if match not in self.nomes_delegacias.keys():
+                raise ValueError(f'Sigla de delegacia inválida: {match}')
+            self._drt = match
 
     def nucleo_fiscal(self) -> int:
         return int(self.equipe_fiscal / 10)
@@ -139,12 +143,12 @@ class Configuration:
             raise ValueError('Nome de arquivo de inidôneos inválido - deve ter mês e ano no nome!')
         mes = matches.group(1)
         if len(mes) == 3:
-            meses = [x[:3].lower() for x in GeneralFunctions.meses]
+            meses = [x[:3].capitalize() for x in GeneralFunctions.meses]
         else:
             meses = GeneralFunctions.meses
-        if mes.lower() not in meses:
+        if mes.capitalize() not in meses:
             raise ValueError(f"Não localizei o mês de geração do arquivo no nome, achei que era {mes}")
-        mes = meses.index(mes.lower()) + 1
+        mes = meses.index(mes.capitalize()) + 1
         return datetime.date(int(matches.group(2)), mes, 1)
 
     @property
@@ -167,12 +171,12 @@ class Configuration:
             raise ValueError('Nome de arquivo de GIAs inválido - deve ter mês e ano no nome!')
         mes = matches.group(1)
         if len(mes) == 3:
-            meses = [x[:3].lower() for x in GeneralFunctions.meses]
+            meses = [x[:3].capitalize() for x in GeneralFunctions.meses]
         else:
             meses = GeneralFunctions.meses
-        if mes.lower() not in meses:
+        if mes.capitalize() not in meses:
             raise ValueError(f"Não localizei o mês de geração do arquivo no nome, achei que era {mes}")
-        mes = meses.index(mes.lower()) + 1
+        mes = meses.index(mes.capitalize()) + 1
         return datetime.date(int(matches.group(2)), mes, 1)
 
     @property
@@ -195,12 +199,12 @@ class Configuration:
             raise ValueError('Nome de arquivo de Cadesp inválido - deve ter mês e ano no nome!')
         mes = matches.group(1)
         if len(mes) == 3:
-            meses = [x[:3] for x in GeneralFunctions.meses]
+            meses = [x[:3].capitalize() for x in GeneralFunctions.meses]
         else:
             meses = GeneralFunctions.meses
-        if mes.lower() not in meses:
+        if mes.capitalize() not in meses:
             raise ValueError(f"Não localizei o mês de geração do arquivo no nome, achei que era {mes}")
-        mes = meses.index(mes.lower()) + 1
+        mes = meses.index(mes.capitalize()) + 1
         return datetime.date(int(matches.group(2)), mes, 1)
 
     @property
