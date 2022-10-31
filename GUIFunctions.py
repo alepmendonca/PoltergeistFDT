@@ -1,6 +1,10 @@
+import datetime
 import io
+import os
+import sys
 import textwrap
 import time
+import traceback
 import webbrowser
 
 import PySimpleGUI as sg
@@ -8,29 +12,83 @@ import markdown
 from PIL import Image
 from tkhtmlview import html_parser
 
+import Audit
+import GeneralConfiguration
 import GeneralFunctions
 import WebScraper
 
 
-def popup_erro(texto: str, titulo='Erro'):
-    sg.Window(titulo, [[sg.Text('\n'.join(textwrap.wrap(texto, 100)))],
-                       [sg.Push(), sg.Button(button_color=sg.DEFAULT_ERROR_BUTTON_COLOR,
-                                             button_text='Erro', s=10),
-                        sg.Push()]], modal=True, icon=app_icon).read(close=True)
+def diagnostico_texto(exception: BaseException, header=True) -> str:
+    try:
+        texto_exception = ''
+        if header:
+            texto_exception = f'{GeneralFunctions.get_project_name()} versão {GeneralFunctions.get_project_version()}\n'
+            texto_exception += f'Executável {sys.executable}\n'
+            texto_exception += f'User_Path {GeneralFunctions.get_user_path()}\n'
+            texto_exception += f'EFD_Path {GeneralConfiguration.get().efd_path}\n'
+            texto_exception += f'Máquina {os.environ["USERDOMAIN"]}\n'
+            texto_exception += f'Usando Proxy: {WebScraper.does_environment_need_proxy()}\n'
+            if Audit.get_current_audit() is not None:
+                texto_exception += f'OSF {Audit.get_current_audit().osf}\n'
+        texto_exception += f'Erro ocorrido em {datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")}\n'
+        sio = io.StringIO()
+        traceback.print_exception(exception, file=sio)
+        texto_exception += sio.getvalue()
+        sio.close()
+        if texto_exception[-1:] == "\n":
+            texto_exception = texto_exception[:-1]
+    except:
+        return ''
+    return texto_exception
+
+
+def popup_erro(texto: str, titulo='Erro', exception: BaseException = None):
+    texto_exception = None
+    botoes = [sg.Push(), sg.Button(button_color=sg.DEFAULT_ERROR_BUTTON_COLOR, button_text='OK', s=10)]
+    if exception:
+        try:
+            texto_exception = diagnostico_texto(exception)
+            botoes.append(sg.Button(button_color=sg.DEFAULT_ERROR_BUTTON_COLOR,
+                                    button_text='Copia Diagnóstico', key='-DIAGNOSTICO-'))
+        except Exception:
+            # se der qualquer problema na montagem do diagnóstico, desiste
+            pass
+    botoes.append(sg.Push())
+    w = sg.Window(titulo, [
+        [sg.Text('\n'.join(textwrap.wrap(texto, 150, max_lines=10)))],
+        botoes], modal=True, keep_on_top=True, element_justification='c', icon=app_icon)
+    evento, _ = w.read(close=True)
+    if evento == '-DIAGNOSTICO-':
+        GeneralFunctions.copia_para_area_transferencia(texto_exception)
 
 
 def popup_ok(texto: str, titulo=GeneralFunctions.get_project_name()):
-    sg.Window(titulo, [[sg.Text('\n'.join(textwrap.wrap(texto, 100)))],
+    sg.Window(titulo, [[sg.Text('\n'.join(textwrap.wrap(texto, 150, max_lines=10)))],
                        [sg.Push(), sg.Button('OK', s=10),
-                        sg.Push()]], modal=True, icon=app_icon).read(close=True)
+                        sg.Push()]], modal=True, element_justification='c', icon=app_icon).read(close=True)
 
 
-def popup_sim_nao(texto: str, titulo='Atenção') -> str:
-    botao = sg.Window(titulo, [[sg.Text('\n'.join(textwrap.wrap(texto, 100)))],
+def popup_sim_nao(texto: str, titulo='Atenção') -> bool:
+    botao = sg.Window(titulo, [[sg.Text('\n'.join(textwrap.wrap(texto, 150, max_lines=10)))],
                                [sg.Push(), sg.Button('Sim', s=10), sg.Button('Não', s=10),
                                 sg.Push()]], disable_close=True, modal=True,
-                      icon=app_icon).read(close=True)
-    return botao[0] if botao else None
+                      element_justification='c', icon=app_icon).read(close=True)
+    return botao[0] == 'Sim' if botao else False
+
+
+def popup_pega_texto(texto: str, titulo='Defina texto', texto_padrao=None) -> str:
+    layout = [[]]
+    layout += [[sg.Text(texto, auto_size_text=True)],
+               [sg.InputText(default_text=texto_padrao, key='-INPUT-')],
+               [sg.Button('OK', size=(10, 1), bind_return_key=True), sg.Button('Cancelar', size=(10, 1))]]
+
+    button, values = sg.Window(title=titulo, layout=layout, auto_size_text=True,
+                               disable_close=True, modal=True,
+                               element_justification='c', icon=app_icon).read(close=True)
+    if button != 'OK':
+        return None
+    else:
+        return values['-INPUT-']
 
 
 def get_splash_image() -> bytes:
@@ -66,7 +124,8 @@ def popup_about():
         widget = w['-NOVIDADES-'].Widget
         parser = html_parser.HTMLTextParser()
         html = markdown.markdown(notas)
-        html = html.replace('<h1>', '</span><h3>').replace('</h1>', '</h3><span style="font-size: 10px">')[7:] + '</span>'
+        html = html.replace('<h1>', '</span><h3>').replace('</h1>', '</h3><span style="font-size: 10px">')[
+               7:] + '</span>'
         prev_state = widget.cget('state')
         widget.config(state=sg.tk.NORMAL)
         widget.delete('1.0', sg.tk.END)

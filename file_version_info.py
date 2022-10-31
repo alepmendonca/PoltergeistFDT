@@ -2,6 +2,7 @@
 #
 # For more details about fixed file info 'ffi' see:
 # http://msdn.microsoft.com/en-us/library/ms646997.aspx
+exec('import datetime') or \
 VSVersionInfo(
   ffi=FixedFileInfo(
     # filevers and prodvers should be always a tuple with four items: (1, 2, 3, 4)
@@ -32,10 +33,10 @@ VSVersionInfo(
         [StringStruct('CompanyName', 'Receita Estadual de Sao Paulo'),
         StringStruct('FileDescription', 'PoltergeistFDT para SRE-SP'),
         StringStruct('InternalName', 'PoltergeistFDT.exe'),
-        StringStruct('LegalCopyright', 'Copyleft © 2022'),
+        StringStruct('LegalCopyright', f'Copyleft © {datetime.date.today().year}'),
         StringStruct('OriginalFilename', 'PoltergeistFDT.exe'),
         StringStruct('ProductName', 'PoltergeistFDT'),
-        StringStruct('ProductVersion', '0.3.2')])
+        StringStruct('ProductVersion', f'0.3.3-{datetime.datetime.now().strftime("%Y%m%d%H")}')])
       ]), 
     VarFileInfo([VarStruct('Translation', [0, 1200])])
   ]

@@ -154,7 +154,7 @@ def create_config_file():
                     config.efd_path = values['-WIZ-EFD-']
                     config.efd_port = 3336
                 except Exception as e:
-                    GUIFunctions.popup_erro(f'Problema com EFD PVA ICMS: {e}')
+                    GUIFunctions.popup_erro(f'Problema com EFD PVA ICMS: {e}', exception=e)
                     continue
 
             config.postgres_address = values['-WIZ-POSTGRES-ADDRESS-']
@@ -170,7 +170,7 @@ def create_config_file():
                 texto = 'Não foi possível conectar no banco de dados local. ' \
                         'Verifique os dados para conexão e tente novamente.' \
                         f'Erro ocorrido: {e}'
-                GUIFunctions.popup_erro(texto)
+                GUIFunctions.popup_erro(texto, exception=e)
                 continue
 
             config.save()

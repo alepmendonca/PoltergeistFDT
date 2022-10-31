@@ -50,13 +50,17 @@ class ThreadedApp(GeneralFunctions.ThreadWithReturnValue):
 
 
 class WindowEventHandler(logging.Handler):
-    def __init__(self, window: sg.Window):
+    def __init__(self, window: sg.Window, error_list: list):
         super().__init__()
         self.window = window
+        self.errors = error_list
         self.setLevel('INFO')
 
     def emit(self, record):
+        exc_info = record.exc_info
         self.window.write_event_value('-LOG-WINDOW-EVENT-', self.format(record))
+        if exc_info:
+            self.errors.append(GUIFunctions.diagnostico_texto(exc_info[1], header=not bool(self.errors)))
 
 
 class LogWindow(sg.Window):
@@ -74,6 +78,7 @@ class LogWindow(sg.Window):
             [sg.Push(),
              sg.Button('Iniciar', bind_return_key=True, key='-START-'),
              sg.Button('Fechar', key='-STOP-'),
+             sg.Button('Copiar Diagnóstico', key='-DIAGNOSTICO-', disabled=True),
              sg.Push()],
         ]
         super().__init__('Detalhes do processamento', layout,
@@ -84,7 +89,8 @@ class LogWindow(sg.Window):
                          enable_close_attempted_event=True,
                          modal=True, icon=GUIFunctions.app_icon)
         # Setup logging
-        self._msg_handler = WindowEventHandler(self)
+        self._erros = []
+        self._msg_handler = WindowEventHandler(self, self._erros)
         self._msg_handler.setFormatter(QueueFormatter("%(asctime)s - %(message)s", datefmt="%H:%M:%S"))
         logger.addHandler(self._msg_handler)
         self._funcao = funcao_batch
@@ -99,11 +105,13 @@ class LogWindow(sg.Window):
     def handle_event(self, event, values):
         if event == '-START-':
             if self._threadedApp is None:
+                self._erros.clear()
                 self._threadedApp = ThreadedApp(self._funcao, self._funcao_nome, self._funcao_parametros)
                 self._threadedApp.start()
-                logger.debug('Iniciando processo...')
+                logger.info('Iniciando processo...')
                 self['-START-'].update(disabled=True)
                 self['-STOP-'].update('Parar')
+                self['-DIAGNOSTICO-'].update(disabled=True)
         elif event in ('-STOP-', sg.WINDOW_CLOSE_ATTEMPTED_EVENT) \
                 and self._threadedApp and self._threadedApp.is_alive() \
                 and sg.popup_yes_no("Deseja realmente parar o processo?") == 'Yes':
@@ -113,11 +121,14 @@ class LogWindow(sg.Window):
         elif event in ('-STOP-', sg.WINDOW_CLOSE_ATTEMPTED_EVENT, sg.WINDOW_CLOSED) \
                 and self._threadedApp is None:
             self.close()
+        elif event == '-DIAGNOSTICO-':
+            GeneralFunctions.copia_para_area_transferencia('\n'.join(self._erros))
         elif event == '-LOG-WINDOW-EVENT-':
             msg = values[event]
             if msg.upper() == msg:
                 self['-LOG-'].update(msg + '\n', background_color_for_value='yellow', append=True)
             elif 'erro' in msg.lower() or 'falha' in msg.lower() or 'problema' in msg.lower():
+                self['-DIAGNOSTICO-'].update(disabled=False)
                 self['-LOG-'].update(msg + '\n', background_color_for_value='red', append=True)
             elif '!' in msg:
                 self['-LOG-'].update(msg + '\n', background_color_for_value='green', append=True)
@@ -125,9 +136,14 @@ class LogWindow(sg.Window):
                 self['-LOG-'].update(msg + '\n', append=True)
         if event == sg.TIMEOUT_EVENT:
             if self._threadedApp is not None and not self._threadedApp.is_alive():
-                self['-LOG-'].update('PROCESSO ENCERRADO.\n', append=True)
-                self._threadedApp = None
-                self['-START-'].update(disabled=False)
-                self['-STOP-'].update("Fechar", disabled=False)
-                self['-STOP-'].ButtonText = 'Fechar'
+                if self._threadedApp.exception:
+                    logger.error(f'ERRO: {self._threadedApp.exception}', exc_info=self._threadedApp.exception)
+                    self._threadedApp.exception = None
+                else:
+                    self['-LOG-'].update('PROCESSO ENCERRADO.\n', append=True)
+                    self._threadedApp = None
+                    self['-START-'].update(disabled=False)
+                    self['-STOP-'].update("Fechar", disabled=False)
+                    self['-STOP-'].ButtonText = 'Fechar'
+
 

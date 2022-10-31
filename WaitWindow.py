@@ -34,7 +34,7 @@ def open_wait_window(funcao_batch: Callable, funcao_desc: str, *parametros_funca
                 result = thread.join()
             except Exception as e:
                 logger.exception(f'Erro ocorrido em WaitWindow da função {funcao_batch.__name__}')
-                GUIFunctions.popup_erro(f'Ocorreu o seguinte erro: {e}')
+                GUIFunctions.popup_erro(f'Ocorreu o seguinte erro: {e}', exception=e)
             else:
                 if funcao_desc:
                     GUIFunctions.popup_ok(f'Tarefa "{funcao_desc}" finalizada com sucesso!')

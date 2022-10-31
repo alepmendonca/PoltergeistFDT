@@ -53,6 +53,8 @@ LAUNCHPAD_MAX_CONCURRENT_REPORTS = 4
 LAUNCHPAD_TIME_WAIT_SECONDS = 15
 LAUNCHPAD_TIME_REPORT_MINUTES = 2
 
+proxy_srv = "proxyservidores.lbintra.fazenda.sp.gov.br"
+proxy_port = 8080
 project_releases_url = "https://api.github.com/repos/alepmendonca/PoltergeistFDT/releases/latest"
 pgsf_url = "https://portal60.sede.fazenda.sp.gov.br/"
 nfe_consulta_url = "https://nfe.fazenda.sp.gov.br/ConsultaNFe/consulta/publica/ConsultarNFe.aspx#tabConsInut"
@@ -191,11 +193,13 @@ def check_if_port_is_open(remote_server_host: str, port: int):
             sock.close()
 
 
+def does_environment_need_proxy() -> bool:
+    return check_if_port_is_open(proxy_srv, proxy_port)
+
+
 def set_proxy():
     # Proxy setup para rede interna Sefaz, apenas se fizer sentido...
-    proxy_srv = "proxyservidores.lbintra.fazenda.sp.gov.br"
-    proxy_port = 8080
-    if check_if_port_is_open(proxy_srv, proxy_port):
+    if does_environment_need_proxy():
         logger.info('Ajustando proxy da Sefaz-SP...')
         proxy_sefaz = f'http://{proxy_srv}:{proxy_port}'
         os.environ["http_proxy"] = proxy_sefaz
@@ -1757,7 +1761,14 @@ class SeleniumWebScraper:
                 'https://www10.fazenda.sp.gov.br/ArquivosDigitais/Pages/DownloadArquivoDigital.aspx')
             self.__get_driver().find_element(By.ID, 'ctl00_ConteudoPagina_usrControlOSF_txtOSF').send_keys(osf)
             self.__get_driver().find_element(By.ID, 'ctl00_ConteudoPagina_btnPesquisar').click()
-            tabela = self.__get_driver().find_element(By.CLASS_NAME, 'GridView')
+            try:
+                tabela = self.__get_driver().find_element(By.CLASS_NAME, 'GridView')
+            except NoSuchElementException as ex:
+                try:
+                    erros = self.__get_driver().find_element(By.ID, "ctl00_ConteudoPagina_ListaInconsistencia_ListErro")
+                    raise WebScraperException(erros.text)
+                except NoSuchElementException:
+                    raise ex
             # pega linhas da tabela, ignorando o cabeçalho
             logger.info("Definindo quais EFDs serão baixadas...")
             todos_arquivos = []

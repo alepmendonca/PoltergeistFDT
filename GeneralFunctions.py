@@ -21,6 +21,7 @@ from pathlib import Path
 import pandas as pd
 import pythoncom
 import win32api
+import win32clipboard
 import wincertstore as wincertstore
 from cryptography import x509
 from cryptography.hazmat._oid import ObjectIdentifier
@@ -63,7 +64,7 @@ class ThreadWithReturnValue(threading.Thread):
     def __init__(self, target, args=()):
         threading.Thread.__init__(self, group=None, target=target, name=None, args=args, kwargs=None, daemon=True)
         self._return = None
-        self._exception = None
+        self.exception = None
 
     def run(self):
         if self._target is not None:
@@ -71,12 +72,12 @@ class ThreadWithReturnValue(threading.Thread):
             try:
                 self._return = self._target(*self._args, **self._kwargs)
             except Exception as e:
-                self._exception = e
+                self.exception = e
 
     def join(self, *args):
         threading.Thread.join(self, *args)
-        if self._exception:
-            raise self._exception
+        if self.exception:
+            raise self.exception
         return self._return
 
 
@@ -107,11 +108,12 @@ def get_project_version() -> str:
             lang, codepage = win32api.GetFileVersionInfo(sys.executable, '\\VarFileInfo\\Translation')[0]
             _project_version = win32api.GetFileVersionInfo(sys.executable, u'\\StringFileInfo\\%04X%04X\\%s' %
                                                         (lang, codepage, 'ProductVersion'))
+            _project_version = re.search(r'(\d+\.\d+\.\d+)', _project_version).group(1)
     return _project_version
 
 
 def get_user_path() -> Path:
-    return (Path.home() / get_project_name()).absolute()
+    return (Path.home() / f'.{get_project_name()}').absolute()
 
 
 def get_local_dados_afr_path() -> Path:
@@ -144,7 +146,7 @@ get_user_path().mkdir(exist_ok=True)
 fh = RotatingFileHandler(filename=get_user_path() / f'{get_project_name()}.log', encoding='iso-8859-1',
                          backupCount=3, maxBytes=10485760)
 fh.setLevel(logging.ERROR)
-fh.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+fh.setFormatter(logging.Formatter("%(asctime)s [%(threadName)s] - %(levelname)s - %(message)s"))
 logger.addHandler(fh)
 ch = logging.StreamHandler()
 ch.setFormatter(logging.Formatter("%(asctime)s [%(threadName)s] - %(levelname)s - %(message)s"))
@@ -487,6 +489,13 @@ def is_empty_directory(path: Path) -> bool:
     if not path.is_dir():
         raise ValueError(f'{path} não é um diretório, para verificar se está vazio!')
     return not any(path.iterdir())
+
+
+def copia_para_area_transferencia(texto_exception):
+    win32clipboard.OpenClipboard()
+    win32clipboard.EmptyClipboard()
+    win32clipboard.SetClipboardText(texto_exception, win32clipboard.CF_UNICODETEXT)
+    win32clipboard.CloseClipboard()
 
 
 class QueueHandler(logging.Handler):

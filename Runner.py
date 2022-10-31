@@ -69,7 +69,7 @@ def refresh_analysis_tab():
     except ConfigFileDecoderException as e:
         GeneralFunctions.logger.exception('Erro com arquivos de configuração')
         GUIFunctions.popup_erro(f'Impossível prosseguir, ocorreu problema com arquivos de configuração '
-                                f'do sistema: {str(e)}')
+                                f'do sistema: {str(e)}', exception=e)
     window['-SQL-'].update(value='', disabled=True)
     window['-QUERY-'].update(disabled=True)
 
@@ -115,12 +115,12 @@ def __refresh_tabs(pasta: Path):
             Controller.get_local_dados_osf_up_to_date_with_aiim2003()
         except BadZipFile:
             GUIFunctions.popup_erro('Falha na abertura da planilha de arrazoado da fiscalizada. '
-                                    'Conserte o arquivo no Excel e reabra a fiscalização.')
+                                    'Conserte o arquivo no Excel e reabra a fiscalização.', exception=e)
             return
         except JSONDecodeError as ex:
             GUIFunctions.popup_erro(f'Falha na abertura do arquivo dados_auditoria.json da fiscalizada. Verifique se '
                                     f'não foi feita nenhuma alteração manual no arquivo no seguinte trecho: '
-                                    f'{str(ex)}')
+                                    f'{str(ex)}', exception=ex)
             return
 
         window['pasta'].update(f"Pasta inicial da fiscalização: {get_current_audit().path()}")
@@ -219,9 +219,8 @@ def open_audit(pasta: Path):
     if ultima_pasta == pasta:
         return
     if not Audit.has_local_dados_osf(pasta) and \
-            'Sim' == sg.popup('Não existe auditoria nesta pasta. Deseja criá-la?',
-                              title='Auditoria inexistente',
-                              custom_text=('Sim', 'Não')):
+            GUIFunctions.popup_sim_nao('Não existe auditoria nesta pasta. Deseja criá-la?',
+                                       'Auditoria inexistente'):
         create_audit(pasta)
 
     __clean_tabs()
@@ -297,16 +296,17 @@ def run_query(analysis: Analysis, query: str):
                 analysis.fix_database_function(resultado_query)
             total, resultado_query = Controller.executa_consulta_BD(query, 100)
     except AnalysisFunctionException as e:
-        GUIFunctions.popup_erro(str(e), titulo='Erro no levantamento de dados adicionais para a base de dados')
+        GUIFunctions.popup_erro(str(e), titulo='Erro no levantamento de dados adicionais para a base de dados',
+                                exception=e)
     except QueryAnalysisException as e:
-        GUIFunctions.popup_erro(str(e), titulo='Erro na consulta')
+        GUIFunctions.popup_erro(str(e), titulo='Erro na consulta', exception=e)
     except Exception as e:
         erroSGBD = re.findall(r'ERROR:\s+(.*)\n', str(e))
         if erroSGBD:
             GUIFunctions.popup_ok(erroSGBD[0], titulo='Erro na consulta')
         else:
             GeneralFunctions.logger.exception('Erro em consulta ao BD de query para análise')
-            GUIFunctions.popup_erro(str(e), titulo='Erro na consulta')
+            GUIFunctions.popup_erro(str(e), titulo='Erro na consulta', exception=e)
     else:
         if total == 0:
             GUIFunctions.popup_ok('Não foram encontrados resultados para esta consulta.',
@@ -362,7 +362,8 @@ def aiim_item_chosen(aiim_item: AiimItem):
                 window['-AIIM-ITEM-DATA-'].update(f'Planilha: ', font_for_value=('Arial', 10, 'bold'), append=True)
                 window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.planilha}\n', append=True)
             if aiim_item.planilha_detalhe:
-                window['-AIIM-ITEM-DATA-'].update(f'Planilha Detalhada: ', font_for_value=('Arial', 10, 'bold'), append=True)
+                window['-AIIM-ITEM-DATA-'].update(f'Planilha Detalhada: ', font_for_value=('Arial', 10, 'bold'),
+                                                  append=True)
                 window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.planilha_detalhe}\n', append=True)
             if aiim_item.has_aiim_item_number():
                 window['-AIIM-ITEM-DATA-'].update('Item no AIIM 2003: ', font_for_value=('Arial', 10, 'bold'),
@@ -404,12 +405,12 @@ def aiim_item_chosen(aiim_item: AiimItem):
             window['-AIIM-REMOVE-ITEM-'].update(visible=True)
     except ExcelArrazoadoAbaInexistenteException:
         if GUIFunctions.popup_sim_nao(f'A aba da planilha "{aiim_item.planilha}" não existe mais. '
-                                      f'Deseja remover infração?') == 'Sim':
+                                      f'Deseja remover infração?'):
             WaitWindow.open_wait_window(Controller.remove_aiim_item, 'Remover Item do AIIM', aiim_item)
             refresh_aiim_tab()
     except Exception as ex:
         GeneralFunctions.logger.exception('Falha no levantamento de dados da infração')
-        GUIFunctions.popup_erro(f'Falha no levantamento de dados da infração: {ex}')
+        GUIFunctions.popup_erro(f'Falha no levantamento de dados da infração: {ex}', exception=ex)
 
 
 def notification_chosen(notification: PossibleInfraction, title: str, body: str):
@@ -421,11 +422,11 @@ def notification_chosen(notification: PossibleInfraction, title: str, body: str)
         )
     except ExcelArrazoadoAbaInexistenteException:
         if GUIFunctions.popup_sim_nao(f'A aba da planilha para essa notificação não existe mais. '
-                                      f'Deseja remover notificação?') == 'Sim':
+                                      f'Deseja remover notificação?'):
             Controller.remove_notification(notification)
             refresh_notifications_tab()
     except ExcelArrazoadoIncompletoException as e:
-        GUIFunctions.popup_erro(str(e))
+        GUIFunctions.popup_erro(str(e), exception=e)
 
 
 # ATENÇÃO: O visualizador de HTML depende atualmente do TK
@@ -453,9 +454,9 @@ def notification_prettyprint(titulo: str, texto: str):
 def notification_show_attachments(notification: PossibleInfraction):
     try:
         Controller.print_sheet_and_open(notification)
-    except Exception:
+    except Exception as e:
         GUIFunctions.popup_erro(f'Não foi possível criar anexo da análise {notification.verificacao}',
-                                titulo='Falha na geração de anexo')
+                                titulo='Falha na geração de anexo', exception=e)
 
 
 def notification_manual_send(notification: PossibleInfraction):
@@ -469,23 +470,23 @@ def notification_manual_send(notification: PossibleInfraction):
                         title='Notificação enviada')
             refresh_notifications_tab()
         except ValueError:
-            GUIFunctions.popup_erro('Número DEC inválido!')
+            GUIFunctions.popup_erro('Número de notificação inválido!')
 
 
 def notification_send(notification: PossibleInfraction, title: str, content: str):
     if GUIFunctions.popup_sim_nao('Será enviada uma notificação via DEC para o contribuinte,'
-                                  'contendo as informações em tela e anexos gerados.\nConfirma?') == 'Sim':
+                                  'contendo as informações em tela e anexos gerados.\nConfirma?'):
         try:
             pasta_notificacao = WaitWindow.open_wait_window(
                 Controller.send_notification, 'Enviar notificação via DEC',
                 notification, title, content)
             if pasta_notificacao:
-                sg.popup_ok(f'Foi enviada notificação DEC! Os arquivos recebidos'
-                            f'em resposta devem ser guardados na pasta {pasta_notificacao}')
+                GUIFunctions.popup_ok(f'Foi enviada notificação DEC! Os arquivos recebidos '
+                                      f'em resposta devem ser guardados na pasta {pasta_notificacao}')
             refresh_notifications_tab()
         except Exception as e:
             GUIFunctions.popup_erro('Houve um erro no envio da notificação, '
-                                    f'verifique se os arquivos anexos estão fechados: {e}')
+                                    f'verifique se os arquivos anexos estão fechados: {e}', exception=e)
 
 
 def update_gifs():
@@ -827,7 +828,7 @@ def window_event_handler():
         # eventos da janela principal
         elif event == sg.WINDOW_CLOSE_ATTEMPTED_EVENT or event == sg.WINDOW_CLOSED or event.endswith('-MENU-EXIT-') \
                 or event == 'Cancel':  # if user closes window or clicks cancel
-            if GUIFunctions.popup_sim_nao('Deseja realmente sair?') == 'Sim':
+            if GUIFunctions.popup_sim_nao('Deseja realmente sair?'):
                 break
         elif event == '-MAIN-TAB-':
             if values[event] == 'Dados':
@@ -853,7 +854,7 @@ def window_event_handler():
                 try:
                     open_audit(Path(folder))
                 except Exception as e:
-                    GUIFunctions.popup_erro(str(e), titulo='Falha na abertura da auditoria')
+                    GUIFunctions.popup_erro(str(e), titulo='Falha na abertura da auditoria', exception=e)
         elif event == '-DATA-EXTRACTION-':
             grupos = [k[1:-10] for k, v in values.items() if k.endswith('-CHECKBOX-') and v]
             LogWindow(populate_database, 'Levantamento EFD e Launchpad', grupos, extracoes)
@@ -934,8 +935,8 @@ def window_event_handler():
                                         values['-INFRACTION-CHOSEN-'][0])
             aiim_item_chosen(values['-INFRACTION-CHOSEN-'][0])
         elif event == '-AIIM-UPDATE-ITEM-NUMBER-':
-            resposta = sg.popup_get_text('Digite o número correto atual do item no AIIM2003',
-                                         title='Alteração Manual de Item')
+            resposta = GUIFunctions.popup_pega_texto('Digite o número correto atual do item no AIIM2003',
+                                                     'Alteração Manual de Item')
             if resposta and re.match(r'^\d+$', resposta):
                 aiim_item = values['-INFRACTION-CHOSEN-'][0]
                 WaitWindow.open_wait_window(Controller.update_aiim_item_number,
@@ -945,8 +946,8 @@ def window_event_handler():
                 values['-INFRACTION-CHOSEN-'] = [aiim_item]
                 aiim_item_chosen(aiim_item)
         elif event == '-AIIM-UPDATE-NOTIF-ANSWER-':
-            resposta = sg.popup_get_text('Digite o expediente Sem Papel com resposta à notificação',
-                                         title='Resposta à Notificação')
+            resposta = GUIFunctions.popup_pega_texto('Digite o expediente Sem Papel com resposta à notificação',
+                                                     'Resposta à Notificação')
             try:
                 aiim_item: AiimItem = values['-INFRACTION-CHOSEN-'][0]
                 Controller.update_aiim_item_notification_response(aiim_item, resposta)
@@ -956,7 +957,7 @@ def window_event_handler():
                                         '(deveria ser algo como SFP-EXP-<ano>/<numero>)')
         elif event == '-AIIM-REMOVE-ITEM-':
             if GUIFunctions.popup_sim_nao('Deseja realmente remover este item da lista de infrações e do AIIM?',
-                                          titulo='Alerta') == 'Sim':
+                                          titulo='Alerta'):
                 WaitWindow.open_wait_window(Controller.remove_aiim_item, 'Remover Item do AIIM',
                                             values['-INFRACTION-CHOSEN-'][0])
                 refresh_aiim_tab()
@@ -994,8 +995,7 @@ def window_event_handler():
         elif event.endswith('-MENU-AIIM-OPERATIONS-'):
             WaitWindow.open_wait_window(Controller.declare_operations_in_aiim, 'Cadastrar Operações no AIIM2003')
         elif event.endswith('-MENU-AIIM-PROOF-COVER-'):
-            texto = sg.popup_get_text('Informe o texto a ser colocado na capa:',
-                                      title='Capa personalizada', icon=GUIFunctions.app_icon)
+            texto = icon = GUIFunctions.app_icon('Informe o texto a ser colocado na capa:', 'Capa personalizada')
             if texto:
                 caminho = sg.popup_get_file('Escolha o local e nome da nova capa', 'Nova capa',
                                             initial_folder=get_current_audit().path(), save_as=True,
@@ -1065,4 +1065,5 @@ if __name__ == "__main__":
         window_event_handler()
     except Exception as e:
         GeneralFunctions.logger.exception(f'Exceção inesperada: {e}')
-        GUIFunctions.popup_erro(f'Erro inesperado na execução do {GeneralFunctions.get_project_name()}: {e}')
+        GUIFunctions.popup_erro(f'Erro inesperado na execução do {GeneralFunctions.get_project_name()}: {e}',
+                                exception=e)

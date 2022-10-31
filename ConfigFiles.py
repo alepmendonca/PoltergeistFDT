@@ -148,7 +148,7 @@ class Analysis:
                         jsonschema.validate(dados, self.get_json_analysis_schema(),
                                             format_checker=jsonschema.draft202012_format_checker)
                     except ValidationError as ex:
-                        raise ConfigFileDecoderException(f'Arquivo de análise {par.name} com formato inválido. '
+                        raise ConfigFileDecoderException(f'Arquivo de análise {par.absolute()} com formato inválido. '
                                                          f'Detalhamento dos erros encontrados:\n'
                                                          f"{ex.message}")
             except JSONDecodeError as jex:
@@ -356,7 +356,7 @@ class Infraction:
         self.filtro_coluna = None
         self.filtro_tipo = None
         self.capitulation: InfractionCapitulation = None
-        self.filename = json_file.stem
+        self.filename: str = json_file.stem
         self._analysis = None
         self.planilha_titulo = None
         self.inciso = re.search(r'^[A-Z]+', self.filename).group()
