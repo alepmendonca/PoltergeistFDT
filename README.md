@@ -1,7 +1,7 @@
 # PoltergeistFDT
 Ferramenta automatizadora de verificações em auditorias fiscais na Sefaz-SP
 
-### Novidades
+### Novidades 
 - v0.4.1
   - Mensagens de erro com botão "Copia Diagnóstico", para facilitar relatar erros desconhecidos: ao clicar neste botão, detalhes do erro serão copiados para a área de transferência
 - v0.3.1
