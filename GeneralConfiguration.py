@@ -5,6 +5,7 @@ import keyring
 from pathlib import Path
 import PySimpleGUI as sg
 import GeneralFunctions
+from MDBReader import AIIM2003MDBReader
 
 
 class Configuration:
@@ -106,6 +107,9 @@ class Configuration:
                 raise ValueError(f'Sigla de delegacia inválida: {match}')
             self._drt = match
 
+    def drt_endereco(self) -> str:
+        raise NotImplementedError
+
     def nucleo_fiscal(self) -> int:
         return int(self.equipe_fiscal / 10)
 
@@ -137,7 +141,8 @@ class Configuration:
             else:
                 raise ValueError(f'Data para atualização de inidôneos inválida: {data}')
 
-    def inidoneos_date_from_file(self, arquivo: Path) -> datetime.date:
+    @staticmethod
+    def inidoneos_date_from_file(arquivo: Path) -> datetime.date:
         matches = re.search(r"Inid[oô]neos (\w+)[\s-](\d+)\.(rar|zip)", arquivo.name)
         if not matches or len(matches.groups()) < 3:
             raise ValueError('Nome de arquivo de inidôneos inválido - deve ter mês e ano no nome!')
@@ -165,7 +170,8 @@ class Configuration:
             else:
                 raise ValueError(f'Data para atualização de GIAs inválida: {data}')
 
-    def gia_date_from_file(self, arquivo: Path) -> datetime.date:
+    @staticmethod
+    def gia_date_from_file(arquivo: Path) -> datetime.date:
         matches = re.search(r"GIAs.*\s(\w+)[\s-](\d+)\.(rar|zip)", arquivo.name)
         if not matches or len(matches.groups()) < 3:
             raise ValueError('Nome de arquivo de GIAs inválido - deve ter mês e ano no nome!')
@@ -193,7 +199,8 @@ class Configuration:
             else:
                 raise ValueError(f'Data para atualização de Cadesp inválida: {data}')
 
-    def cadesp_date_from_file(self, arquivo: Path) -> datetime.date:
+    @staticmethod
+    def cadesp_date_from_file(arquivo: Path) -> datetime.date:
         matches = re.search(r"CadSefaz.*\s(\w+)[\s-](\d+)\.(rar|zip)", arquivo.name)
         if not matches or len(matches.groups()) < 3:
             raise ValueError('Nome de arquivo de Cadesp inválido - deve ter mês e ano no nome!')

@@ -255,7 +255,7 @@ def print_sheet_and_open(notification: PossibleInfraction):
         raise e
 
 
-def send_notification(notification: PossibleInfraction, title: str, contents: str):
+def send_notification(notification: PossibleInfraction, title: str, contents: str) -> AiimItem:
     try:
         logger.info('Gerando textos para notificação...')
         titulo_ajustado = notification.notificacao_titulo(title)
@@ -311,8 +311,8 @@ def add_analysis_to_audit(analysis: Analysis, planilha=None, df: pd.DataFrame = 
         raise AIIMGeneratorUserWarning(resultado['mensagem'])
 
 
-def move_analysis_from_notification_to_aiim(notification: PossibleInfraction, num_dec: str = None) -> str:
-    full_path = None
+def move_analysis_from_notification_to_aiim(notification: PossibleInfraction, num_notificacao: str = None) -> AiimItem:
+    aiim_item = None
 
     for infraction in notification.verificacao.infractions:
         if not notification.verificacao.must_choose_between_notification_and_infraction():
@@ -324,17 +324,16 @@ def move_analysis_from_notification_to_aiim(notification: PossibleInfraction, nu
             # isso porque filtros podem ter gerado listagens vazias
             if notification.df is not None or \
                     (planilha and planilha in get_current_audit().get_sheet().get_sheet_names()):
-                aiim_item = Audit.AiimItem(infraction.filename, notification.verificacao, 0, num_dec, None,
+                aiim_item = Audit.AiimItem(infraction.filename, notification.verificacao, 0, num_notificacao, None,
                                            planilha, notification.df, notification.planilha_detalhe)
-                full_path = aiim_item.notification_response_path()
                 get_current_audit().aiim_itens.append(aiim_item)
     remove_notification(notification)
 
     # cria pasta da notificação
     # exceto se a análise for do tipo notifica ou penaliza
-    if full_path and not notification.verificacao.must_choose_between_notification_and_infraction():
-        os.makedirs(full_path, exist_ok=True)
-    return str(full_path) if full_path else None
+    if aiim_item and not notification.verificacao.must_choose_between_notification_and_infraction():
+        os.makedirs(aiim_item.notification_response_path(), exist_ok=True)
+    return aiim_item
 
 
 def create_aiim():
@@ -1362,6 +1361,16 @@ def existing_open_aiims_for_osf() -> list:
 
 def generate_custom_report_cover(texto: str, caminho: Path):
     WordReport.cria_capa_para_anexo(texto.upper(), caminho)
+
+
+def generate_manual_notification(aiim_item: AiimItem, corpo: str):
+    WordReport.cria_notificacao_modelo_4(get_current_audit().cnpj, get_current_audit().ie,
+                                         get_current_audit().empresa, get_current_audit().endereco_completo(),
+                                         aiim_item.notificacao_corpo(corpo), aiim_item.notificacao,
+                                         aiim_item.notification_path() / 'Notificação Modelo 4.pdf')
+    anexos = print_sheet(aiim_item)
+    for anexo in anexos:
+        GeneralFunctions.move_downloaded_file(anexo.parent, anexo.name, aiim_item.notification_path())
 
 
 def set_proxy():

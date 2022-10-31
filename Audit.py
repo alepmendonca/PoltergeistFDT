@@ -81,12 +81,12 @@ class PossibleInfraction:
             raise e
         return relato
 
-    def notificacao_titulo(self, texto: str) -> str:
+    def notificacao_titulo(self, texto: str = '') -> str:
         if not self._notificacao_titulo:
             self._notificacao_titulo = self._personalize_text(texto)
         return self._notificacao_titulo
 
-    def notificacao_corpo(self, texto: str) -> str:
+    def notificacao_corpo(self, texto: str = '') -> str:
         if not self._notificacao_corpo:
             self._notificacao_corpo = self._personalize_text(texto)
         return self._notificacao_corpo
@@ -136,10 +136,12 @@ class AiimItem(PossibleInfraction):
 
     @notificacao.setter
     def notificacao(self, notificacao: str):
-        if re.match(r'IC/N/FIS/\d+/\d{4}', notificacao):
+        if re.match(r'IC/N/FIS/\d+/\d{4}$', notificacao):
             numero_quebrado = notificacao.split('/')
             numero_quebrado[3] = numero_quebrado[3].zfill(9)
             self._notificacao = '/'.join(numero_quebrado)
+        elif re.match(r'\d+/\d{4}\s+\d{2}\.\d\.\d{5}/\d{2}-\d$', notificacao):
+            self._notificacao = notificacao
         else:
             raise ValueError(f'Número de notificação inválido: {notificacao}')
 
@@ -186,25 +188,37 @@ class AiimItem(PossibleInfraction):
     def __str__(self):
         return f'{self.infracao}' if not self.has_aiim_item_number() else f'{self.item} - {self.infracao}'
 
+    def is_manual_notification(self) -> bool:
+        if not self.notificacao:
+            raise ValueError('Verificando se a notificação é manual, mas nem tem notificação!')
+        return not self.notificacao.startswith('IC/N/FIS')
+
     def notification_path(self) -> Path:
         if not self.notificacao:
             return None
-        partial_name = re.search(r"\d+", self.notificacao)[0]
-        folder_name = f'{self.notificacao[-4:]}-{int(partial_name)} - {self.verificacao.name}'
+        folder_name = f'{self.notification_numeric_part().replace("_", "-")}'
+        if self.is_manual_notification():
+            folder_name += ' - MANUAL'
+        # remove caracteres inválidos no Windows para nomes de arquivos
+        folder_name += re.sub(r'[<>:"/\\|!?*]', '', f' - {self.verificacao.name}')
         return get_current_audit().notification_path() / folder_name
 
     def notification_response_path(self) -> Path:
         return self.notification_path() / 'Resposta' if self.notification_path() else None
 
     def notification_numeric_part(self) -> str:
-        partial_name = re.search(r"\d+", self.notificacao)[0]
-        return f'{self.notificacao[-4:]}_{partial_name}'
+        if self.is_manual_notification():
+            parts = self.notificacao.split("/")
+            return f'{parts[1].split()[0]}_{int(parts[0])}'
+        else:
+            partial_name = re.search(r"\d+", self.notificacao)[0]
+            return f'{self.notificacao[-4:]}_{int(partial_name)}'
 
     def proofs_for_report(self) -> list[str]:
         proofs = [f'{prova.descricao}{", por amostragem" if prova.has_sample(self) else ""}'
                   for prova in self.infracao.provas]
         if self.notificacao:
-            texto = f'Notificação DEC {self.notificacao}'
+            texto = f'Notificação {"Modelo 4" if self.is_manual_notification() else "DEC"} {self.notificacao}'
             if self.notificacao_resposta:
                 texto += f' e resposta do contribuinte, apresentada sob expediente Sem Papel {self.notificacao_resposta}'
             else:
@@ -227,7 +241,8 @@ class AiimItem(PossibleInfraction):
         if not self._relatorio_circunstanciado:
             resposta = self._personalize_text(self.infracao.relatorio_circunstanciado)
             if self.notificacao:
-                resposta += '\nO contribuinte foi notificado por meio da notificação DEC '
+                resposta += '\nO contribuinte foi notificado por meio da notificação '
+                resposta += ' Modelo 4 ' if self.is_manual_notification() else ' DEC '
                 if self.notificacao_resposta:
                     resposta += f'{self.notificacao}, com resposta dada no expediente {self.notificacao_resposta}' \
                                 f', mas sem justificativas legais para todos os pontos questionados.'
@@ -537,7 +552,10 @@ class Audit:
             path = Path(path_str)
             is_notification = re.match(r'(\d{4})-(\d+) - ', path.parent.name)
             if path.name == 'Resposta' and is_notification:
-                notification_name = f'IC/N/FIS/{is_notification.group(2)}/{is_notification.group(1)}'
+                if '- MANUAL -' in path.parent.name:
+                    notification_name = f'Notificação Modelo 4 {is_notification.group(2)}/{is_notification.group(1)}'
+                else:
+                    notification_name = f'Notificação DEC IC/N/FIS/{is_notification.group(2)}/{is_notification.group(1)}'
                 if notifications.get(notification_name):
                     notifications[notification_name]['files'].extend(
                         [path / f for f in verificacoes if not f.startswith('SFPEXP')
@@ -563,6 +581,14 @@ class Audit:
                         }
                 response.append(item)
         return response
+
+    def next_manual_notification(self) -> str:
+        numeros_deste_ano = [int(item.notification_numeric_part().split('_')[1]) for item in self.aiim_itens
+                             if item.notificacao is not None and item.is_manual_notification()
+                             and item.notification_numeric_part().startswith(str(date.today().year))]
+        numeros_deste_ano.sort(reverse=True)
+        proximo_numero = numeros_deste_ano[0] + 1 if numeros_deste_ano else 1
+        return f'{str(proximo_numero).zfill(2)}/{date.today().year} {self.osf}'
 
     def notification_path(self):
         return self.path() / 'Notificações'

@@ -459,15 +459,27 @@ def notification_show_attachments(notification: PossibleInfraction):
                                 titulo='Falha na geração de anexo', exception=e)
 
 
-def notification_manual_send(notification: PossibleInfraction):
-    dec_numero = sg.popup_get_text('Digite o número completo da notificação enviada via DEC para o '
-                                   'contribuinte (ex: IC/N/FIS/00001234/2057):', title='Número DEC')
-    if dec_numero:
+def notification_manual_send(notification: PossibleInfraction, content: str):
+    if get_current_audit().is_contribuinte_ativo():
+        numero = GUIFunctions.popup_pega_texto('Digite o número completo da notificação enviada via DEC para o '
+                                               'contribuinte (ex: IC/N/FIS/00001234/2057):', 'Número DEC',
+                                               texto_padrao='IC/N/FIS/')
+    else:
+        numero = GUIFunctions.popup_pega_texto('Digite o número completo da notificação modelo 4 a ser gerada '
+                                               '(ex: 3/2020 01.1.12345/21-5):', 'Número Notificação Modelo 4',
+                                               texto_padrao=get_current_audit().next_manual_notification())
+    if numero:
         try:
-            pasta_notificacao = Controller.move_analysis_from_notification_to_aiim(
-                notification, dec_numero)
-            sg.popup_ok(f'Os arquivos recebidos em resposta devem ser guardados na pasta:\n{pasta_notificacao}',
-                        title='Notificação enviada')
+            aiim_item = Controller.move_analysis_from_notification_to_aiim(notification, numero)
+            if get_current_audit().is_contribuinte_ativo():
+                popup_title = 'Notificação enviada'
+            else:
+                Controller.generate_manual_notification(aiim_item, content)
+                popup_title = 'Notificação gerada'
+                GUIFunctions.popup_ok('A notificação modelo 4 e anexos foram gerados na pasta:'
+                                      f'\n{aiim_item.notification_path().absolute()}', popup_title)
+            GUIFunctions.popup_ok(f'Os arquivos recebidos em resposta devem ser guardados na pasta:'
+                                  f'\n{aiim_item.notification_response_path().absolute()}', popup_title)
             refresh_notifications_tab()
         except ValueError:
             GUIFunctions.popup_erro('Número de notificação inválido!')
@@ -892,7 +904,7 @@ def window_event_handler():
                               values['-NOTIFICATION-EDIT-TITLE-'],
                               values['-NOTIFICATION-EDIT-'])
         elif event == '-NOTIFICATION-MANUAL-SEND-':
-            notification_manual_send(values['-NOTIFICATION-CHOSEN-'][0])
+            notification_manual_send(values['-NOTIFICATION-CHOSEN-'][0], values['-NOTIFICATION-EDIT-'])
         elif event == '-INFRACTION-CHOSEN-':
             if len(values[event]) > 0:
                 aiim_item_chosen(values[event][0])
