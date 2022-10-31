@@ -36,7 +36,7 @@ VSVersionInfo(
         StringStruct('LegalCopyright', f'Copyleft © {datetime.date.today().year}'),
         StringStruct('OriginalFilename', 'PoltergeistFDT.exe'),
         StringStruct('ProductName', 'PoltergeistFDT'),
-        StringStruct('ProductVersion', f'0.4.1-{datetime.datetime.now().strftime("%Y%m%d%H")}')])
+        StringStruct('ProductVersion', f'0.3.3-{datetime.datetime.now().strftime("%Y%m%d%H")}')])
       ]), 
     VarFileInfo([VarStruct('Translation', [0, 1200])])
   ]
