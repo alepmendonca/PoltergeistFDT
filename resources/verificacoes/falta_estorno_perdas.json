@@ -1,0 +1,30 @@
+{
+  "consulta": "WITH perdas AS (\n\tSELECT reg_0000.dt_ini, efd_ajuste_icms.descricao, reg_e111.descr_compl_aj, reg_e111.vl_aj_apur, \n\t\tnfe.chave, nfe.numero, nfe.emissao, reg_c100.dt_e_s, \n\t\tnfe.info_interesse_fisco || ' ' || nfe.info_complementares_interesse_contribuinte AS informacoes, \n\t\tnfe_item.item, nfe_item.desc_produto, nfe_item.ncm, nfe_item.quantidade, nfe_item.valor_produto, round(nfe_item.valor_produto/nfe_item.quantidade, 2) AS valor_unitario_perda\n\tFROM nfe \n\t\tJOIN nfe_item ON nfe.chave = nfe_item.chave \n\t\tLEFT JOIN reg_c100 \n\t\t\tLEFT JOIN reg_e111 \n\t\t\t\tLEFT JOIN efd_ajuste_icms ON reg_e111.cod_aj_apur = efd_ajuste_icms.codigo\n\t\t\tON reg_e111.efd = reg_c100.efd AND substr(reg_e111.cod_aj_apur, 4, 1) = '1'\n\t\t\tLEFT JOIN reg_0000 ON reg_c100.efd = reg_0000.efd\n\t\tON reg_c100.chv_nfe = nfe.chave\n\tWHERE nfe.cnpj_emit = cnpj_auditoria()\n\tAND (reg_e111.id IS NULL OR (reg_0000.dt_ini BETWEEN efd_ajuste_icms.dt_ini AND COALESCE(efd_ajuste_icms.dt_fim, NOW())))\n\tAND nfe.situacao_documento = 0\n\tAND nfe_item.cfop = 5927\n)\nSELECT DISTINCT ON (perdas.dt_e_s, chave, item)\n\tperdas.dt_ini AS \"Referência\", perdas.vl_aj_apur AS \"Estorno de Crédito\", perdas.chave AS \"Chave NF-e Perda\", perdas.numero AS \"Número\", perdas.emissao AS \"Emissão\", \n\tperdas.item AS \"Item\", perdas.desc_produto AS \"Descrição\", perdas.quantidade AS \"Quantidade\", perdas.valor_produto AS \"Valor\", perdas.valor_unitario_perda AS \"Valor Unitário da Perda\",\n\treg_c100.dt_e_s AS \"Última Entrada do Item\", reg_c100.chv_nfe AS \"Chave\", reg_c100.num_doc AS \"Número\", reg_c100.dt_e_s AS \"Entrada\", reg_0200.cod_item AS \"Item\", \n\treg_c170.cfop AS \"CFOP\", reg_c170.qtd AS \"Quantidade\", reg_c170.vl_item AS \"Valor\", \n\tround(reg_c170.vl_item/reg_c170.qtd, 2) AS \"Valor Unitário de Entrada\", aliquota(reg_0200.cod_ncm, perdas.emissao, 'SP') AS \"Alíquota Apurada\", \n\tround(round(reg_c170.vl_item/reg_c170.qtd, 2) * perdas.quantidade * aliquota(reg_0200.cod_ncm, perdas.emissao, 'SP') / 100, 2) AS \"Estorno Apurado\"\nFROM perdas \n\tLEFT JOIN reg_c100\n\t\tLEFT JOIN reg_c170 \n\t\t\tLEFT JOIN reg_0200 ON reg_c170.cod_item = reg_0200.cod_item AND reg_c170.efd = reg_0200.efd\n\t\tON reg_c100.id = reg_c170.id_pai AND reg_c100.efd = reg_c170.efd\n\tON perdas.ncm = reg_0200.cod_ncm AND perdas.desc_produto = reg_0200.descr_item\nAND reg_c100.dt_e_s < perdas.dt_e_s\nORDER BY perdas.dt_e_s, chave, item, reg_c100.dt_e_s DESC",
+  "infracoes": {
+    "IIj": {
+      "capitulacao": {
+        "limpa": true,
+        "artigos": [
+          {"artigo": "67", "inciso": "1", "paragrafo": "1"},
+          {"artigo": "125", "inciso": "6", "paragrafo": "8"}
+        ]
+      },
+      "provas": [
+        {"descricao": "Comparativo entre estornos de créditos em LRAICMS e listagem de mercadorias perdidas, e memória de cálculo dos créditos a serem estornados", "tipo": "listagem"},
+        {"descricao": "Transcrição de NF-e contendo as últimas entradas das mercadorias perdidas, a partir das quais foram extraídos os valores unitários das mercadorias para base de cálculo de estorno apurado",
+          "tipo": "DFe"},
+        {"descricao": "LRAICMS, contendo os estornos de créditos realizados",
+          "tipo": "LRAICMS"}
+      ],
+      "relato": "Deixou de proceder o estorno de crédito de ICMS, no montante de @CRI, decorrente de divergências entre os estornos declarados em Livro Registro de Apuração e valores apurados a serem estornados, aplicando-se a alíquota vigente na data do estorno sobre o preço mais recente de aquisição das mercadorias dadas como perdidas, conforme se comprova pelas cópias dos documentos juntadas no Anexo do item.",
+      "relatorio_circunstanciado": "o contribuinte foi autuado por ter deixado de estornar o crédito do imposto sobre entradas perecidas, nos termos do art. 67, I do RICMS/00. Foram verificadas divergências entre os valores declarados como estorno de crédito por perdas em Livro Registro de Apuração de ICMS - LRAICMS - em EFD, e os valores de imposto com base no valor da última aquisição das mercadorias declaradas como perdidas, por meio de emissão de documentos fiscais com itens com CFOP 5927.\nNo levantamento realizado, considerou-se a quantidade de mercadorias perdidas informada pelo contribuinte nos documentos fiscais, tendo sido o valor unitário apurado com base na informação presente na última entrada de cada mercadoria, anterior à data da emissão de cada documento fiscal de declaração de perda. Com o valor unitário apurado, aplicou-se a alíquota vigente no momento da perda, nos termos do §1º do art. 67 do RICMS/00."
+    }
+  },
+  "notificacao": {
+    "anexo": "Perdas",
+    "corpo": "No âmbito da Ordem de Serviço Fiscal <osf>, fica o contribuinte acima identificado NOTIFICADO a prestar informações sobre o motivo para a divergência apurada entre os estornos de créditos realizados em Livro Registro de Apuração de ICMS em EFD, os valores unitários descritos em documentos fiscais com CFOP 5927 e os valores unitários das últimas operações de entrada das mercadorias declaradas como perdidas, listadas no anexo juntado.<br><p><b>PRAZO PARA ATENDIMENTO</b>: 10 (dez) dias, contados da ciência da notificação.<br><b>FORMA DE ATENDIMENTO</b>: Encaminhamento de declaração firmada por representante legal do contribuinte, digitalizada ou assinada digitalmente, e memória de cálculo por intermédio do SIPET - Sistema de Peticionamento Eletrônico, disciplinado pela Portaria CAT 83/20, que pode ser acessado através do endereço eletrônico https://www3.fazenda.sp.gov.br/sipet, utilizando a opção \"Comunicações\" -> \"Atendimento de notificação de fiscalização\".<br><b>BASE LEGAL</b>: Arts. 67, 125 e 494 do RICMS (Aprovado pelo Decreto 45.490/00).</p>",
+    "titulo": "OSF <osf> - Perdas"
+  },
+  "planilha_nome": "Perdas",
+  "verificacao": "Perdas sem Estorno de Crédito"
+}

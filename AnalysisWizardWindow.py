@@ -43,11 +43,12 @@ class AnalysisWizardWindow(sg.Window):
         return ''
 
     def _change_proof_list(self, selected_item, lista):
-        self['-NEW-ANALYSIS-PROOF-LIST-'].update(lista)
-        self['-NEW-ANALYSIS-PROOF-LIST-'].set_value([selected_item])
+        self['-NEW-ANALYSIS-PROOF-LIST-'].update(values=lista)
+        self['-NEW-ANALYSIS-PROOF-LIST-'].set_value([selected_item] if selected_item else [])
         if selected_item:
             self['-NEW-ANALYSIS-PROOF-UP-'].update(disabled=
-                                                   self['-NEW-ANALYSIS-PROOF-LIST-'].get_list_values()[0] == selected_item)
+                                                   self['-NEW-ANALYSIS-PROOF-LIST-'].get_list_values()[
+                                                       0] == selected_item)
             self['-NEW-ANALYSIS-PROOF-DOWN-'].update(disabled=
                                                      self['-NEW-ANALYSIS-PROOF-LIST-'].get_list_values()[
                                                          -1] == selected_item)
@@ -89,14 +90,24 @@ class AnalysisWizardWindow(sg.Window):
                               enable_events=True)],
                  [sg.Text('Título da Notificação:  '),
                   sg.InputText(key='-NEW-ANALYSIS-NOTIFICATION-TITLE-',
-                               default_text=self.analysis_dict.get('notificacao', {}).get('titulo', ''),
+                               default_text=self.analysis_dict.get('notificacao', {}).get('titulo', 'OSF <osf> - '),
                                disabled=not self.analysis_dict.get('notificacao'))],
                  [sg.Text('Corpo da Notificação:  '),
-                  sg.Multiline(default_text=self.analysis_dict.get('notificacao', {}).get('corpo', ''),
-                               size=(300, 15),
-                               expand_x=True, expand_y=True,
-                               key='-NEW-ANALYSIS-NOTIFICATION-BODY-', auto_size_text=True,
-                               disabled=not self.analysis_dict.get('notificacao'))],
+                  sg.Multiline(default_text=self.analysis_dict.get('notificacao', {}).get(
+                      'corpo', 'No âmbito da Ordem de Serviço Fiscal <osf>, fica o contribuinte acima identificado '
+                               'NOTIFICADO a prestar informações sobre (...) nas operações  listadas no anexo juntado.'
+                               '<br><p><b>PRAZO PARA ATENDIMENTO</b>: 10 (dez) dias, contados da ciência da '
+                               'notificação.<br><b>FORMA DE ATENDIMENTO</b>: Encaminhamento de declaração firmada por '
+                               'representante legal do contribuinte, digitalizada ou assinada digitalmente, e memória '
+                               'de cálculo por intermédio do SIPET - Sistema de Peticionamento Eletrônico, disciplinado'
+                               ' pela Portaria CAT 83/20, que pode ser acessado através do endereço eletrônico '
+                               'https://www3.fazenda.sp.gov.br/sipet, utilizando a opção "Comunicações" -> '
+                               '"Atendimento de notificação de fiscalização".<br><b>'
+                               'BASE LEGAL</b>: Art. 494 do RICMS (Aprovado pelo Decreto 45.490/00).</p>'),
+                      size=(300, 15),
+                      expand_x=True, expand_y=True,
+                      key='-NEW-ANALYSIS-NOTIFICATION-BODY-', auto_size_text=True,
+                      disabled=not self.analysis_dict.get('notificacao'))],
                  [sg.Text('Nome do Anexo:         '),
                   sg.InputText(key='-NEW-ANALYSIS-NOTIFICATION-ATTACHMENT-',
                                default_text=self.analysis_dict.get('notificacao', {}).get('anexo', ''),
@@ -214,6 +225,9 @@ class AnalysisWizardWindow(sg.Window):
             if not values['-NEW-ANALYSIS-INFRACTION-']:
                 GUIFunctions.popup_erro('É necessário escolher uma infração para prosseguir!')
                 return
+            if not values['-NEW-ANALYSIS-SQL-']:
+                GUIFunctions.popup_erro('É necessário preencher uma consulta SQL válida para prosseguir!')
+                return
             AnalysisWizardWindow.infracao = values['-NEW-ANALYSIS-INFRACTION-']
             self.analysis_dict['verificacao'] = values['-NEW-ANALYSIS-NAME-']
             self.analysis_dict['consulta'] = values['-NEW-ANALYSIS-SQL-']
@@ -264,25 +278,24 @@ class AnalysisWizardWindow(sg.Window):
 
             AnalysisWizardWindow(passo=int(event[-2:-1]))
         elif event == '-NEW-ANALYSIS-PROVA-CHECK-':
-            lista = [AiimProof.proof_type_name(p['tipo'])
-                     for p in self.analysis_dict['infracoes'][self.infracao.filename].get('provas', {})]\
-                if values[event] else [p.proof_type_name() for p in self.infracao.provas]
-            self['-NEW-ANALYSIS-PROOF-LIST-'].update(values=lista)
-            self['-NEW-ANALYSIS-PROOF-UP-'].update(disabled=True)
-            self['-NEW-ANALYSIS-PROOF-DOWN-'].update(disabled=True)
             for k in [k for k, v in values.items() if k.startswith('-NEW-ANALYSIS-PROOF-CHECK')]:
-                self[k].update(disabled=not values['-NEW-ANALYSIS-PROVA-CHECK-'])
+                self[k].update(disabled=not values[event])
                 proof_type = k[26:]
-                if values[event]:
-                    self[k].update(False)
-                    self[f'-NEW-ANALYSIS-PROOF-TEXT-{proof_type}'].update('')
-                else:
+                self[f'-NEW-ANALYSIS-PROOF-TEXT-{proof_type}'].update(disabled=
+                                                                      not (values[event] and values[k]))
+                if not values[event]:
                     proofs = [p for p in self.infracao.provas if p.tipo == proof_type]
                     has_proof = len(proofs) > 0
                     proof = proofs[0] if has_proof else None
                     self[k].update(has_proof)
-                    self[f'-NEW-ANALYSIS-PROOF-TEXT-{proof_type}'].update(proof.descricao if has_proof else '',
-                                                                          disabled=True)
+                    self[f'-NEW-ANALYSIS-PROOF-TEXT-{proof_type}'].update(proof.descricao if has_proof else '')
+            if not values[event]:
+                lista = [AiimProof.proof_type_name(p['tipo'])
+                         for p in self.analysis_dict['infracoes'][self.infracao.filename].get('provas', {})] \
+                    if values[event] else [p.proof_type_name() for p in self.infracao.provas]
+                self._change_proof_list(None, lista)
+            self['-NEW-ANALYSIS-PROOF-UP-'].update(disabled=True)
+            self['-NEW-ANALYSIS-PROOF-DOWN-'].update(disabled=True)
         elif event == '-NEW-ANALYSIS-PROOF-LIST-':
             if self[event].get() and self['-NEW-ANALYSIS-PROVA-CHECK-'].get():
                 self['-NEW-ANALYSIS-PROOF-UP-'].update(disabled=
@@ -343,3 +356,6 @@ class AnalysisWizardWindow(sg.Window):
                 Analysis.clear_user_analysis()
                 Analysis.clear_audit_analysis()
                 self.close()
+                GUIFunctions.popup_ok('Análise salva com sucesso! Se tiver sido salva na pasta do usuário, '
+                                      'aparecerá para qualquer auditoria; se tiver sido salva na pasta da auditoria, '
+                                      'aparecerá apenas quando ela estiver aberta.')

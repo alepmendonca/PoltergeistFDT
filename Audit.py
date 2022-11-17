@@ -242,7 +242,7 @@ class AiimItem(PossibleInfraction):
             resposta = self._personalize_text(self.infracao.relatorio_circunstanciado)
             if self.notificacao:
                 resposta += '\nO contribuinte foi notificado por meio da notificação '
-                resposta += ' Modelo 4 ' if self.is_manual_notification() else ' DEC '
+                resposta += 'Modelo 4 ' if self.is_manual_notification() else 'DEC '
                 if self.notificacao_resposta:
                     resposta += f'{self.notificacao}, com resposta dada no expediente {self.notificacao_resposta}' \
                                 f', mas sem justificativas legais para todos os pontos questionados.'

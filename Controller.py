@@ -2,6 +2,7 @@ import concurrent
 import concurrent.futures
 import os
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -412,6 +413,8 @@ def remove_aiim_item(aiim_item: AiimItem):
         item_number = aiim_item.item
         update_aiim_item_number(aiim_item)
         AIIMAutoIt().remove_aiim_item(*__get_open_aiim_data_from_aiim2003(), item_number)
+    if GeneralFunctions.is_empty_directory(aiim_item.notification_response_path()):
+        shutil.rmtree(aiim_item.notification_path())
     get_current_audit().aiim_itens.remove(aiim_item)
     get_current_audit().save()
 

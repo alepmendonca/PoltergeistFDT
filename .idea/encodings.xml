@@ -44,6 +44,7 @@
     <file url="file://$PROJECT_DIR$/resources/verificacoes/entradas_credito_maior_que_DF.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/entradas_n_tributadas_fora_LRE.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/entradas_tributadas_fora_LRE.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/falta_estorno_perdas.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/falta_livros.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/gia_atrasada.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/gia_nao_entregue.json" charset="windows-1252" />
