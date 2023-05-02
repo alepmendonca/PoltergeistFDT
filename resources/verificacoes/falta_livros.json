@@ -1,5 +1,5 @@
 {
-  "verificacao": "Falta de livro fiscal",
+  "verificacao": "Falta de livro fiscal em EFD",
   "funcao": {
   	"nome": "verifica_omissao_efds",
   	"descricao": "Compara os arquivos EFD baixados na pasta Dados, com o período de fiscalização em que o contribuinte estava no Regime Próprio de Apuração, e, portanto, deveria ter entregue EFD.\nA comparação apenas considera arquivos da IE atual do contribuinte.\nResultado mostra as referências para as quais não foram encontrados arquivos EFD."

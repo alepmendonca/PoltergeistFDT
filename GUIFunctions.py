@@ -43,22 +43,23 @@ def diagnostico_texto(exception: BaseException, header=True) -> str:
 
 
 def popup_erro(texto: str, titulo='Erro', exception: BaseException = None):
-    texto_exception = None
     botoes = [sg.Push(), sg.Button(button_color=sg.DEFAULT_ERROR_BUTTON_COLOR, button_text='OK', s=10)]
     if exception:
-        try:
-            texto_exception = diagnostico_texto(exception)
-            botoes.append(sg.Button(button_color=sg.DEFAULT_ERROR_BUTTON_COLOR,
-                                    button_text='Copia Diagnóstico', key='-DIAGNOSTICO-'))
-        except Exception:
-            # se der qualquer problema na montagem do diagnóstico, desiste
-            pass
+        botoes.append(sg.Button(button_color=sg.DEFAULT_ERROR_BUTTON_COLOR,
+                                button_text='Copia Diagnóstico', key='-DIAGNOSTICO-'))
     botoes.append(sg.Push())
     w = sg.Window(titulo, [
         [sg.Text('\n'.join(textwrap.wrap(texto, 150, max_lines=10)))],
         botoes], modal=True, keep_on_top=True, element_justification='c', icon=app_icon)
     evento, _ = w.read(close=True)
     if evento == '-DIAGNOSTICO-':
+        texto_exception = f'Não foi possível copiar teor do erro para área de trabalho, verifique o conteúdo ' \
+                          f'do arquivo {GeneralFunctions.get_project_name()}.log na pasta do usuário.'
+        try:
+            texto_exception = diagnostico_texto(exception)
+        except:
+            # se der qualquer problema na montagem do diagnóstico, desiste
+            pass
         GeneralFunctions.copia_para_area_transferencia(texto_exception)
 
 
@@ -80,6 +81,21 @@ def popup_pega_texto(texto: str, titulo='Defina texto', texto_padrao=None) -> st
     layout = [[]]
     layout += [[sg.Text(texto, auto_size_text=True)],
                [sg.InputText(default_text=texto_padrao, key='-INPUT-')],
+               [sg.Button('OK', size=(10, 1), bind_return_key=True), sg.Button('Cancelar', size=(10, 1))]]
+
+    button, values = sg.Window(title=titulo, layout=layout, auto_size_text=True,
+                               disable_close=True, modal=True,
+                               element_justification='c', icon=app_icon).read(close=True)
+    if button != 'OK':
+        return None
+    else:
+        return values['-INPUT-']
+
+
+def popup_escolhe_de_lista(lista: list, texto: str, titulo='Escolha da lista') -> str | None:
+    layout = [[]]
+    layout += [[sg.Text(texto, auto_size_text=True)],
+               [sg.Combo(key='-INPUT-', values=sorted(lista))],
                [sg.Button('OK', size=(10, 1), bind_return_key=True), sg.Button('Cancelar', size=(10, 1))]]
 
     button, values = sg.Window(title=titulo, layout=layout, auto_size_text=True,

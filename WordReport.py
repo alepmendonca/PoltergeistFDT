@@ -50,6 +50,7 @@ def _save_docx_as_pdf(docx_path: Path, pdf_path: Path):
         was_open = True
 
     try:
+        pdf_path.unlink(missing_ok=True)
         worddoc = word.Documents.Open(str(Path(docx_path).absolute()))
         worddoc.SaveAs(str(pdf_path.absolute()), FileFormat=17)
         worddoc.Close()
@@ -86,16 +87,16 @@ def cria_notificacao_modelo_4(cnpj: str, ie: str, razao_social: str, endereco: s
     celula_corpo = doc.tables[2].rows[5].cells[0]
     paragrafo_corpo = celula_corpo.paragraphs[0]
     paragrafo_corpo.runs[0].text = ''
-    texto = corpo_notificacao.replace('<br>', '\n').replace('<p>', '\n').replace('</p>', '').\
+    texto = corpo_notificacao.replace('<br>', '\n').replace('<p>', '\n').replace('</p>', '\n').\
         replace('<ul>', '').replace('</ul>', '').replace('</li>', '\n')
-    texto = '\n' + texto + ''.ljust(20 - texto.count('\n'), '\n')
     linhas = texto.splitlines()
     for idx in range(0, len(linhas)):
         paragrafo = celula_corpo.add_paragraph('') if idx > 0 else paragrafo_corpo
         paragrafo.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
         linha = linhas[idx]
         while linha.find('<') >= 0:
-            paragrafo.add_run(linha[:linha.index('<')])
+            if linha.find('<') > 0:
+                paragrafo.add_run(linha[:linha.index('<')])
             comando = linha[linha.index('<'):linha.index('>')+1]
             linha = linha[linha.index('>')+1:]
             match comando:
@@ -106,11 +107,9 @@ def cria_notificacao_modelo_4(cnpj: str, ie: str, razao_social: str, endereco: s
                     paragrafo.add_run(linha[:linha.index('</i>')]).italic = True
                     linha = linha[linha.index('</i>') + 4:]
                 case '<li>':
-                    paragrafo = celula_corpo.add_paragraph('')
-                    paragrafo.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
                     paragrafo.style = 'Bullet List'
                 case _:
-                    raise Exception(f'Não sei tratar o HTML corretamente: {corpo_notificacao}')
+                    raise Exception(f'Não sei tratar o HTML corretamente! Existe uma tag que não sei tratar: {comando}')
         if linha:
             paragrafo.add_run(linha)
     doc.tables[2].rows[10].cells[0].paragraphs[0].runs[0].text = f'{afre_data.drt_sigla}-' \
@@ -119,6 +118,7 @@ def cria_notificacao_modelo_4(cnpj: str, ie: str, razao_social: str, endereco: s
                                                                  f' ______/______/_______ '
     doc.tables[2].rows[-1].cells[0].paragraphs[1].runs[0].text = afre_data.nome
     doc.tables[2].rows[-1].cells[0].paragraphs[2].runs[0].text = f'AFRE - IF {afre_data.funcional}'
+    docx_path.unlink(missing_ok=True)
     doc.save(str(docx_path.absolute()))
     _save_docx_as_pdf(docx_path, path)
 

@@ -39,6 +39,9 @@
           },
           "anexo": {
             "type": "string"
+          },
+          "anexo_detalhamento": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -77,7 +80,7 @@
                   "relatorio_circunstanciado": {
                     "type": "string"
                   },
-                  "filtro": {"enum": ["positivo", "negativo"]},
+                  "filtro": {"enum": ["positivo", "negativo", "zerado"]},
                   "filtro_coluna": {"type": "string"},
                   "planilha_titulo": {"type": "string"},
                   "ttpa": {

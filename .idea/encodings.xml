@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="Encoding">
+    <file url="file://$PROJECT_DIR$/resources/infracoes/IIIc.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/IIb-sem_documento.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/IIj-destaque_maior_df.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/IIj.json" charset="windows-1252" />
@@ -24,6 +25,7 @@
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vg-LRS.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vh-LRAICMS.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vj-LRAICMS.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/infracoes/Vj-LRE-SN.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vj-LRE.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vj-LRI.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vj-LRS.json" charset="windows-1252" />
@@ -33,6 +35,7 @@
     <file url="file://$PROJECT_DIR$/resources/infracoes/Vm-LRS.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/observacoes_aiim.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes-schema.json" charset="ISO-8859-1" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/anexo_I_art_41_falta_estorno_credito.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/credito_ativo_imobilizado.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/devolucoes_proprias_consumidor_final.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/difal_entrada_interestadual.json" charset="windows-1252" />
@@ -44,15 +47,19 @@
     <file url="file://$PROJECT_DIR$/resources/verificacoes/entradas_credito_maior_que_DF.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/entradas_n_tributadas_fora_LRE.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/entradas_tributadas_fora_LRE.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/falta_LRE-SN.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/falta_LRI-SN.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/falta_estorno_perdas.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/falta_livros.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/gia_atrasada.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/gia_nao_entregue.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/inutilizacoes_atraso.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/levantamento_fiscal_NCM.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/nao_exibicao_LRI.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/nao_exibicao_livros.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/nfe_nao_inutilizada.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/outros_creditos.json" charset="windows-1252" />
+    <file url="file://$PROJECT_DIR$/resources/verificacoes/outros_debitos.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/saidas_RPA_indicacao_SN.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/saidas_aliq_errada.json" charset="windows-1252" />
     <file url="file://$PROJECT_DIR$/resources/verificacoes/saidas_n_tributadas_falso_ST.json" charset="windows-1252" />

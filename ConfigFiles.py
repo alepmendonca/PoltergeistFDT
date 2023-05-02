@@ -437,6 +437,9 @@ class Infraction:
     def is_positive_filter(self) -> bool:
         return self.filtro_tipo == 'positivo'
 
+    def is_negative_filter(self) -> bool:
+        return self.filtro_tipo == 'negativo'
+
     def sheet_extended_name(self, sheet_name: str) -> str:
         return f'{sheet_name} - {self.inciso}{self.alinea}'
 

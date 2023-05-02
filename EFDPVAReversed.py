@@ -164,7 +164,7 @@ class EFDPVAReversed:
                 str(efd_file), str(self._efds_json_path))
             window.write_event_value('-DATA-EXTRACTION-STATUS-', ['EFD-PVA', 'END'])
         except Exception as e:
-            logger.exception(f'Ocorreu uma falha na importação da EFD {efd_file}.')
+            logger.exception(f'Ocorreu uma falha na importação da EFD {efd_file}: {e}')
             window.write_event_value('-DATA-EXTRACTION-STATUS-', ['EFD-PVA', 'FAILURE'])
             raise e
 
@@ -177,8 +177,10 @@ class EFDPVAReversed:
             self.__efd_pva().jvm.br.gov.sp.efdpvainspector.EFDPrinter.imprimeApuracao(cnpj_sem_digitos, ie, referencia,
                                                                                       str(arquivo.absolute()))
         except py4j.java_gateway.Py4JJavaError as e:
-            logger.exception(f'Ocorreu uma falha na impressão do LRAICMS referencia {referencia}.')
-            raise e
+            mensagem = str(e.java_exception).encode('iso-8859-1').decode()
+            mensagem = mensagem[mensagem.find(' '):]
+            logger.exception(f'Ocorreu uma falha na impressão do LRAICMS de {referencia}: {mensagem}')
+            raise Exception(mensagem)
 
     def print_LRI(self, referencia: datetime.date, arquivo: Path):
         cnpj_sem_digitos = get_current_audit().cnpj_only_digits()
@@ -190,8 +192,10 @@ class EFDPVAReversed:
                                                                                         referencia,
                                                                                         str(arquivo.absolute()))
         except py4j.java_gateway.Py4JJavaError as e:
-            logger.exception(f'Ocorreu uma falha na impressão do LRI referencia {referencia}.')
-            raise e
+            mensagem = str(e.java_exception).encode('iso-8859-1').decode()
+            mensagem = mensagem[mensagem.find(' '):]
+            logger.exception(f'Ocorreu uma falha na impressão do LRI de {referencia}: {mensagem}')
+            raise Exception(mensagem)
 
     def print_LRE(self, referencia: datetime.date, arquivo: Path):
         cnpj_sem_digitos = get_current_audit().cnpj_only_digits()
@@ -202,8 +206,10 @@ class EFDPVAReversed:
             self.__efd_pva().jvm.br.gov.sp.efdpvainspector.EFDPrinter.imprimeEntradas(cnpj_sem_digitos, ie, referencia,
                                                                                       str(arquivo.absolute()))
         except py4j.java_gateway.Py4JJavaError as e:
-            logger.exception(f'Ocorreu uma falha na impressão do LRE referencia {referencia}.')
-            raise e
+            mensagem = str(e.java_exception).encode('iso-8859-1').decode()
+            mensagem = mensagem[mensagem.find(' '):]
+            logger.exception(f'Ocorreu uma falha na impressão do LRE de {referencia}: {mensagem}')
+            raise Exception(mensagem)
 
     def print_LRS(self, referencia: datetime.date, arquivo: Path):
         cnpj_sem_digitos = get_current_audit().cnpj_only_digits()
@@ -214,8 +220,10 @@ class EFDPVAReversed:
             self.__efd_pva().jvm.br.gov.sp.efdpvainspector.EFDPrinter.imprimeSaidas(cnpj_sem_digitos, ie, referencia,
                                                                                     str(arquivo.absolute()))
         except py4j.java_gateway.Py4JJavaError as e:
-            logger.exception(f'Ocorreu uma falha na impressão do LRE referencia {referencia}.')
-            raise e
+            mensagem = str(e.java_exception).encode('iso-8859-1').decode()
+            mensagem = mensagem[mensagem.find(' '):]
+            logger.exception(f'Ocorreu uma falha na impressão do LRS de {referencia}: {mensagem}')
+            raise Exception(mensagem)
 
     def list_imported_files(self, cnpj):
         efddb = None

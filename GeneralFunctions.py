@@ -17,6 +17,7 @@ from datetime import date
 from datetime import datetime
 from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pythoncom
@@ -31,6 +32,7 @@ _project_version = None
 meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho',
          'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro']
 infractions = {}
+
 
 class PopenWindows(subprocess.Popen):
     # serve pra fazer monkey patch, de forma que no modo release não abra um shell
@@ -48,7 +50,7 @@ class PopenWindows(subprocess.Popen):
             popen_kwargs['stdin'] = subprocess.PIPE
             popen_kwargs['stderr'] = subprocess.PIPE
             popen_kwargs['startupinfo'] = startupinfo_windows
-#            popen_kwargs['shell'] = False
+            #            popen_kwargs['shell'] = False
             super().__init__(command, **popen_kwargs)
 
 
@@ -74,7 +76,7 @@ class ThreadWithReturnValue(threading.Thread):
             except Exception as e:
                 self.exception = e
 
-    def join(self, *args):
+    def join(self, *args) -> Any:
         threading.Thread.join(self, *args)
         if self.exception:
             raise self.exception
@@ -107,7 +109,7 @@ def get_project_version() -> str:
             # quando roda em modo executavel do PyInstaller
             lang, codepage = win32api.GetFileVersionInfo(sys.executable, '\\VarFileInfo\\Translation')[0]
             _project_version = win32api.GetFileVersionInfo(sys.executable, u'\\StringFileInfo\\%04X%04X\\%s' %
-                                                        (lang, codepage, 'ProductVersion'))
+                                                           (lang, codepage, 'ProductVersion'))
             _project_version = re.search(r'(\d+\.\d+\.\d+)', _project_version).group(1)
     return _project_version
 
@@ -138,6 +140,37 @@ def get_sql_path() -> Path:
 
 def get_tables_path() -> Path:
     return Path('resources') / 'tables'
+
+
+def notification_path(notification_number: str, parent_path: Path,
+                      base_name: str = 'Recibo de Entrega de Arquivos Digitais') -> Path | None:
+    if not notification_number:
+        return None
+    folder_name = f'{notification_numeric_part(notification_number).replace("_", "-")}'
+    if is_manual_notification(notification_number):
+        folder_name += ' - MANUAL'
+    # remove caracteres inválidos no Windows para nomes de arquivos
+    folder_name += re.sub(r'[<>:"/\\|!?*]', '', f' - {base_name}')
+    return parent_path / folder_name
+
+
+def notification_numeric_part(notification_number: str) -> str:
+    if is_manual_notification(notification_number):
+        parts = notification_number.split("/")
+        return f'{parts[1].split()[0]}_{int(parts[0])}'
+    else:
+        partial_name = re.search(r"\d+", notification_number)[0]
+        return f'{notification_number[-4:]}_{int(partial_name)}'
+
+
+def notification_attachment_folder() -> str:
+    return 'Anexos'
+
+
+def is_manual_notification(notification_number: str) -> bool:
+    if not notification_number:
+        raise ValueError('Verificando se a notificação é manual, mas nem tem notificação!')
+    return not notification_number.startswith('IC/N/FIS')
 
 
 logger = logging.getLogger(get_project_name())
@@ -412,8 +445,10 @@ def move_downloaded_file(tmp_path: Path, downloaded_file: str, destination: Path
         if replace:
             if destination.is_dir():
                 (destination / downloaded_file).unlink(missing_ok=True)
-            else:
+            elif destination.is_file():
                 destination.unlink(missing_ok=True)
+            elif not destination.suffix:
+                destination.mkdir(parents=True, exist_ok=True)
         shutil.move(str(original_path), str(destination))
 
 

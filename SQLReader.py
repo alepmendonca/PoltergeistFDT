@@ -1,9 +1,13 @@
 import datetime
 import re
+import sys
 
 import pandas as pd
-import psycopg2
-from psycopg2 import sql
+if sys.platform == "win32":
+    import psycopg2 as psycopg
+else:
+    import psycopg
+    from psycopg import sql
 from pathlib import Path
 
 import GeneralConfiguration
@@ -17,6 +21,7 @@ class QueryAnalysisException(Exception):
 def _get_dtypes_from_oids(oids: list) -> list:
     oid_catalog = {
         20: 'BIGINT',
+        21: 'BIGINT',
         23: 'BIGINT',
         25: 'TEXT',
         701: 'BIGINT',
@@ -24,6 +29,7 @@ def _get_dtypes_from_oids(oids: list) -> list:
         1043: 'TEXT',
         1082: 'DATE',
         1114: 'DATE',
+        1184: 'DATE',
         1700: 'NUMERIC'
     }
     dtypes = {
@@ -41,19 +47,23 @@ def _get_dtypes_from_oids(oids: list) -> list:
 
 
 class SQLReader:
-    def __init__(self, schema: str = None, config=GeneralConfiguration.get()):
+    def __init__(self, schema: str = None, database: str = None,
+                 config=GeneralConfiguration.get()):
         try:
-            self._conn = psycopg2.connect(host=config.postgres_address, port=config.postgres_port,
-                                          dbname=config.postgres_dbname,
-                                          user=config.postgres_user, password=config.postgres_pass)
-            self._cursor = self._conn.cursor()
             if schema:
                 self._schema = schema.lower()
-                self._cursor.execute(f"SET search_path = '{self._schema}', public;")
+            self._conn = psycopg.connect(host=config.postgres_address, port=config.postgres_port,
+                                         dbname=database if database else config.postgres_dbname,
+                                         user=config.postgres_user, password=config.postgres_pass,
+                                         options=f"-c search_path={self._schema}" if schema else None)
+            self._cursor = self._conn.cursor()
         except Exception as e:
             if str(e).find('Connection refused') >= 0:
                 raise QueryAnalysisException('Conexão ao Postgres recusada. Verifique se ele está funcionando, '
                                              'usando as configurações definidas nas Propriedades.')
+            elif str(e).find('password authentication failed') >= 0:
+                raise QueryAnalysisException('Senha do Postgres errada. Altere as configurações definidas '
+                                             'nas Propriedades.')
             else:
                 GeneralFunctions.logger.exception(f'Erro no acesso ao banco de dados Postgres: {e}')
                 raise e
@@ -69,10 +79,7 @@ class SQLReader:
             self._conn.close()
 
     def executa_consulta(self, query: str, quantidade=None, argumentos: tuple = None) -> (int, pd.DataFrame):
-        try:
-            self._cursor.execute(query, argumentos)
-        except psycopg2.Error as e:
-            raise Exception(e.pgerror)
+        self._cursor.execute(query, argumentos)
         total = self._cursor.rowcount
         colunas = [coluna.name for coluna in self._cursor.description]
         oids = [coluna.type_code for coluna in self._cursor.description]
@@ -85,21 +92,20 @@ class SQLReader:
         df = df.astype(dtypes)
         return total, df
 
+    def existing_databases(self) -> list[str]:
+        self._cursor.execute("SELECT datname FROM pg_database WHERE datname LIKE %s AND datallowconn",
+                             ('%\_%',))
+        return [str(c[0]) for c in self._cursor.fetchall()]
+
     def does_schema_exist(self, schema_name: str) -> bool:
         if not schema_name:
             return False
-        try:
-            self._cursor.execute('select 1 from information_schema.schemata where lower(schema_name)=%s;',
-                                 (schema_name.lower(),))
-        except psycopg2.Error as e:
-            raise Exception(e.pgerror)
+        self._cursor.execute('select 1 from information_schema.schemata where lower(schema_name)=%s;',
+                             (schema_name.lower(),))
         return bool(len(self._cursor.fetchall()))
 
     def has_return_set(self, sql_string: str, sql_args: tuple = None) -> bool:
-        try:
-            self._cursor.execute(sql_string, sql_args)
-        except psycopg2.Error as e:
-            raise Exception(e.pgerror)
+        self._cursor.execute(sql_string, sql_args)
         return bool(len(self._cursor.fetchmany(size=1)))
 
     def does_table_exist(self, table_name: str) -> bool:
@@ -108,10 +114,7 @@ class SQLReader:
                                    (self._schema, table_name))
 
     def table_rowcount(self, table_name: str) -> int:
-        try:
-            self._cursor.execute(f'SELECT COUNT(*) FROM {table_name};')
-        except psycopg2.Error as e:
-            raise Exception(e.pgerror)
+        self._cursor.execute(f'SELECT COUNT(*) FROM {table_name};')
         return self._cursor.fetchone()[0]
 
     def is_efd_unified(self) -> bool:
@@ -129,9 +132,9 @@ class SQLWriter(SQLReader):
     def executa_transacao(self, query: str, sql_args: tuple = None):
         try:
             self._cursor.execute(query, sql_args)
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e
 
     def drop_master_schema(self):
         if not self.does_schema_exist('master'):
@@ -146,19 +149,24 @@ class SQLWriter(SQLReader):
     def drop_table(self, table_name: str):
         self._cursor.execute(f'DROP TABLE IF EXISTS {table_name} CASCADE;')
 
-    def import_dump_file(self, file: Path, temp_table: str, delimiter=',',
-                         encoding='UTF-8', null_string=None, quote_char=None):
+    def import_dump_file(self, file: Path, temp_table: str, delimiter=';',
+                         encoding='UTF-8', null_string=None, quote_char=None, header=True):
         try:
             self._cursor.execute(f"TRUNCATE TABLE {temp_table};")
-            sql_command = f"COPY {temp_table} FROM STDIN DELIMITER '{delimiter}' CSV HEADER"
+            sql_command = f"COPY {temp_table} FROM STDIN DELIMITER '{delimiter}'"
+            if header:
+                sql_command += " CSV HEADER"
             if null_string:
                 sql_command += f" NULL '{null_string}'"
             if quote_char:
                 sql_command += f" QUOTE {quote_char}"
             sql_command += f" ENCODING '{encoding}'"
-            self._cursor.copy_expert(sql_command + ';', file.open(mode='r', encoding=encoding))
+            with file.open(mode='r', encoding=encoding) as f:
+                with self._cursor.copy(sql_command) as copy:
+                    while data := f.read(1000):
+                        copy.write(data)
             self._conn.commit()
-        except psycopg2.errors.BadCopyFileFormat:
+        except psycopg.errors.BadCopyFileFormat:
             raise QueryAnalysisException(f'Erro na importação do arquivo {str(file)}: ele está num formato '
                                          f'inesperado para importar na tabela temporária {temp_table}! '
                                          'Contatar desenvolvedor para corrigir!')
@@ -170,9 +178,9 @@ class SQLWriter(SQLReader):
                     else f'Criando tabela {script.stem.upper()}...'
                 GeneralFunctions.logger.info(log_msg)
                 self.run_ddl(script)
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e
 
     def prepare_table_escrituracaofiscal(self):
         try:
@@ -184,9 +192,9 @@ class SQLWriter(SQLReader):
                                  'ALTER COLUMN cpf_cnpj TYPE char(14) USING cpf_cnpj::NUMERIC::varchar;')
             self._cursor.execute('ALTER TABLE escrituracaofiscal ALTER COLUMN ie TYPE int8 USING ie::int8;')
             self._conn.commit()
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e
 
     def unify_efd_tables(self, cnpj: str, dicEfds: dict):
         novos_nomes_schemas = list(map(
@@ -221,11 +229,11 @@ class SQLWriter(SQLReader):
                 "SELECT DISTINCT schema_name FROM information_schema.schemata, escrituracaofiscal "
                 f"WHERE schema_name LIKE '%{int(cnpj)}%'")
             for esquema in self._cursor.fetchall():
-                self._cursor.execute(f'DROP SCHEMA %s CASCADE', (esquema, ))
+                self._cursor.execute(f'DROP SCHEMA %s CASCADE', (esquema,))
                 self._conn.commit()
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e
 
     def create_efd_schema(self, schema_name: str, sql_file: Path):
         try:
@@ -248,27 +256,32 @@ class SQLWriter(SQLReader):
             script = script.replace('DROP TABLE', 'COMMIT;\nDROP TABLE')
             self._cursor.execute(script)
             self._conn.commit()
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e
 
-    def create_audit_schema(self, schema_name: str, cnpj: str, ie: int, inicio: datetime.date, fim: datetime.date):
-        # TODO fazer a criação de todas as tabelas pra não dar erros nas queries
+    def create_audit_schema(self, schema_name: str):
         try:
             self._cursor.execute(f'CREATE SCHEMA IF NOT EXISTS {schema_name};')
             self._cursor.execute(f'SET search_path = {schema_name}, public;')
-            self._cursor.execute("CREATE OR REPLACE FUNCTION cnpj_auditoria() RETURNS varchar AS " +
-                                 f"$$ SELECT '{int(cnpj)}' $$ LANGUAGE SQL IMMUTABLE;")
+            self._conn.commit()
+        except psycopg.Error as e:
+            self._conn.rollback()
+            raise e
+
+    def create_aux_functions(self, cnpj: str, ie: int, inicio: datetime.date, fim: datetime.date):
+        try:
+            self._cursor.execute("CREATE OR REPLACE FUNCTION cnpj_auditoria() RETURNS bigint AS " +
+                                 f"$$ SELECT {int(cnpj)} $$ LANGUAGE SQL IMMUTABLE;")
             self._cursor.execute("CREATE OR REPLACE FUNCTION ie_auditoria() RETURNS bigint AS " +
                                  f"$$ SELECT {ie} $$ LANGUAGE SQL IMMUTABLE;")
             self._cursor.execute("CREATE OR REPLACE FUNCTION inicio_auditoria() RETURNS date AS " +
                                  f"$$ SELECT '{inicio.strftime('%d-%m-%Y')}'::DATE $$ LANGUAGE SQL IMMUTABLE;")
             self._cursor.execute("CREATE OR REPLACE FUNCTION fim_auditoria() RETURNS date AS " +
                                  f"$$ SELECT '{fim.strftime('%d-%m-%Y')}'::DATE $$ LANGUAGE SQL IMMUTABLE;")
-            self._conn.commit()
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e
 
     def create_inidoneos_table(self):
         try:
@@ -284,9 +297,9 @@ class SQLWriter(SQLReader):
             self._cursor.execute("CREATE INDEX inidoneo_ie ON public.inidoneo USING btree (ie);")
             self._cursor.execute("CREATE INDEX inidoneo_nome ON public.inidoneo USING btree (nome);")
             self._conn.commit()
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e
 
     def insert_inidoneo(self, registro):
         try:
@@ -298,9 +311,9 @@ class SQLWriter(SQLReader):
                                  "%s, %s, %s, %s, %s,"
                                  "%s, %s);", registro)
             self._conn.commit()
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e
 
     def create_gias_table(self):
         try:
@@ -311,9 +324,9 @@ class SQLWriter(SQLReader):
             self._cursor.execute("CREATE TEMP TABLE GIA_TEMP (IE VARCHAR, MES VARCHAR, ENVIO VARCHAR, "
                                  "DEBITO VARCHAR, CREDITO VARCHAR);")
             self._conn.commit()
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e
 
     def insert_gia(self, ano: int, offset: int, limit: int) -> int:
         try:
@@ -325,9 +338,9 @@ class SQLWriter(SQLReader):
             inseridos = self._cursor.rowcount
             self._conn.commit()
             return inseridos
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e
 
     def create_cadesp_tables(self):
         try:
@@ -360,9 +373,9 @@ class SQLWriter(SQLReader):
             self._cursor.execute("CREATE TEMP TABLE CAD_REG_TEMP (IE VARCHAR, COD_REGIME VARCHAR, "
                                  "INICIO VARCHAR, FIM VARCHAR);")
             self._conn.commit()
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e
 
     def insert_cadesp(self, offset: int, limit: int) -> int:
         try:
@@ -377,9 +390,9 @@ class SQLWriter(SQLReader):
             inseridos = self._cursor.rowcount
             self._conn.commit()
             return inseridos
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e
 
     def insert_cadesp_regime(self, offset: int, limit: int) -> int:
         try:
@@ -411,6 +424,6 @@ class SQLWriter(SQLReader):
             inseridos = self._cursor.rowcount
             self._conn.commit()
             return inseridos
-        except psycopg2.Error as e:
+        except psycopg.Error as e:
             self._conn.rollback()
-            raise Exception(e.pgerror)
+            raise e

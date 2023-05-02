@@ -11,6 +11,7 @@
       },
       "provas": [
         {"descricao": "Comparativo entre estornos de créditos em LRAICMS e listagem de mercadorias perdidas, e memória de cálculo dos créditos a serem estornados", "tipo": "listagem"},
+        {"tipo": "creditos", "descricao": "Demonstrativo de créditos indevidos para análise de saldos para incidência de juros, utilizado para formação do DDF do item"},
         {"descricao": "Transcrição de NF-e contendo as últimas entradas das mercadorias perdidas, a partir das quais foram extraídos os valores unitários das mercadorias para base de cálculo de estorno apurado",
           "tipo": "DFe"},
         {"descricao": "LRAICMS, contendo os estornos de créditos realizados",

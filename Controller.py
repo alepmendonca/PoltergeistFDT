@@ -1,6 +1,5 @@
 import concurrent
 import concurrent.futures
-import os
 import re
 import shutil
 import subprocess
@@ -114,26 +113,48 @@ def get_local_dados_osf_up_to_date_with_aiim2003():
     get_current_audit().save()
 
 
+def get_updated_cadesp() -> Path:
+    baixaCadesp = False
+    cadesp_file = get_current_audit().path() / 'Cadesp.pdf'
+    if not cadesp_file.is_file():
+        baixaCadesp = True
+        logger.info('Vai baixar extrato do Cadesp do contribuinte, para verificar endereço atual completo')
+    else:
+        ti_m = cadesp_file.stat().st_mtime
+        if (time.time() - ti_m) / 60 / 60 / 24 >= 30:
+            baixaCadesp = True
+            logger.info('Vai baixar de novo extrato do Cadesp do contribuinte, '
+                        'última vez que viu faz mais de 30 dias...')
+
+    if baixaCadesp:
+        with SeleniumWebScraper(get_current_audit().path()) as ws:
+            ws.get_full_cadesp(get_current_audit().ie, cadesp_file)
+    return cadesp_file
+
+
 def update_dados_osf(osf: str):
-    osf_file = get_current_audit().path() / 'OSF Completa.pdf'
-    if not osf_file.is_file():
+    osf_file = get_current_audit().complete_osf_path()
+    osf_simple_file = get_current_audit().signed_osf_path()
+    if not osf_file.is_file() or not osf_simple_file.is_file():
         if osf is None:
-            logger.error('Não foi informado número da OSF para buscar, busca cancelada.')
-            return
-        logger.info('Não foi localizada OSF completa, baixarei do PGSF')
+            raise Exception('Não foi informado número da OSF para buscar, busca cancelada.')
+        logger.info('Não foi localizado PDF da OSF, baixarei do PGSF')
         with SeleniumWebScraper(get_current_audit().path(), hidden=True) as ws:
-            ws.get_full_OSF(osf, 'OSF Completa.pdf')
+            if not osf_file.is_file():
+                ws.get_full_OSF(osf, str(osf_file.absolute()))
+            if not osf_simple_file.is_file():
+                ws.get_simple_OSF(osf, str(osf_simple_file.absolute()))
 
     logger.info('Capturando dados da Ordem de Serviço Fiscal...')
     linhas = PDFExtractor.parse_pdf(osf_file)
 
     # inicio e fim fiscalizacao podem simplesmente não estar na OSF
     inicio_auditoria = fim_auditoria = None
-    if 'Até:' in linhas and re.match(r'\d{2}/\d{4}', linhas[linhas.index('Até:') + 1]):
-        inicio_auditoria = linhas[76]
-        fim_auditoria = linhas[77]
+    if 'Serviços Diversos' not in linhas and re.match(r'\d{2}/\d{4}', linhas[linhas.index('Até:') + 1]):
+        inicio_auditoria = linhas[linhas.index('Até:') + 1]
+        fim_auditoria = linhas[linhas.index('Até:') + 2]
     else:
-        for linha in linhas[linhas.index('Origem do Trabalho Fiscal:'):linhas.index('OBSERVAÇÕES')]:
+        for linha in linhas[linhas.index('Serviço:'):linhas.index('Resultado do Serviço')]:
             periodo = re.match(r'.*(\d{2}/\d{4}).*(\d{2}/\d{4})', linha)
             if periodo:
                 if int(periodo.group(1)[:2]) <= 12 and int(periodo.group(1)[3:]) > 2000 \
@@ -159,40 +180,25 @@ def update_dados_osf(osf: str):
         audit.inicio_auditoria = inicio_auditoria
         audit.fim_auditoria = fim_auditoria
 
-    baixaCadesp = False
-    cadesp_file = get_current_audit().path() / 'Cadesp.pdf'
-    if not cadesp_file.is_file():
-        baixaCadesp = True
-        logger.info('Vai baixar extrato do Cadesp do contribuinte, para verificar endereço atual completo')
-    else:
-        ti_m = cadesp_file.stat().st_mtime
-        if (time.time() - ti_m) / 60 / 60 / 24 >= 30:
-            baixaCadesp = True
-            logger.info('Vai baixar de novo extrato do Cadesp do contribuinte, '
-                        'última vez que viu faz mais de 30 dias...')
-
-    if baixaCadesp:
-        with SeleniumWebScraper(get_current_audit().path()) as ws:
-            ws.get_full_cadesp(get_current_audit().ie, cadesp_file)
-
+    cadesp_file = get_updated_cadesp()
     logger.info('Capturando dados do PDF com extrato do Cadesp...')
-    linhas = PDFExtractor.parse_pdf(cadesp_file)
+    linhas = [linha.strip() for linha in PDFExtractor.parse_pdf(cadesp_file) if linha.strip()]
 
     audit = get_current_audit()
     audit.inicio_situacao = [s for s in linhas if 'Início da Situação' in s][0][-10:]
-    audit.empresa = [s for s in linhas if 'Nome Empresarial' in s][-1][17:]
+    audit.empresa = [s for s in linhas if 'Nome Empresarial' in s][-1][17:].strip()
     audit.situacao = [s for s in linhas if s.startswith('Situação:')][-1][9:].strip()
     audit.inicio_inscricao = [s for s in linhas if 'Data da Inscrição no Estado' in s][0][-10:]
-    audit.logradouro = linhas[linhas.index('Endereço do Estabelecimento') + 2][11:]
-    audit.numero = linhas[linhas.index('Endereço do Estabelecimento') + 3][3:]
-    audit.complemento = linhas[linhas.index('Endereço do Estabelecimento') + 4][12:].strip()
-    audit.bairro = linhas[linhas.index('Endereço do Estabelecimento') + 6][7:].strip()
-    audit.cidade = linhas[linhas.index('Endereço do Estabelecimento') + 11][10:].strip()
-    audit.uf = linhas[linhas.index('Endereço do Estabelecimento') + 12][3:].strip()
-    audit.cep = linhas[linhas.index('Endereço do Estabelecimento') + 5][4:].strip()
+    audit.logradouro = linhas[linhas.index('Endereço do Estabelecimento') + 1][11:].strip()
+    audit.numero = linhas[linhas.index('Endereço do Estabelecimento') + 2][3:].strip()
+    audit.complemento = linhas[linhas.index('Endereço do Estabelecimento') + 3][12:].strip()
+    audit.bairro = linhas[linhas.index('Endereço do Estabelecimento') + 5][7:].strip()
+    audit.cidade = linhas[linhas.index('Endereço do Estabelecimento') + 6][10:].strip()
+    audit.uf = linhas[linhas.index('Endereço do Estabelecimento') + 7][3:].strip()
+    audit.cep = linhas[linhas.index('Endereço do Estabelecimento') + 4][4:].strip()
 
     historicos_txt = linhas[linhas.index('Histórico de Regime Estadual') + 7:
-                            linhas.index('Histórico de Participantes') - 1]
+                            linhas.index('Histórico de Regime RFB') - 1]
     historicos = []
     for idx in range(0, len(historicos_txt), 5):
         inicio = historicos_txt[idx]
@@ -200,7 +206,6 @@ def update_dados_osf(osf: str):
         regime = historicos_txt[idx + 2]
         historicos.append([inicio, fim, regime])
     audit.historico_regime = historicos
-    get_current_audit().save()
     logger.info('Dados da fiscalização extraídos dos sistemas com sucesso!')
 
     if get_current_audit().is_aiim_open and is_aiim_on_AIIM2003():
@@ -208,7 +213,6 @@ def update_dados_osf(osf: str):
         AIIMAutoIt().atualiza_aiim(get_current_audit().aiim_number,
                                    __get_aiim_position_in_aiim2003(get_current_audit().aiim_number),
                                    get_current_audit())
-    return audit
 
 
 def is_aiim_on_AIIM2003() -> bool:
@@ -256,7 +260,7 @@ def print_sheet_and_open(notification: PossibleInfraction):
         raise e
 
 
-def send_notification(notification: PossibleInfraction, title: str, contents: str) -> AiimItem:
+def send_notification(notification: PossibleInfraction, title: str, contents: str) -> list[AiimItem]:
     try:
         logger.info('Gerando textos para notificação...')
         titulo_ajustado = notification.notificacao_titulo(title)
@@ -264,9 +268,9 @@ def send_notification(notification: PossibleInfraction, title: str, contents: st
         anexos_paths: list = []
         dec_num: str
         if notification.verificacao.has_notification_any_attachments():
-            # DEC tem limitação de anexos de 5Mb
             logger.info('Gerando anexos da notificação...')
-            anexos_paths = print_sheet(notification, 5)
+            max_size = GeneralConfiguration.get().max_dec_attachment_size
+            anexos_paths = print_sheet(notification, max_size=max_size)
         with SeleniumWebScraper(Path.home()) as ws:
             if notification.verificacao.notification_subject:
                 dec_num = ws.send_notification(get_current_audit().cnpj, titulo_ajustado,
@@ -278,14 +282,35 @@ def send_notification(notification: PossibleInfraction, title: str, contents: st
 
         if dec_num:
             # muda nas configurações da fiscalização a notificação para a aba de AIIMs
-            return move_analysis_from_notification_to_aiim(notification, dec_num)
+            aiim_items = move_analysis_from_notification_to_aiim(notification, dec_num)
+            get_current_audit().save()
+            return aiim_items
         else:
-            return None
+            return []
     except Exception as e:
         if not str(e).startswith('Falha no Excel'):
             logger.exception(f'Erro no envio de notificação da análise {notification.verificacao}, título {title}')
         raise e
 
+
+def send_manual_notification(notification: PossibleInfraction, numero: str, contents: str) -> list[AiimItem]:
+    aiim_items = move_analysis_from_notification_to_aiim(notification, numero)
+    if not get_current_audit().is_contribuinte_ativo():
+        # é uma única notificação para todos os itens de AIIM gerado, por isso pega o primeiro
+        WordReport.cria_notificacao_modelo_4(get_current_audit().cnpj, get_current_audit().ie,
+                                             get_current_audit().empresa, get_current_audit().endereco_completo(),
+                                             aiim_items[0].notificacao_corpo(contents), aiim_items[0].notificacao,
+                                             aiim_items[0].notification_path() / 'Notificação Modelo 4.pdf')
+        anexos = []
+        if notification.verificacao.has_notification_any_attachments():
+            logger.info('Gerando anexos da notificação...')
+            anexos = print_sheet(notification)
+        aiim_items[0].notification_attachment_path().mkdir(exist_ok=True)
+        for anexo in anexos:
+            GeneralFunctions.move_downloaded_file(anexo.parent, anexo.name,
+                                                  aiim_items[0].notification_attachment_path(),
+                                                  replace=True)
+    return aiim_items
 
 def get_available_analysis():
     return sorted([verification for verification in Analysis.get_all_analysis(
@@ -304,16 +329,19 @@ def get_possible_infractions_osf() -> list[PossibleInfraction]:
 def add_analysis_to_audit(analysis: Analysis, planilha=None, df: pd.DataFrame = None, planilha_detalhe=None):
     notificacao = Audit.PossibleInfraction(analysis, planilha, df, planilha_detalhe)
     get_current_audit().notificacoes.append(notificacao)
-    get_current_audit().save()
     resultado = analysis.choose_between_notification_and_infraction()
     if not analysis.notification_title or (resultado is not None and resultado['decisão'] == 'Infração'):
         move_analysis_from_notification_to_aiim(notificacao)
+    get_current_audit().save()
     if resultado is not None:
         raise AIIMGeneratorUserWarning(resultado['mensagem'])
 
 
-def move_analysis_from_notification_to_aiim(notification: PossibleInfraction, num_notificacao: str = None) -> AiimItem:
-    aiim_item = None
+def move_analysis_from_notification_to_aiim(
+        notification: PossibleInfraction,
+        num_notificacao: str = None
+) -> list[AiimItem]:
+    aiim_items = []
 
     for infraction in notification.verificacao.infractions:
         if not notification.verificacao.must_choose_between_notification_and_infraction():
@@ -328,13 +356,16 @@ def move_analysis_from_notification_to_aiim(notification: PossibleInfraction, nu
                 aiim_item = Audit.AiimItem(infraction.filename, notification.verificacao, 0, num_notificacao, None,
                                            planilha, notification.df, notification.planilha_detalhe)
                 get_current_audit().aiim_itens.append(aiim_item)
+                aiim_items.append(aiim_item)
     remove_notification(notification)
 
     # cria pasta da notificação
     # exceto se a análise for do tipo notifica ou penaliza
-    if aiim_item and not notification.verificacao.must_choose_between_notification_and_infraction():
-        os.makedirs(aiim_item.notification_response_path(), exist_ok=True)
-    return aiim_item
+    if aiim_items and not notification.verificacao.must_choose_between_notification_and_infraction():
+        # faz só uma vez para todas as infrações, pois é a mesma notificação para todos
+        if aiim_items[0].notification_response_path():
+            aiim_items[0].notification_response_path().mkdir(parents=True, exist_ok=True)
+    return aiim_items
 
 
 def create_aiim():
@@ -405,7 +436,6 @@ def update_aiim_item_number(aiim_item: AiimItem, new_number: int = 0):
 
 def remove_notification(notification: PossibleInfraction):
     get_current_audit().notificacoes.remove(notification)
-    get_current_audit().save()
 
 
 def remove_aiim_item(aiim_item: AiimItem):
@@ -413,7 +443,8 @@ def remove_aiim_item(aiim_item: AiimItem):
         item_number = aiim_item.item
         update_aiim_item_number(aiim_item)
         AIIMAutoIt().remove_aiim_item(*__get_open_aiim_data_from_aiim2003(), item_number)
-    if GeneralFunctions.is_empty_directory(aiim_item.notification_response_path()):
+    if aiim_item.notification_response_path() and \
+            GeneralFunctions.is_empty_directory(aiim_item.notification_response_path()):
         shutil.rmtree(aiim_item.notification_path())
     get_current_audit().aiim_itens.remove(aiim_item)
     get_current_audit().save()
@@ -455,7 +486,7 @@ def get_ddf_for_infraction(infraction: Infraction):
                 'ddf': aiim_item.verificacao.function_ddf(infraction, aiim_item.df)}
 
 
-def send_notification_with_files_digital_receipt():
+def send_notification_with_files_digital_receipt(notification_number: str = ''):
     if get_current_audit().receipt_digital_files:
         raise Exception(f'Já foi gerado recibo de entrega de arquivos digitais: '
                         f'{get_current_audit().receipt_digital_files}!')
@@ -465,17 +496,35 @@ def send_notification_with_files_digital_receipt():
                         f'notificações fiscais a ela vinculadas, segue juntado recibo de entrega de arquivos digitais.'
     logger.info('Gerando códigos hash dos arquivos digitais recebidos...')
     hashes = get_current_audit().get_digital_files_hashes()
-    recibo_path = get_current_audit().path() / 'Recibo de Entrega de Arquivos Digitais.pdf'
+    recibo_path = GeneralFunctions.get_tmp_path() / 'Recibo de Entrega de Arquivos Digitais.pdf'
     WordReport.cria_recibo_entrega_arquivos_digitais(get_current_audit().cnpj, get_current_audit().ie,
                                                      get_current_audit().empresa, get_current_audit().osf,
                                                      hashes, recibo_path)
-    with SeleniumWebScraper() as ws:
-        dec_num = ws.send_notification(get_current_audit().cnpj,
-                                       notification_subject, notification_body,
-                                       anexos_paths=[recibo_path],
-                                       is_tipo_outros=True)
-    if dec_num:
-        get_current_audit().receipt_digital_files = dec_num
+    notification_file = ''
+    if get_current_audit().is_contribuinte_ativo():
+        with SeleniumWebScraper() as ws:
+            notification_number = ws.send_notification(get_current_audit().cnpj,
+                                                       notification_subject, notification_body,
+                                                       anexos_paths=[recibo_path],
+                                                       is_tipo_outros=True)
+    else:
+        notification_file = GeneralFunctions.get_tmp_path() / 'notif_recibo.pdf'
+        WordReport.cria_notificacao_modelo_4(get_current_audit().cnpj, get_current_audit().ie,
+                                             get_current_audit().empresa, get_current_audit().endereco_completo(),
+                                             notification_body, notification_number,
+                                             notification_file)
+    if notification_number:
+        notification_path = GeneralFunctions.notification_path(notification_number,
+                                                               get_current_audit().notification_path())
+        (notification_path / GeneralFunctions.notification_attachment_folder()).mkdir(parents=True, exist_ok=True)
+        if notification_file:
+            for arquivo in GeneralFunctions.get_tmp_path().glob('notif*'):
+                GeneralFunctions.move_downloaded_file(GeneralFunctions.get_tmp_path(), arquivo.name,
+                                                      notification_path)
+        GeneralFunctions.move_downloaded_file(recibo_path.parent, recibo_path.name,
+                                              notification_path / GeneralFunctions.notification_attachment_folder(),
+                                              replace=True)
+        get_current_audit().receipt_digital_files = notification_number
         get_current_audit().save()
     else:
         raise Exception('Ocorreu um erro na geração da notificação do recibo.')
@@ -567,6 +616,15 @@ def print_efd(book: str, refs: list[date]):
                     raise Exception(f'Não implementada impressão deste tipo de EFD: {book}')
 
 
+def print_doc_digital(model: int, chaves: str):
+    if model == 55:
+        report = "DANFE Unificado – Lista de Chaves de Acesso"
+    else:
+        raise Exception(f'Modelo de documento fiscal não tratado pelo sistema: {model}')
+    with SeleniumWebScraper(get_current_audit().aiim_path()) as ws:
+        ws.get_launchpad_report(report, f'transcricoes_{model}.pdf', None, None, [chaves])
+
+
 def reopen_aiim():
     aiim_number = get_current_audit().aiim_number
     aex_path = get_current_audit().aiim_path() / f'{aiim_number.replace(".", "")}.aex'
@@ -604,21 +662,8 @@ def upload_aiim():
     get_current_audit().save()
 
 
-def generate_audit_schema():
-    with SQLWriter() as postgres:
-        if not postgres.does_schema_exist(get_current_audit().schema):
-            logger.info(
-                f'Criando schema chamado {get_current_audit().schema} no banco de dados central para a auditoria...')
-            postgres.create_audit_schema(get_current_audit().schema,
-                                         get_current_audit().cnpj_only_digits(),
-                                         int(get_current_audit().ie_only_digits()),
-                                         get_current_audit().inicio_auditoria,
-                                         get_current_audit().fim_auditoria)
-            logger.warning(f'Schema {get_current_audit().schema} criado com sucesso!')
-
-
 def gia_apuracao_is_populated():
-    with SQLReader(get_current_audit().schema) as postgres:
+    with SQLReader(database=get_current_audit().database, schema=get_current_audit().schema) as postgres:
         return postgres.does_table_exist('gia_apuracao')
 
 
@@ -641,7 +686,7 @@ def gia_apuracao_download(ws: SeleniumWebScraper, window: sg.Window, evento: thr
 def gia_populate_database(gias: list, evento: threading.Event):
     if evento.is_set():
         return
-    with SQLWriter(get_current_audit().schema) as postgres:
+    with SQLWriter(database=get_current_audit().database, schema=get_current_audit().schema) as postgres:
         postgres.executa_transacao('DROP TABLE IF EXISTS GIA_APURACAO;')
         postgres.executa_transacao("""
             CREATE TABLE GIA_APURACAO (
@@ -681,7 +726,7 @@ def gia_populate_database(gias: list, evento: threading.Event):
 
 
 def nfe_inutilizados_is_populated():
-    with SQLReader(get_current_audit().schema) as postgres:
+    with SQLReader(database=get_current_audit().database, schema=get_current_audit().schema) as postgres:
         return postgres.does_table_exist('nfe_inutilizacao')
 
 
@@ -704,7 +749,7 @@ def nfe_inutilizados_download(ws: SeleniumWebScraper, window: sg.Window, evento:
 def nfe_inutilizados_populate_database(inutilizacoes: list, evento: threading.Event):
     if evento.is_set():
         return
-    with SQLWriter(get_current_audit().schema) as postgres:
+    with SQLWriter(database=get_current_audit().database, schema=get_current_audit().schema) as postgres:
         postgres.executa_transacao('DROP TABLE IF EXISTS NFE_INUTILIZACAO;')
         postgres.executa_transacao("""
             CREATE TABLE NFE_INUTILIZACAO (
@@ -734,7 +779,7 @@ def efd_files_download(ws: SeleniumWebScraper, window: sg.Window, evento: thread
     # apenas baixa arquivos enviados posteriormente ao último download, para ter um efeito "resume"
     downloaded_files_reception = sorted(list(map(
         lambda f: datetime.strptime(re.match(r'.*-(\d+)$', f.stem).group(1), '%d%m%Y%H%M%S'),
-        get_current_audit().reports_path().glob('SPED*.txt')
+        get_current_audit().efd_files_downloaded()
     )))
     last_time_sent = datetime.today() - timedelta(2000) \
         if len(downloaded_files_reception) == 0 \
@@ -765,15 +810,15 @@ def efd_populate_database(window: sg.Window, result: list[dict], evento: threadi
         return
     with EFDPVAReversed() as pva:
         efd_files_import_PVA(pva, window, evento)
-        efd_files_import_SGBD(pva, window, evento)
-        efd_generate_unified_tables(window, evento)
+        #efd_files_import_SGBD(pva, window, evento)
+        #efd_generate_unified_tables(window, evento)
     efd_populate_table_with_file_delivery(result, window, evento)
 
 
 def efd_references_imported_PVA() -> list[datetime.date]:
     with EFDPVAReversed() as pva:
         arquivos = pva.list_imported_files(get_current_audit().cnpj)
-    return sorted([date(int(t[-44:-40]), int(t[-40:-38]), 1) for t in arquivos])
+    return sorted([datetime.strptime(Path(t).stem.split('-')[4], "%Y%m").date() for t in arquivos])
 
 
 def efd_files_import_PVA(pva: EFDPVAReversed, window: sg.Window, evento: threading.Event) -> bool:
@@ -801,6 +846,7 @@ def efd_files_import_PVA(pva: EFDPVAReversed, window: sg.Window, evento: threadi
     return True
 
 
+DeprecationWarning
 def efd_files_import_SGBD(pva: EFDPVAReversed, window: sg.Window, evento: threading.Event):
     # TODO aqui poderia fazer a pesquisa direto né
     dic = GeneralFunctions.get_dados_efds(get_current_audit().path())
@@ -809,7 +855,7 @@ def efd_files_import_SGBD(pva: EFDPVAReversed, window: sg.Window, evento: thread
     efds.append({'referencia': 'lista de escriturações', 'bd': 'master'})
 
     # verifica se já não estão importados todos os bancos de dados
-    with SQLReader(schema=get_current_audit().schema) as postgres:
+    with SQLReader(database=get_current_audit().database, schema=get_current_audit().schema) as postgres:
         # TODO tem alguma coisa aqui errada que não lembro mais o que queria fazer :O)
         if postgres.does_table_exist('reg_0000') and \
                 postgres.has_return_set('select 1 from reg_0000 where dt_ini::varchar not in '):
@@ -819,7 +865,7 @@ def efd_files_import_SGBD(pva: EFDPVAReversed, window: sg.Window, evento: thread
     window.write_event_value('-DATA-EXTRACTION-STATUS-', ['EFD-BD', f'TOTAL{sum(1 for _ in efds)}'])
 
     try:
-        with SQLWriter() as postgres:
+        with SQLWriter(database=get_current_audit().database) as postgres:
             postgres.drop_master_schema()
             for efd in efds:
                 if evento.is_set():
@@ -851,10 +897,11 @@ def efd_files_import_SGBD(pva: EFDPVAReversed, window: sg.Window, evento: thread
         window.write_event_value('-DATA-EXTRACTION-STATUS-', ['EFD-BD', 'FAILURE'])
 
 
+DeprecationWarning
 def efd_generate_unified_tables(window: sg.Window, evento: threading.Event):
     if evento.is_set():
         return
-    with SQLWriter(get_current_audit().schema) as postgres:
+    with SQLWriter(database=get_current_audit().database, schema=get_current_audit().schema) as postgres:
         dic = GeneralFunctions.get_dados_efds(get_current_audit().path())
         efdsBD = list(map(lambda efd:
                           (efd['bd'], GeneralFunctions.efd_schema_name(get_current_audit().cnpj, efd['referencia'])),
@@ -880,7 +927,7 @@ def efd_generate_unified_tables(window: sg.Window, evento: threading.Event):
 def efd_populate_table_with_file_delivery(efds: list[dict], window: sg.Window, evento: threading.Event):
     if evento.is_set():
         return
-    with SQLWriter(get_current_audit().schema) as postgres:
+    with SQLWriter(database=get_current_audit().database, schema=get_current_audit().schema) as postgres:
         postgres.executa_transacao('DROP TABLE IF EXISTS escrituracaofiscal_entrega;')
         postgres.executa_transacao("""
                     CREATE TABLE escrituracaofiscal_entrega (
@@ -897,8 +944,6 @@ def efd_populate_table_with_file_delivery(efds: list[dict], window: sg.Window, e
 
 
 def populate_database(groups: list, window: sg.Window, evento: threading.Event):
-    generate_audit_schema()
-
     with SeleniumWebScraper(get_current_audit().reports_path()) as ws:
         with ThreadPoolExecutor(thread_name_prefix='PopulaDadosPrincipal') as tex:
             if 'EFD' in groups:
@@ -969,7 +1014,7 @@ def declare_operations_in_aiim():
             parametros = [get_current_audit().cnpj_only_digits(), inicio.strftime('%Y%m'), fim.strftime('%Y%m')]
             operacoes_xls = ws.get_launchpad_report(relatorio,
                                                     'Valor_Total_Documentos_Fiscais_x_GIA.xlsx',
-                                                    threading.Event(), None, *parametros)
+                                                    threading.Event(), None, parametros)
             ops = get_current_audit().get_sheet().get_operations_for_aiim(operacoes_xls)
     with MDBReader.AIIM2003MDBReader() as aiim2003:
         logger.info('Cadastrando operações direto no banco do AIIM2003')
@@ -1039,7 +1084,7 @@ def __run_report(relatorio: str, evento: threading.Event, ws: SeleniumWebScraper
                                          launchpad_download_filename(relatorio,
                                                                      (get_current_audit().inicio_auditoria,
                                                                       get_current_audit().fim_auditoria)),
-                                         evento, window, *parametros))
+                                         evento, window, parametros))
     else:
         window.write_event_value('-DATA-EXTRACTION-STATUS-',
                                  [f"{launchpad_report_options[relatorio]['Grupo']}-DOWNLOAD", f'TOTAL{len(periodos)}'])
@@ -1056,7 +1101,7 @@ def __run_report(relatorio: str, evento: threading.Event, ws: SeleniumWebScraper
             execucao_anterior = executor.submit(ws.get_launchpad_report, relatorio,
                                                 launchpad_download_filename(relatorio, periodicidade),
                                                 evento, window,
-                                                *parametros_cp, relatorio_anterior=execucao_anterior)
+                                                parametros_cp, relatorio_anterior=execucao_anterior)
             execucoes.append(execucao_anterior)
     return execucoes
 
@@ -1328,7 +1373,7 @@ def __import_report(relatorio_nome_inicio: str, relatorio_opcoes: dict, window: 
                                  [f"{relatorio_opcoes['Grupo']}-IMPORT", 'BEGIN'])
         importacao = bdex.submit(CSVProcessing.import_report,
                                  relatorio_nome_inicio, get_current_audit().reports_path(),
-                                 get_current_audit().schema)
+                                 get_current_audit().database, get_current_audit().schema)
         importacao.result()
     except CSVProcessingMissingPrerequisite as e:
         window.write_event_value('-DATA-EXTRACTION-STATUS-',
@@ -1353,8 +1398,18 @@ def __import_report(relatorio_nome_inicio: str, relatorio_opcoes: dict, window: 
 
 
 def executa_consulta_BD(sql: str, max_linhas=None) -> (int, pd.DataFrame):
-    with SQLReader(get_current_audit().schema) as query:
+    with SQLReader(database=get_current_audit().database, schema=get_current_audit().schema) as query:
         return query.executa_consulta(sql, max_linhas)
+
+
+def get_osfs_em_execucao() -> list[str]:
+    return WebScraper.get_osfs_em_execucao()
+
+
+def get_possible_database_names_for_cnpj(cnpj: str) -> list:
+    with SQLReader() as postgres:
+        lista = postgres.existing_databases()
+        return list(filter(lambda nome: cnpj in nome, lista))
 
 
 def existing_open_aiims_for_osf() -> list:
@@ -1364,16 +1419,6 @@ def existing_open_aiims_for_osf() -> list:
 
 def generate_custom_report_cover(texto: str, caminho: Path):
     WordReport.cria_capa_para_anexo(texto.upper(), caminho)
-
-
-def generate_manual_notification(aiim_item: AiimItem, corpo: str):
-    WordReport.cria_notificacao_modelo_4(get_current_audit().cnpj, get_current_audit().ie,
-                                         get_current_audit().empresa, get_current_audit().endereco_completo(),
-                                         aiim_item.notificacao_corpo(corpo), aiim_item.notificacao,
-                                         aiim_item.notification_path() / 'Notificação Modelo 4.pdf')
-    anexos = print_sheet(aiim_item)
-    for anexo in anexos:
-        GeneralFunctions.move_downloaded_file(anexo.parent, anexo.name, aiim_item.notification_path())
 
 
 def set_proxy():
@@ -1392,8 +1437,7 @@ def update_efd_pva_version():
         with EFDPVAReversed() as pva:
             versao = pva.get_efd_pva_current_version()
         if versao is not None:
-            GUIFunctions.update_splash(f'Baixando versão {versao} do EFD PVA ICMS...')
-            arquivo = WebScraper.get_efd_pva_version(versao)
+            arquivo = WebScraper.get_efd_pva_version(versao, GUIFunctions.update_splash)
             GUIFunctions.update_splash(f'Instalando versão {versao} do EFD PVA ICMS...')
             EFDPVAInstaller.upgrade_efd_pva(arquivo, GeneralConfiguration.get().efd_path,
                                             GeneralConfiguration.get().efd_port)
@@ -1519,5 +1563,14 @@ def update_inidoneos(zip_path: Path):
 
 
 def prepare_database():
-    with SQLWriter() as postgres:
+    with SQLWriter(database=get_current_audit().database, schema=get_current_audit().schema) as postgres:
+        if not get_current_audit().database and not postgres.does_schema_exist(get_current_audit().schema):
+            logger.info(
+                f'Criando schema chamado {get_current_audit().schema} no banco de dados central para a auditoria...')
+            postgres.create_audit_schema(get_current_audit().schema)
+        logger.info('Criando funções auxiliares no banco de dados central para a auditoria...')
+        postgres.create_aux_functions(get_current_audit().cnpj_only_digits(),
+                                      int(get_current_audit().ie_only_digits()),
+                                      get_current_audit().inicio_auditoria,
+                                      get_current_audit().fim_auditoria)
         postgres.prepare_database()

@@ -6,6 +6,7 @@ import re
 from pathlib import Path
 
 import pandas as pd
+from pepe.utils.texto import formatar_sigla_sempapel
 
 import GeneralConfiguration
 import GeneralFunctions
@@ -40,6 +41,12 @@ class PossibleInfraction:
     def __str__(self):
         return str(self.verificacao)
 
+    tags_html_suportadas = ['p', 'b', 'br', 'ul', 'li']
+    tags_suportadas = [
+        'osf', 'email', 'periodo', 'periodoAAAA', 'inicio_auditoria', 'fim_auditoria',
+        'modelos', 'delegacia'
+    ]
+
     def _personalize_text(self, text: str) -> str:
         if text is None:
             return None
@@ -61,6 +68,12 @@ class PossibleInfraction:
                     if nome_aba else GeneralFunctions.get_dates_from_df(self.df, freq='Y')
                 texto = GeneralFunctions.periodos_prettyprint(referencias, freq='Y')
                 relato = relato.replace('<periodoAAAA>', texto)
+            if relato.find('<inicio_auditoria>') > 0:
+                relato = relato.replace('<inicio_auditoria>',
+                                        get_current_audit().inicio_auditoria.strftime("%d/%m/%Y"))
+            if relato.find('<fim_auditoria>') > 0:
+                relato = relato.replace('<fim_auditoria>',
+                                        get_current_audit().fim_auditoria.strftime("%d/%m/%Y"))
             if relato.find('<modelos>') > 0:
                 # levanta os modelos de documentos fiscais existentes na planilha
                 modelos = planilha.modelos_documento_fiscal(nome_aba)
@@ -74,12 +87,29 @@ class PossibleInfraction:
                 else:
                     texto = ''
                 relato = relato.replace('<modelos>', texto)
+            if relato.find('<delegacia>') > 0:
+                relato = relato.replace('<delegacia>', GeneralConfiguration.get().drt_nome)
+            matches = re.findall(r'<(\w.*?)>', relato, flags=re.IGNORECASE | re.DOTALL)
+            matches = [tag for tag in matches
+                       if tag not in self.tags_suportadas and tag not in self.tags_html_suportadas]
+            if matches:
+                raise ValueError(f'Texto possui tags HTML inválidas: {",".join(matches)}.'
+                                 f'São aceitas as seguintes tags HTML: {",".join(self.tags_html_suportadas)} e '
+                                 f'as seguintes tags especiais: {",".join(self.tags_suportadas)}')
         except ExcelArrazoadoAbaInexistenteException:
+            raise
+        except ValueError:
             raise
         except Exception as e:
             GeneralFunctions.logger.exception('Falha na criação de relato para item de AIIM')
             raise e
         return relato
+
+    def reset_notificacao_titulo(self):
+        self._notificacao_titulo = ''
+
+    def reset_notificacao_corpo(self):
+        self._notificacao_corpo = ''
 
     def notificacao_titulo(self, texto: str = '') -> str:
         if not self._notificacao_titulo:
@@ -150,11 +180,13 @@ class AiimItem(PossibleInfraction):
         return self._notificacao_resposta
 
     @notificacao_resposta.setter
-    def notificacao_resposta(self, resposta: str):
-        if re.match(r'SFP-EXP-\d{4}/\d+', resposta):
-            self._notificacao_resposta = resposta
-        else:
-            raise ValueError(f'Número do expediente Sem Papel em resposta à notificação inválido: {resposta}')
+    def notificacao_resposta(self, resposta: str | None):
+        try:
+            if resposta is not None:
+                formatar_sigla_sempapel(resposta)
+        except ValueError as ex:
+            raise ValueError(f'Número do expediente Sem Papel inválido {resposta}: {ex}')
+        self._notificacao_resposta = resposta
 
     def has_aiim_item_number(self) -> bool:
         return self.item > 0
@@ -188,37 +220,28 @@ class AiimItem(PossibleInfraction):
     def __str__(self):
         return f'{self.infracao}' if not self.has_aiim_item_number() else f'{self.item} - {self.infracao}'
 
-    def is_manual_notification(self) -> bool:
-        if not self.notificacao:
-            raise ValueError('Verificando se a notificação é manual, mas nem tem notificação!')
-        return not self.notificacao.startswith('IC/N/FIS')
-
-    def notification_path(self) -> Path:
+    def notification_path(self) -> Path | None:
         if not self.notificacao:
             return None
-        folder_name = f'{self.notification_numeric_part().replace("_", "-")}'
-        if self.is_manual_notification():
-            folder_name += ' - MANUAL'
-        # remove caracteres inválidos no Windows para nomes de arquivos
-        folder_name += re.sub(r'[<>:"/\\|!?*]', '', f' - {self.verificacao.name}')
-        return get_current_audit().notification_path() / folder_name
+        return GeneralFunctions.notification_path(self.notificacao, get_current_audit().notification_path(),
+                                                  self.verificacao.name)
 
     def notification_response_path(self) -> Path:
         return self.notification_path() / 'Resposta' if self.notification_path() else None
 
+    def notification_attachment_path(self) -> Path:
+        return self.notification_path() / GeneralFunctions.notification_attachment_folder() \
+            if self.notification_path() else None
+
     def notification_numeric_part(self) -> str:
-        if self.is_manual_notification():
-            parts = self.notificacao.split("/")
-            return f'{parts[1].split()[0]}_{int(parts[0])}'
-        else:
-            partial_name = re.search(r"\d+", self.notificacao)[0]
-            return f'{self.notificacao[-4:]}_{int(partial_name)}'
+        return GeneralFunctions.notification_numeric_part(self.notificacao)
 
     def proofs_for_report(self) -> list[str]:
         proofs = [f'{prova.descricao}{", por amostragem" if prova.has_sample(self) else ""}'
                   for prova in self.infracao.provas]
         if self.notificacao:
-            texto = f'Notificação {"Modelo 4" if self.is_manual_notification() else "DEC"} {self.notificacao}'
+            texto = f'Notificação {"Modelo 4" if GeneralFunctions.is_manual_notification(self.notificacao) else "DEC"}' \
+                    f' {self.notificacao} '
             if self.notificacao_resposta:
                 texto += f' e resposta do contribuinte, apresentada sob expediente Sem Papel {self.notificacao_resposta}'
             else:
@@ -242,7 +265,7 @@ class AiimItem(PossibleInfraction):
             resposta = self._personalize_text(self.infracao.relatorio_circunstanciado)
             if self.notificacao:
                 resposta += '\nO contribuinte foi notificado por meio da notificação '
-                resposta += 'Modelo 4 ' if self.is_manual_notification() else 'DEC '
+                resposta += 'Modelo 4 ' if GeneralFunctions.is_manual_notification(self.notificacao) else 'DEC '
                 if self.notificacao_resposta:
                     resposta += f'{self.notificacao}, com resposta dada no expediente {self.notificacao_resposta}' \
                                 f', mas sem justificativas legais para todos os pontos questionados.'
@@ -274,7 +297,6 @@ class Audit:
         self._dicionario: dict
         self._excel = None
         self._word = None
-        self._empresa: str
         self.aiim_itens: list[AiimItem] = []
         Analysis.clear_audit_analysis()
         Analysis.load_audit_analysis(path)
@@ -302,6 +324,8 @@ class Audit:
         self.cnae = self._dicionario.get('cnae', None)
         self.situacao = self._dicionario.get('situacao', 'Ativo')
         self.has_sat_equipment = self._dicionario.get('has_sat_equipment', None)
+        self._database = self._dicionario.get('database', None)
+        self.schema = self._dicionario.get('schema', None)
         self.receipt_digital_files = self._dicionario.get('receipt_digital_files', None)
         self._inicio_auditoria = self._dicionario.get('inicio_auditoria', None)
         self._fim_auditoria = self._dicionario.get('fim_auditoria', None)
@@ -334,21 +358,10 @@ class Audit:
                                                 x.get('planilha_detalhe', None)))
 
     def aiim_number_no_digit(self) -> int:
-        return int(re.sub(r'[^\d]', '', self.aiim_number)[:-1])
+        return int(re.sub(r'\D', '', self.aiim_number)[:-1])
 
     def path(self):
         return self._path_name
-
-    @property
-    def empresa(self) -> str:
-        return self._empresa
-
-    @empresa.setter
-    def empresa(self, nome):
-        self._empresa = nome
-        if nome:
-            self.schema = self._dicionario.get('schema',
-                                               GeneralFunctions.get_default_name_for_business(nome)).lower()
 
     @property
     def inicio_auditoria(self) -> date:
@@ -394,6 +407,21 @@ class Audit:
         if self.inicio_auditoria is not None and fim_date is not None and self.inicio_auditoria > fim_date:
             raise ValueError(f'Início de auditoria {self.inicio_auditoria} deve ser maior que o final {fim_date}')
         self._fim_auditoria = fim
+
+    @property
+    def database(self) -> str:
+        return self._database
+
+    @database.setter
+    def database(self, nome):
+        self._database = nome
+        partes = nome.split('_')
+        if len(partes) > 2:
+            # entende que o banco de dados é do AUD
+            # o nome do banco é no formato <versaoAUD>_<CNPJ>_<TIPO BD>_<NOME>_<INICIO>_<FIM>
+            self.schema = 'dbo'
+            self.inicio_auditoria = f'{partes[-2][4:]}/{partes[-2][:4]}'
+            self.fim_auditoria = f'{partes[-1][4:]}/{partes[-1][:4]}'
 
     @property
     def inicio_inscricao(self) -> date:
@@ -447,11 +475,11 @@ class Audit:
 
     def toJson(self):
         dic = self.__dict__.copy()
-        dic['empresa'] = dic['_empresa']
         dic['inicio_auditoria'] = dic['_inicio_auditoria']
         dic['fim_auditoria'] = dic['_fim_auditoria']
         dic['inicio_situacao'] = dic['_inicio_situacao']
         dic['inicio_inscricao'] = dic['_inicio_inscricao']
+        dic['database'] = dic['_database']
         if dic['aiim_number'] is not None:
             dic['aiim'] = {'numero': dic['aiim_number'], 'aberto': dic['is_aiim_open']}
         dic.pop('aiim_number', None)
@@ -522,7 +550,7 @@ class Audit:
                 if inicio <= self.inicio_auditoria <= fim or inicio <= self.fim_auditoria <= fim \
                         or self.inicio_auditoria <= inicio <= self.fim_auditoria:
                     if ate_presente:
-                        retorno.append([max(self.inicio_auditoria, inicio), fim])
+                        retorno.append([min(self.inicio_auditoria, inicio), fim])
                     else:
                         retorno.append([max(self.inicio_auditoria, inicio), min(self.fim_auditoria, fim)])
         return retorno
@@ -582,13 +610,20 @@ class Audit:
                 response.append(item)
         return response
 
+    def sheet_names(self) -> list[str]:
+        return [infraction.planilha for infraction in self.notificacoes + self.aiim_itens]
+
     def next_manual_notification(self) -> str:
         numeros_deste_ano = [int(item.notification_numeric_part().split('_')[1]) for item in self.aiim_itens
-                             if item.notificacao is not None and item.is_manual_notification()
+                             if item.notificacao is not None
+                             and GeneralFunctions.is_manual_notification(item.notificacao)
                              and item.notification_numeric_part().startswith(str(date.today().year))]
         numeros_deste_ano.sort(reverse=True)
         proximo_numero = numeros_deste_ano[0] + 1 if numeros_deste_ano else 1
         return f'{str(proximo_numero).zfill(2)}/{date.today().year} {self.osf}'
+
+    def efd_files_downloaded(self) -> list[Path]:
+        return list(self.reports_path().glob('SPED*.txt'))
 
     def notification_path(self):
         return self.path() / 'Notificações'
@@ -601,6 +636,12 @@ class Audit:
 
     def findings_path(self):
         return self.path() / 'Achados'
+
+    def complete_osf_path(self):
+        return self.path() / 'OSF Completa.pdf'
+
+    def signed_osf_path(self):
+        return self.path() / 'OSF Assinada.pdf'
 
 
 _singleton: Audit = None

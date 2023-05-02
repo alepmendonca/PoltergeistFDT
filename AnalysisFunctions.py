@@ -66,6 +66,20 @@ def verifica_omissao_efds_ddf(infraction: Infraction, df: pd.DataFrame) -> pd.Da
         return pd.DataFrame({'Livros': ['1'], 'Meses': [str(len(df))]})
 
 
+def periodo_sn_lri() -> (int, pd.DataFrame):
+    periodos_fiscalizacao = get_current_audit().get_periodos_da_fiscalizacao(rpa=False)
+    omissos = []
+    for periodo_fiscalizacao in periodos_fiscalizacao:
+        for referencia in pd.date_range(periodo_fiscalizacao[0], periodo_fiscalizacao[1], freq='Y'):
+            omissos.append(referencia.replace(month=2, day=28))
+    df = pd.DataFrame(omissos, columns=['Referencia'])
+    return len(omissos), df
+
+
+def periodo_sn_lri_ddf(infraction: Infraction, df: pd.DataFrame) -> pd.DataFrame:
+    return verifica_omissao_efds_ddf(infraction, df)
+
+
 def verifica_divergencia_pgdas() -> (int, pd.DataFrame):
     periodos_fiscalizacao = get_current_audit().get_periodos_da_fiscalizacao(rpa=False)
     periodos = None
@@ -121,7 +135,8 @@ def levanta_consumidores_finais(query: pd.DataFrame):
         GeneralFunctions.logger.info('Levantando informações das empresas da base do CNPJ')
         for cnpj in cnpjs_sem_informacao:
             # prineiro, busca dados do CNPJ
-            with SQLWriter(Audit.get_current_audit().schema) as postgres:
+            with SQLWriter(database=Audit.get_current_audit().database,
+                           schema=Audit.get_current_audit().schema) as postgres:
                 if not postgres.has_return_set('select 1 from cnpj where cnpj = %s;', (cnpj,)):
                     GeneralFunctions.logger.info(f'Buscando informações da empresa {cnpj} na base do CNPJ ('
                                                  f'{cnpjs_sem_informacao.index(cnpj) + 1}/{len(cnpjs_sem_informacao)}')
@@ -168,7 +183,8 @@ def levanta_consumidores_finais(query: pd.DataFrame):
         with SeleniumWebScraper(None) as ws:
             retorno = ws.consulta_historico_simples_nacional(cnpjs_sem_informacao)
         GeneralFunctions.logger.info('Inserindo históricos do SN e RPA das empresas que podem ser consumidoras finais')
-        with SQLWriter(Audit.get_current_audit().schema) as postgres:
+        with SQLWriter(database=Audit.get_current_audit().database,
+                       schema=Audit.get_current_audit().schema) as postgres:
             for cnpj in cnpjs_sem_informacao:
                 postgres.executa_transacao('DELETE FROM cnpj_regime WHERE cnpj = %s and fim_regime IS NULL', (cnpj,))
             for historico in retorno:

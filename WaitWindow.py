@@ -7,7 +7,7 @@ import GUIFunctions
 from GeneralFunctions import logger, ThreadWithReturnValue, QueueHandler, QueueFormatter
 
 
-def open_wait_window(funcao_batch: Callable, funcao_desc: str, *parametros_funcao_batch):
+def open_wait_window(funcao_batch: Callable, funcao_desc: str, *parametros_funcao_batch, raise_exceptions=False):
     # Setup logging
     log_queue = queue.Queue()
     queue_handler = QueueHandler(log_queue)
@@ -25,16 +25,19 @@ def open_wait_window(funcao_batch: Callable, funcao_desc: str, *parametros_funca
     thread = ThreadWithReturnValue(target=funcao_batch, args=parametros_funcao_batch)
     thread.start()
 
-    result = None
+    exception = None
     while True:
-        event, values = animated_window.read(100)
+        animated_window.read(100)
         if not thread.is_alive():
             animated_window.close()
             try:
                 result = thread.join()
             except Exception as e:
                 logger.exception(f'Erro ocorrido em WaitWindow da função {funcao_batch.__name__}')
-                GUIFunctions.popup_erro(f'Ocorreu o seguinte erro: {e}', exception=e)
+                if not raise_exceptions:
+                    GUIFunctions.popup_erro(f'Ocorreu o seguinte erro: {e}', exception=e)
+                result = e
+                exception = e
             else:
                 if funcao_desc:
                     GUIFunctions.popup_ok(f'Tarefa "{funcao_desc}" finalizada com sucesso!')
@@ -55,4 +58,7 @@ def open_wait_window(funcao_batch: Callable, funcao_desc: str, *parametros_funca
 
         animated_window['-IMAGE-'].update_animation(sg.DEFAULT_BASE64_LOADING_GIF, time_between_frames=100)
 
-    return result
+    if raise_exceptions and exception:
+        raise exception
+    else:
+        return result
