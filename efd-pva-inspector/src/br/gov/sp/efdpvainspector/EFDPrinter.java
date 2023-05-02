@@ -33,12 +33,13 @@ public class EFDPrinter {
 
 	public static void main(String[] args) throws Exception {
 		EFDComprehension.inicializacaoSimplesBD();
-		String[] datas = {"01/04/2018"};
+		String cnpj = "42462952000177";
+		String ie = "113103435118";
+		String[] datas = {"01/11/2020"};
 		try {
 			for (String data: datas) {
-				imprimeEntradas("CNPJ", "IE", 
-						data, 
-						"C:/LRE" + data.substring(6) + data.substring(3, 5) + ".pdf");
+				imprimeSaidas(cnpj, ie, data, 
+						"C:/SAFI_Temp/LRS" + data.substring(6) + data.substring(3, 5) + ".pdf");
 			}
 		} finally {
 			EFDComprehension.encerramentoBD();
@@ -67,15 +68,20 @@ public class EFDPrinter {
         escrituracao.setDataFinal(dataFinal.getTime());
 
         IDAOGenerico<EscrituracaoFiscal> dao = PersistenciaFiscalPVA.getSingleton().getFabricaDaoMaster().getDaoEscrituracaoFiscal();
+        boolean achou = false;
         // Seleciona todos os objetos, mas sem verificar a integridade, pra não dar pau à toa
         for (EscrituracaoFiscal escrituracaoBanco: dao.selecionarTodosOsObjetos(false)) {
         	if (escrituracao.getCpfCnpj().contentEquals(escrituracaoBanco.getCpfCnpj()) 
         			&& escrituracao.getIe().contentEquals(escrituracaoBanco.getIe())
-        			&& escrituracao.getDataInicial().equals(escrituracaoBanco.getDataInicial()) 
-        			&& escrituracao.getDataFinal().equals(escrituracaoBanco.getDataFinal())) {
+        			&& escrituracao.getDataInicial().compareTo(escrituracaoBanco.getDataInicial()) <= 0
+        			&& escrituracao.getDataFinal().compareTo(escrituracaoBanco.getDataFinal()) >= 0) {
         		escrituracao = escrituracaoBanco;
+        		achou = true;
         		break;
         	}
+        }
+        if (!achou) {
+        	throw new Exception("EFD de " + referenciaString + " não foi localizada no EFD PVA ICMS! Será que você apagou?");
         }
         FabricaControle.getSingleton().setarVersao(escrituracao);
 

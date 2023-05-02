@@ -122,6 +122,25 @@ class AIIM2003MDBReader:
         else:
             return bool(valor[0][0])
 
+    def get_afr_drt_address_and_phone(self, funcional: int) -> (str, str):
+        sql = "SELECT POSTO.TIPO_LOG, POSTO.LOG, POSTO.NUMERO, " \
+              "POSTO.COMPLEMENTO, POSTO.BAIRRO, MUNICIPIO.NOME, POSTO.CEP," \
+              "POSTO.DDD, POSTO.FONE " \
+              "FROM AFR, POSTO, MUNICIPIO " \
+              "WHERE AFR.id_Posto = POSTO.id_Posto " \
+              "AND POSTO.ID_MUNICIPIO = MUNICIPIO.ID_MUNICIPIO " \
+              "AND AFR.Funcional = ?"
+        valores = self.cur.execute(sql, funcional).fetchone()
+        if valores is None:
+            return '', ''
+        else:
+            return (f'{valores[0]} {valores[1]}, {valores[2]}'
+                    f'{" - " + valores[3] if valores[3] else ""}'
+                    f'{" - " + valores[4] if valores[4] else ""}'
+                    f' - {valores[5]}/SP - CEP ' +
+                    f'{int(valores[6]):,}'.zfill(10).replace(',', '.', 1).replace(',', '-')).upper(), \
+                   f'({valores[7]:n}) {str(int(valores[8]))[:-4]}-{str(int(valores[8]))[-4:]}'
+
     # TODO pesquisa de teste apenas
     def get_relatos(self, inciso, alinea) -> list:
         return self.cur.execute(

@@ -35,8 +35,11 @@ extracoes: dict
 
 
 def refresh_menu():
-    window['-MENU-'].update(menu_definition=menu_layout('AUDITORIA_COM_AIIM' if get_current_audit().aiim_number
-                                                        else 'AUDITORIA_SEM_AIIM'))
+    if get_current_audit():
+        layout = 'AUDITORIA_COM_AIIM' if get_current_audit().aiim_number else 'AUDITORIA_SEM_AIIM'
+    else:
+        layout = 'SEM_AUDITORIA'
+    window['-MENU-'].update(menu_definition=menu_layout(layout))
 
 
 def refresh_data_tab():
@@ -99,137 +102,155 @@ def refresh_aiim_tab():
     else:
         window['-MENU-'].update(menu_definition=menu_layout('SEM_AUDITORIA'))
         window['-AIIM-FRAME-'].update(value='AIIM')
+        window['-INFRACTION-CHOSEN-'].update([])
 
 
 def __clean_tabs():
     set_audit(None)
+    __refresh_tabs(None)
+
+
+def __refresh_tabs(pasta: Path):
+    if pasta and Audit.has_local_dados_osf(pasta):
+        Controller.get_local_dados_osf_up_to_date_with_aiim2003()
+
+        window['pasta'].update(f"Pasta inicial da fiscalização: {get_current_audit().path()}")
+        window['osf'].update(f'OSF: {get_current_audit().osf}, Banco de Dados: '
+                             f'{get_current_audit().database if get_current_audit().database else get_current_audit().schema}')
+        window['empresa'].update(f'{get_current_audit().empresa} - CNPJ {get_current_audit().cnpj} - '
+                                 f'IE {get_current_audit().ie if get_current_audit() else "Não Informada"} - '
+                                 f'Situação: {get_current_audit().situacao}, '
+                                 f'desde {get_current_audit().inicio_situacao.strftime("%d/%m/%Y")}')
+        window['endereco'].update(f'Endereço: {get_current_audit().endereco_completo()}')
+        window['periodo'].update(f'Período de Fiscalização: '
+                                 f'{get_current_audit().inicio_auditoria.strftime("%m/%Y")} '
+                                 f'a {get_current_audit().fim_auditoria.strftime("%m/%Y")}')
+    else:
+        window['pasta'].update('')
+        window['osf'].update('')
+        window['empresa'].update('')
+        window['endereco'].update('')
+        window['periodo'].update('')
+
+    refresh_menu()
     refresh_data_tab()
     refresh_analysis_tab()
     refresh_notifications_tab()
     refresh_aiim_tab()
 
 
-def __refresh_tabs(pasta: Path):
-    if Audit.has_local_dados_osf(pasta):
-        try:
-            Controller.get_local_dados_osf_up_to_date_with_aiim2003()
-        except BadZipFile:
-            GUIFunctions.popup_erro('Falha na abertura da planilha de arrazoado da fiscalizada. '
-                                    'Conserte o arquivo no Excel e reabra a fiscalização.', exception=e)
-            return
-        except JSONDecodeError as ex:
-            GUIFunctions.popup_erro(f'Falha na abertura do arquivo dados_auditoria.json da fiscalizada. Verifique se '
-                                    f'não foi feita nenhuma alteração manual no arquivo no seguinte trecho: '
-                                    f'{str(ex)}', exception=ex)
-            return
-
-        window['pasta'].update(f"Pasta inicial da fiscalização: {get_current_audit().path()}")
-        window['osf'].update(f'OSF: {get_current_audit().osf}')
-        window['empresa'].update(f'{get_current_audit().empresa} - CNPJ {get_current_audit().cnpj} - '
-                                 f'IE {get_current_audit().ie if get_current_audit() else "Não Informada"} - '
-                                 f'Situação {get_current_audit().situacao} '
-                                 f'desde {get_current_audit().inicio_situacao.strftime("%d/%m/%Y")}')
-        window['endereco'].update(f'Endereço: {get_current_audit().endereco_completo()}')
-        window['periodo'].update(f'Período de Fiscalização: '
-                                 f'{get_current_audit().inicio_auditoria.strftime("%m/%Y")} '
-                                 f'a {get_current_audit().fim_auditoria.strftime("%m/%Y")}')
-        refresh_menu()
-        refresh_data_tab()
-        refresh_analysis_tab()
-        refresh_notifications_tab()
-        refresh_aiim_tab()
+def __verify_database_consistency():
+    if get_current_audit() is None:
+        return
+    if not get_current_audit().efd_files_downloaded() and get_current_audit().get_periodos_da_fiscalizacao(rpa=True):
+        # tem provavelmente EFD mas não baixou nada, verifica se quer baixar
+        if GUIFunctions.popup_sim_nao('O contribuinte foi RPA no período da fiscalização. Deseja já baixar '
+                                      'as EFDs, para importação no AUD posteriormente?',
+                                      titulo='Baixar EFD'):
+            LogWindow(populate_database, 'Levantamento EFD', ['EFD'], extracoes)
+        if not get_current_audit().database and not get_current_audit().schema:
+            possiveis_dbs = Controller.get_possible_database_names_for_cnpj(get_current_audit().cnpj_only_digits())
+            dbname = None
+            if len(possiveis_dbs) == 0:
+                GUIFunctions.popup_erro('Não foi localizado nenhum banco de dados criado via '
+                                        'Gerador/Conversor AUD para o CNPJ da auditoria! '
+                                        'Crie primeiro a conversão no AUD para depois iniciar a auditoria!')
+            elif len(possiveis_dbs) == 1:
+                dbname = possiveis_dbs[0]
+            else:
+                dbname = GUIFunctions.popup_escolhe_de_lista(possiveis_dbs,
+                                                             'Informe o banco de dados do AUD para esta auditoria:')
+            if dbname:
+                get_current_audit().database = dbname
+                get_current_audit().save()
 
 
 def create_audit(pasta: Path):
     audit = get_current_audit()
-    ultima_pasta = audit.path() if audit else None
+    ultima_pasta = audit.path() if audit and audit.osf is not None else None
     if ultima_pasta == pasta:
         return
     if Audit.has_local_dados_osf(pasta) and \
-            'Sim' == sg.popup('Já existem dados de uma auditoria aberta nesta pasta. Deseja abrí-la?',
-                              title='Auditoria existente',
-                              custom_text=('Sim', 'Não')):
+            GUIFunctions.popup_sim_nao('Já existem dados de uma auditoria aberta nesta pasta. Deseja abrí-la?',
+                                       titulo='Auditoria existente'):
         open_audit(pasta)
 
     __clean_tabs()
     create_new_audit(pasta)
 
-    numosf = None
-    buscar = True
-    if not GeneralFunctions.has_local_osf(pasta):
-        layout_popup = [[sg.Text("Será necessário carregar os dados do PGSF e Cadesp.\n"
-                                 "Insira abaixo o número da OSF", auto_size_text=True)],
-                        [sg.InputText(key='_INPUT_', change_submits=True, do_not_clear=True,
-                                      justification='center')],
-                        [sg.Button('OK', size=(10, 1), bind_return_key=True, disabled=True),
-                         sg.Button('Cancelar', size=(10, 1))]]
-        popup = sg.Window(title="Carregar OSF", layout=layout_popup, auto_size_text=True,
-                          grab_anywhere=False, finalize=True, modal=True, no_titlebar=False,
-                          element_justification='c', icon=GUIFunctions.app_icon)
-        while True:
-            evento, valores = popup.read()
-            if evento in (None, 'Cancelar', 'Quit'):
-                buscar = False
-                break
-            if evento == '_INPUT_':
-                popup['_INPUT_'].update(re.sub(r"[^\d]", "", valores[evento])[:11])
-                must_disable = len(valores['_INPUT_']) != 11
-                popup['OK'].update(disabled=must_disable)
-                if len(valores['_INPUT_']) == 11:
-                    digitado = valores['_INPUT_']
-                    popup['_INPUT_'].update(
-                        f'{digitado[0:2]}.{digitado[2]}.{digitado[3:8]}/{digitado[8:10]}-{digitado[10]}')
-            if evento == 'OK':
-                numosf = valores['_INPUT_']
-                break
-        popup.close()
-        del popup
+    try:
+        if not GeneralFunctions.has_local_osf(pasta):
+            lista_osfs = WaitWindow.open_wait_window(Controller.get_osfs_em_execucao, '', raise_exceptions=True)
+            escolhido = GUIFunctions.popup_escolhe_de_lista(lista_osfs,
+                                                            'Escolha a OSF para realizar verificações fiscais:')
+            if not escolhido:
+                __clean_tabs()
+                return
 
-    if buscar:
-        retorno = WaitWindow.open_wait_window(Controller.update_dados_osf, 'Carregar dados da OSF', numosf)
-        if retorno is None:
-            __clean_tabs()
-            return
-        if get_current_audit().inicio_auditoria is None:
-            inicio = None
-            while inicio is None:
-                inicio = sg.popup_get_text('Não descobri pela OSF o início da auditoria. Informe (mm/aaaa):',
-                                           title='Início Auditoria',
-                                           default_text=get_current_audit().inicio_inscricao.strftime('%m/%Y'))
-                if inicio and not re.match(r'\d{2}/\d{4}', inicio):
-                    inicio = None
-            get_current_audit().inicio_auditoria = inicio
+            numosf = escolhido.split()[0]
+            WaitWindow.open_wait_window(Controller.update_dados_osf, 'Carregar dados da OSF', numosf,
+                                        raise_exceptions=True)
+
+            if get_current_audit().inicio_auditoria is None:
+                inicio = None
+                while inicio is None:
+                    inicio = sg.popup_get_text('Não descobri pela OSF o início da auditoria. Informe (mm/aaaa):',
+                                               title='Início Auditoria',
+                                               default_text=get_current_audit().inicio_inscricao.strftime('%m/%Y'))
+                    if inicio and not re.match(r'\d{2}/\d{4}', inicio):
+                        inicio = None
+                get_current_audit().inicio_auditoria = inicio
+            if get_current_audit().fim_auditoria is None:
+                fim = None
+                while fim is None:
+                    fim = sg.popup_get_text('Não descobri pela OSF o fim da auditoria. Informe (mm/aaaa):',
+                                            title='Fim Auditoria',
+                                            default_text=datetime.datetime.now().strftime('%m/%Y'))
+                    if fim and not re.match(r'\d{2}/\d{4}', fim):
+                        fim = None
+                get_current_audit().fim_auditoria = fim
+            # se tudo deu certo, aí finalmente salva
             get_current_audit().save()
-        if get_current_audit().fim_auditoria is None:
-            fim = None
-            while fim is None:
-                fim = sg.popup_get_text('Não descobri pela OSF o fim da auditoria. Informe (mm/aaaa):',
-                                        title='Fim Auditoria',
-                                        default_text=datetime.datetime.now().strftime('%m/%Y'))
-                if fim and not re.match(r'\d{2}/\d{4}', fim):
-                    fim = None
-            get_current_audit().fim_auditoria = fim
-            get_current_audit().save()
+
+        WaitWindow.open_wait_window(Controller.prepare_database, 'Preparar banco de dados', raise_exceptions=True)
+    except Exception as ex:
+        GUIFunctions.popup_erro(str(ex))
+        __clean_tabs()
+        return
+    __verify_database_consistency()
     __refresh_tabs(pasta)
 
 
-def open_audit(pasta: Path):
+def open_audit(pasta: Path | None):
     audit = get_current_audit()
     ultima_pasta = audit.path() if audit else None
     if ultima_pasta == pasta:
         return
-    if not Audit.has_local_dados_osf(pasta) and \
+    if pasta and not Audit.has_local_dados_osf(pasta) and \
             GUIFunctions.popup_sim_nao('Não existe auditoria nesta pasta. Deseja criá-la?',
                                        'Auditoria inexistente'):
         create_audit(pasta)
 
     __clean_tabs()
-    set_audit(pasta)
+    try:
+        set_audit(pasta)
+    except BadZipFile as ex:
+        GUIFunctions.popup_erro('Falha na abertura da planilha de arrazoado da fiscalizada. '
+                                'Conserte o arquivo no Excel e reabra a fiscalização.', titulo='Falha', exception=ex)
+        return
+    except JSONDecodeError as ex:
+        GUIFunctions.popup_erro(f'Falha na abertura do arquivo dados_auditoria.json da fiscalizada. Verifique se '
+                                f'não foi feita nenhuma alteração manual no arquivo no seguinte trecho: '
+                                f'{str(ex)}', titulo='Falha', exception=ex)
+        return
+    __verify_database_consistency()
     __refresh_tabs(pasta)
 
 
 def print_efd(book: str):
     referencias = WaitWindow.open_wait_window(Controller.efd_references_imported_PVA, '')
+    if not referencias:
+        return
     referencias_txt = [f'{GeneralFunctions.meses[d.month - 1]} de {d.year}' for d in referencias]
     layout = [
         [sg.VPush()],
@@ -268,6 +289,31 @@ def print_efd(book: str):
                                     book, referencias_selecionadas)
 
 
+def print_digital_doc(model: int):
+    layout = [
+        [sg.VPush()],
+        [sg.Text('Digite as chaves separadas por ponto e vírgula.')],
+        [sg.Text(f'Os arquivos gerados serão salvos na seguinte pasta:')],
+        [sg.Text(get_current_audit().aiim_path())],
+        [sg.Push(), sg.InputText(key='-DOC-PRINT-', size=(100, 50),
+                                 expand_x=True, expand_y=True), sg.Push()],
+        [sg.Push(), sg.Button('Gerar Transcrições'), sg.Push()],
+        [sg.VPush()]
+    ]
+    window_doc = sg.Window('Transcrições de Documentos Digitais', layout=layout,
+                           size=(350, 300),
+                           auto_size_text=True, auto_size_buttons=True,
+                           text_justification='c',
+                           resizable=True, finalize=True,
+                           default_element_size=(15, 1),
+                           modal=True, icon=GUIFunctions.app_icon)
+    event, values = window_doc.read()
+    window_doc.close()
+    if event == 'Gerar Transcrições':
+        WaitWindow.open_wait_window(Controller.print_doc_digital, 'Impressão de Documentos Digitais',
+                                    model, values['-DOC-PRINT-'])
+
+
 def populate_database(groups: list, progress: dict, eventoThread: threading.Event):
     refresh_data_tab()
     progress.clear()
@@ -284,6 +330,43 @@ def analysis_chosen(analysis: Analysis):
         window['query_title'].update(value='Verificação realizada com dados levantados dos sistemas')
         window['-SQL-'].update(value=analysis.function_description, disabled=True)
     window['-QUERY-'].update(disabled=False)
+
+
+def run_autonomous_query():
+    layout = [
+        [sg.VPush()],
+        [sg.Text('Informe a consulta SQL a ser executada no banco de dados:')],
+        [sg.Multiline(expand_y=True, expand_x=True,
+                      key='-SQL-AUTONOMOUS-', auto_size_text=True)],
+        [sg.Push(), sg.Button("Executa Consulta"), sg.Push()],
+        [sg.VPush()]
+    ]
+    window_query = sg.Window('Consulta ao Banco de Dados', layout=layout,
+                             auto_size_text=True, auto_size_buttons=True,
+                             text_justification='c',
+                             resizable=True, finalize=True,
+                             default_element_size=(15, 1),
+                             modal=True, icon=GUIFunctions.app_icon)
+    event, values = window_query.read()
+    window_query.close()
+    query = values['-SQL-AUTONOMOUS-']
+    if event != 'Executa Consulta' or len(query) == 0:
+        return
+    try:
+        total, resultado_query = Controller.executa_consulta_BD(query)
+    except Exception as e:
+        erroSGBD = re.findall(r'ERROR:\s+(.*)\n', str(e))
+        if erroSGBD:
+            GUIFunctions.popup_ok(erroSGBD[0], titulo='Erro na consulta')
+        else:
+            GeneralFunctions.logger.exception('Erro em consulta ao BD de query para análise')
+            GUIFunctions.popup_erro(str(e), titulo='Erro na consulta', exception=e)
+    else:
+        if total == 0:
+            GUIFunctions.popup_ok('Não foram encontrados resultados para esta consulta.',
+                                  titulo='Consulta ao banco de dados')
+        else:
+            QueryResultWindow.open_query_result_window(total, resultado_query, query, analysis=None)
 
 
 def run_query(analysis: Analysis, query: str):
@@ -343,112 +426,120 @@ def verification_chosen_for_notification(notification: PossibleInfraction = None
 
 # ATENÇÃO: Mexendo diretamente no Widget para fazer negrito em partes do texto
 def aiim_item_chosen(aiim_item: AiimItem):
+    if aiim_item is None:
+        return
+
     try:
-        if aiim_item:
-            try:
-                relato = aiim_item.relato()
-            except ExcelArrazoadoIncompletoException:
-                relato = aiim_item.infracao.report
-            infraction = aiim_item.infracao
-            window['-AIIM-ITEM-DATA-'].update('Análise: ', font_for_value=('Arial', 10, 'bold'))
-            window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.verificacao}\n', append=True)
-            window['-AIIM-ITEM-DATA-'].update(f'Capitulação: ', font_for_value=('Arial', 10, 'bold'), append=True)
-            window['-AIIM-ITEM-DATA-'].update(f'Art. 85, inciso {infraction.inciso}, '
-                                              f'alínea "{infraction.alinea}" da Lei 6.374/89\n',
-                                              append=True)
-            window['-AIIM-ITEM-DATA-'].update('Relato:\n', font_for_value=('Arial', 10, 'bold'), append=True)
-            window['-AIIM-ITEM-DATA-'].update(f'{relato}\n', append=True)
-            if aiim_item.planilha:
-                window['-AIIM-ITEM-DATA-'].update(f'Planilha: ', font_for_value=('Arial', 10, 'bold'), append=True)
-                window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.planilha}\n', append=True)
-            if aiim_item.planilha_detalhe:
-                window['-AIIM-ITEM-DATA-'].update(f'Planilha Detalhada: ', font_for_value=('Arial', 10, 'bold'),
-                                                  append=True)
-                window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.planilha_detalhe}\n', append=True)
-            if aiim_item.has_aiim_item_number():
-                window['-AIIM-ITEM-DATA-'].update('Item no AIIM 2003: ', font_for_value=('Arial', 10, 'bold'),
-                                                  append=True)
-                window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.item}\n', append=True)
-                window['-AIIM-CREATE-ITEM-'].update(visible=False)
-                window['-AIIM-UPDATE-ITEM-'].update(visible=True)
-                window['-AIIM-UPDATE-ITEM-NUMBER-'].update(visible=True)
-                window['-AIIM-ITEM-PROOFS-'].update(visible=True)
-            else:
-                window['-AIIM-CREATE-ITEM-'].update(visible=True)
-                window['-AIIM-UPDATE-ITEM-'].update(visible=False)
-                window['-AIIM-UPDATE-ITEM-NUMBER-'].update(visible=False)
-                window['-AIIM-ITEM-PROOFS-'].update(visible=False)
-            if aiim_item.notificacao:
-                window['-AIIM-ITEM-DATA-'].update('Notificação Fiscal associada: ',
-                                                  font_for_value=('Arial', 10, 'bold'), append=True)
-                window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.notificacao}', append=True)
-                if aiim_item.notificacao_resposta:
-                    window['-AIIM-ITEM-DATA-'].update(f' (Resposta: {aiim_item.notificacao_resposta})', append=True)
-                window['-AIIM-ITEM-DATA-'].update('\n', append=True)
-                window['-AIIM-UPDATE-NOTIF-ANSWER-'].update(visible=aiim_item.notificacao and
-                                                                    not aiim_item.notificacao_resposta)
-            if aiim_item.relatorio_circunstanciado():
-                window['-AIIM-ITEM-DATA-'].update('Relatório Circunstanciado: ',
-                                                  font_for_value=('Arial', 10, 'bold'), append=True)
-                window['-AIIM-ITEM-DATA-'].update(f'No item {aiim_item.item}, '
-                                                  f'{aiim_item.relatorio_circunstanciado()}\n', append=True)
-            proofs = aiim_item.proofs_for_report()
-            if proofs:
-                window['-AIIM-ITEM-DATA-'].update('Provas que compõem Anexo:\n',
-                                                  font_for_value=('Arial', 10, 'bold'), append=True)
-                for proof in proofs:
-                    window['-AIIM-ITEM-DATA-'].update(f'    - {proof}\n', append=True)
-            else:
-                window['-AIIM-ITEM-PROOFS-'].update(visible=False)
-            window['-AIIM-ITEM-DATA-'].update(visible=True)
-            window['-AIIM-ITEM-DATA-'].expand(True, True)
-            window['-AIIM-REMOVE-ITEM-'].update(visible=True)
+        relato = WaitWindow.open_wait_window(aiim_item.relato, '', raise_exceptions=True)
+    except ExcelArrazoadoIncompletoException as ex:
+        relato = aiim_item.infracao.report
+    except ValueError as err:
+        GUIFunctions.popup_erro(str(err), exception=err)
+        return
     except ExcelArrazoadoAbaInexistenteException:
         if GUIFunctions.popup_sim_nao(f'A aba da planilha "{aiim_item.planilha}" não existe mais. '
                                       f'Deseja remover infração?'):
             WaitWindow.open_wait_window(Controller.remove_aiim_item, 'Remover Item do AIIM', aiim_item)
             refresh_aiim_tab()
-    except Exception as ex:
-        GeneralFunctions.logger.exception('Falha no levantamento de dados da infração')
-        GUIFunctions.popup_erro(f'Falha no levantamento de dados da infração: {ex}', exception=ex)
+        return
+
+    infraction = aiim_item.infracao
+    window['-AIIM-ITEM-DATA-'].update('Análise: ', font_for_value=('Arial', 10, 'bold'))
+    window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.verificacao}\n', append=True)
+    window['-AIIM-ITEM-DATA-'].update(f'Capitulação: ', font_for_value=('Arial', 10, 'bold'), append=True)
+    window['-AIIM-ITEM-DATA-'].update(f'Art. 85, inciso {infraction.inciso}, '
+                                      f'alínea "{infraction.alinea}" da Lei 6.374/89\n',
+                                      append=True)
+    window['-AIIM-ITEM-DATA-'].update('Relato:\n', font_for_value=('Arial', 10, 'bold'), append=True)
+    window['-AIIM-ITEM-DATA-'].update(f'{relato}\n', append=True)
+    if aiim_item.planilha:
+        window['-AIIM-ITEM-DATA-'].update(f'Planilha: ', font_for_value=('Arial', 10, 'bold'), append=True)
+        window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.planilha}\n', append=True)
+    if aiim_item.planilha_detalhe:
+        window['-AIIM-ITEM-DATA-'].update(f'Planilha Detalhada: ', font_for_value=('Arial', 10, 'bold'),
+                                          append=True)
+        window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.planilha_detalhe}\n', append=True)
+    if aiim_item.has_aiim_item_number():
+        window['-AIIM-ITEM-DATA-'].update('Item no AIIM 2003: ', font_for_value=('Arial', 10, 'bold'),
+                                          append=True)
+        window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.item}\n', append=True)
+        window['-AIIM-CREATE-ITEM-'].update(visible=False)
+        window['-AIIM-UPDATE-ITEM-'].update(visible=True)
+        window['-AIIM-UPDATE-ITEM-NUMBER-'].update(visible=True)
+        window['-AIIM-ITEM-PROOFS-'].update(visible=True)
+    else:
+        window['-AIIM-CREATE-ITEM-'].update(visible=True)
+        window['-AIIM-UPDATE-ITEM-'].update(visible=False)
+        window['-AIIM-UPDATE-ITEM-NUMBER-'].update(visible=False)
+        window['-AIIM-ITEM-PROOFS-'].update(visible=False)
+    if aiim_item.notificacao:
+        window['-AIIM-ITEM-DATA-'].update('Notificação Fiscal associada: ',
+                                          font_for_value=('Arial', 10, 'bold'), append=True)
+        window['-AIIM-ITEM-DATA-'].update(f'{aiim_item.notificacao}', append=True)
+        if aiim_item.notificacao_resposta:
+            window['-AIIM-ITEM-DATA-'].update(f' (Resposta: {aiim_item.notificacao_resposta})', append=True)
+        window['-AIIM-ITEM-DATA-'].update('\n', append=True)
+        window['-AIIM-UPDATE-NOTIF-ANSWER-'].update(visible=aiim_item.notificacao and
+                                                            not aiim_item.notificacao_resposta)
+    if aiim_item.relatorio_circunstanciado():
+        window['-AIIM-ITEM-DATA-'].update('Relatório Circunstanciado: ',
+                                          font_for_value=('Arial', 10, 'bold'), append=True)
+        window['-AIIM-ITEM-DATA-'].update(f'No item {aiim_item.item}, '
+                                          f'{aiim_item.relatorio_circunstanciado()}\n', append=True)
+    proofs = aiim_item.proofs_for_report()
+    if proofs:
+        window['-AIIM-ITEM-DATA-'].update('Provas que compõem Anexo:\n',
+                                          font_for_value=('Arial', 10, 'bold'), append=True)
+        for proof in proofs:
+            window['-AIIM-ITEM-DATA-'].update(f'    - {proof}\n', append=True)
+    else:
+        window['-AIIM-ITEM-PROOFS-'].update(visible=False)
+    window['-AIIM-ITEM-DATA-'].update(visible=True)
+    window['-AIIM-ITEM-DATA-'].expand(True, True)
+    window['-AIIM-REMOVE-ITEM-'].update(visible=True)
 
 
-def notification_chosen(notification: PossibleInfraction, title: str, body: str):
+def notification_chosen(notification: PossibleInfraction):
     try:
-        verification_chosen_for_notification(notification)
-        notification_prettyprint(
-            notification.notificacao_titulo(title),
-            notification.notificacao_corpo(body)
-        )
+        result = WaitWindow.open_wait_window(notification_prettyprint, '', raise_exceptions=True)
     except ExcelArrazoadoAbaInexistenteException:
         if GUIFunctions.popup_sim_nao(f'A aba da planilha para essa notificação não existe mais. '
                                       f'Deseja remover notificação?'):
             Controller.remove_notification(notification)
+            get_current_audit().save()
             refresh_notifications_tab()
-    except ExcelArrazoadoIncompletoException as e:
-        GUIFunctions.popup_erro(str(e), exception=e)
+    except ExcelArrazoadoIncompletoException as ex:
+        GUIFunctions.popup_erro(str(ex), exception=ex)
+    except ValueError as err:
+        GUIFunctions.popup_erro(str(err), exception=err)
 
 
 # ATENÇÃO: O visualizador de HTML depende atualmente do TK
-def notification_prettyprint(titulo: str, texto: str):
+def notification_prettyprint(titulo: str = None, texto: str = None):
+    if titulo is None and texto is None:
+        GeneralFunctions.logger.info('Recalculando texto da notificação')
+        notification: PossibleInfraction = window['-NOTIFICATION-CHOSEN-'].get()[0]
+        titulo = notification.notificacao_titulo(window['-NOTIFICATION-EDIT-TITLE-'].get())
+        texto = notification.notificacao_corpo(window['-NOTIFICATION-EDIT-'].get())
+
     widget = window['-NOTIFICATION-PREVIEW-'].Widget
     if titulo == texto == '':
-        window['-NOTIFICATION-PREVIEW-'].update('')
+        html = ''
     else:
         nomeAFR = GeneralConfiguration.get().nome
         ifAFR = GeneralConfiguration.get().funcional
-        parser = html_parser.HTMLTextParser()
         html = f'<span style="font-size: 10px"><b>Complemento do Assunto:</b><i>{titulo}</i></span><br><br><br>' \
                f'<span style="font-size: 10px">{texto}' \
                f'<br><p style="text-align:center"><b>{nomeAFR}' \
                f'<br>Identidade Funcional: {ifAFR}</b></p></span>'
-        prev_state = widget.cget('state')
-        widget.config(state=sg.tk.NORMAL)
-        widget.delete('1.0', sg.tk.END)
-        widget.tag_delete(widget.tag_names)
-        parser.w_set_html(widget, html, strip=True)
-        widget.config(state=prev_state)
-        window.refresh()
+    parser = html_parser.HTMLTextParser()
+    prev_state = widget.cget('state')
+    widget.config(state=sg.tk.NORMAL)
+    widget.delete('1.0', sg.tk.END)
+    widget.tag_delete(widget.tag_names)
+    parser.w_set_html(widget, html, strip=True)
+    widget.config(state=prev_state)
+    window.refresh()
 
 
 def notification_show_attachments(notification: PossibleInfraction):
@@ -459,34 +550,47 @@ def notification_show_attachments(notification: PossibleInfraction):
                                 titulo='Falha na geração de anexo', exception=e)
 
 
-def notification_manual_send(notification: PossibleInfraction):
-    dec_numero = sg.popup_get_text('Digite o número completo da notificação enviada via DEC para o '
-                                   'contribuinte (ex: IC/N/FIS/00001234/2057):', title='Número DEC')
-    if dec_numero:
-        try:
-            pasta_notificacao = Controller.move_analysis_from_notification_to_aiim(
-                notification, dec_numero)
-            sg.popup_ok(f'Os arquivos recebidos em resposta devem ser guardados na pasta:\n{pasta_notificacao}',
-                        title='Notificação enviada')
-            refresh_notifications_tab()
-        except ValueError:
+def notification_manual_send(notification: PossibleInfraction, content: str):
+    if get_current_audit().is_contribuinte_ativo():
+        numero = GUIFunctions.popup_pega_texto('Digite o número completo da notificação enviada via DEC para o '
+                                               'contribuinte (ex: IC/N/FIS/00001234/2057):', 'Número DEC',
+                                               texto_padrao='IC/N/FIS/')
+    else:
+        numero = GUIFunctions.popup_pega_texto('Digite o número completo da notificação modelo 4 a ser gerada '
+                                               '(ex: 3/2020 01.1.12345/21-5):', 'Número Notificação Modelo 4',
+                                               texto_padrao=get_current_audit().next_manual_notification())
+    if numero:
+        aiim_items = WaitWindow.open_wait_window(
+            Controller.send_manual_notification, '',
+            notification, numero, content)
+        if isinstance(aiim_items, ValueError):
             GUIFunctions.popup_erro('Número de notificação inválido!')
+        elif isinstance(aiim_items, list):
+            popup_title = 'Notificação enviada' if get_current_audit().is_contribuinte_ativo() else 'Notificação gerada'
+            if aiim_items:
+                GUIFunctions.popup_ok('A notificação modelo 4 e anexos foram gerados na pasta:'
+                                      f'\n{aiim_items[0].notification_path().absolute()}', popup_title)
+                GUIFunctions.popup_ok(f'Os arquivos recebidos em resposta devem ser guardados na pasta:'
+                                      f'\n{aiim_items[0].notification_response_path().absolute()}', popup_title)
+            get_current_audit().save()
+        refresh_notifications_tab()
 
 
 def notification_send(notification: PossibleInfraction, title: str, content: str):
     if GUIFunctions.popup_sim_nao('Será enviada uma notificação via DEC para o contribuinte,'
                                   'contendo as informações em tela e anexos gerados.\nConfirma?'):
-        try:
-            pasta_notificacao = WaitWindow.open_wait_window(
-                Controller.send_notification, 'Enviar notificação via DEC',
-                notification, title, content)
-            if pasta_notificacao:
-                GUIFunctions.popup_ok(f'Foi enviada notificação DEC! Os arquivos recebidos '
-                                      f'em resposta devem ser guardados na pasta {pasta_notificacao}')
-            refresh_notifications_tab()
-        except Exception as e:
+        aiim_items = WaitWindow.open_wait_window(
+            Controller.send_notification, 'Enviar notificação via DEC',
+            notification, title, content)
+        if isinstance(aiim_items, Exception):
             GUIFunctions.popup_erro('Houve um erro no envio da notificação, '
-                                    f'verifique se os arquivos anexos estão fechados: {e}', exception=e)
+                                    f'verifique se os arquivos anexos estão fechados: {str(aiim_items)}',
+                                    exception=aiim_items)
+        elif aiim_items and aiim_items[0].notification_response_path():
+            GUIFunctions.popup_ok(f'Foi enviada notificação DEC! Os arquivos recebidos '
+                                  f'em resposta devem ser guardados na pasta '
+                                  f'{aiim_items[0].notification_response_path()}')
+        refresh_notifications_tab()
 
 
 def update_gifs():
@@ -562,9 +666,10 @@ def window_layout():
                                               expand_y=True, expand_x=True, )]], key='-PREVIEW-TAB-'),
                         sg.Tab('Edição', [
                             [sg.Text('Título:'),
-                             sg.InputText(key='-NOTIFICATION-EDIT-TITLE-', expand_x=True, disabled=True)],
-                            [sg.Multiline(key='-NOTIFICATION-EDIT-', expand_x=True, expand_y=True, auto_size_text=True,
-                                          disabled=True)]
+                             sg.InputText(key='-NOTIFICATION-EDIT-TITLE-', enable_events=True,
+                                          expand_x=True, disabled=True)],
+                            [sg.Multiline(key='-NOTIFICATION-EDIT-', enable_events=True, expand_x=True, expand_y=True,
+                                          auto_size_text=True, disabled=True)]
                         ]),
                     ]
                 ], expand_y=True, expand_x=True, enable_events=True, key='-NOTIFICATION-TAB-')],
@@ -630,7 +735,7 @@ def menu_layout(tipo_menu: str):
                               'Abrir Auditoria::-MENU-OPEN-AUDIT-',
                               'Sair::-MENU-EXIT-']],
                 ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-', '---',
-                             'Prepara Base de Dados::-MENU-PREPARE-BD-', 'Importa Inidôneos::-MENU-INIDONEOS-',
+                             'Importa Inidôneos::-MENU-INIDONEOS-',
                              'Importa GIAs::-MENU-GIAS-', 'Importa Cadesp::-MENU-CADESP-']],
                 ['A&juda', ['Abrir Pasta do Usuário::-MENU-USER-FOLDER-', 'Sobre::-MENU-ABOUT-']]
             ]
@@ -639,18 +744,24 @@ def menu_layout(tipo_menu: str):
                 ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
                               'Abrir Auditoria::-MENU-OPEN-AUDIT-',
                               'Abrir Pasta da Auditoria::-MENU-AUDIT-FOLDER-',
+                              'Fechar Auditoria::-MENU-CLOSE-AUDIT',
                               'Sair::-MENU-EXIT-']],
-                ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-', '---',
-                             'Prepara Base de Dados::-MENU-PREPARE-BD-', 'Importa Inidôneos::-MENU-INIDONEOS-',
+                ['&Editar', ['Propriedades::-MENU-PROPERTIES-',
+                             'Cria Análise::-MENU-CREATE-ANALYSIS-',
+                             'Cria Planilha a partir de SQL::-MENU-RUN-QUERY-', '---',
+                             'Importa Inidôneos::-MENU-INIDONEOS-',
                              'Importa GIAs::-MENU-GIAS-', 'Importa Cadesp::-MENU-CADESP-',
                              '---',
                              'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
                              'Abrir Planilha::-MENU-OPEN-SHEET-',
                              'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
-                ['E&FD', ['Imprimir LRE::-MENU-PRINT-LRE-',
-                          'Imprimir LRS::-MENU-PRINT-LRS-',
-                          'Imprimir LRI::-MENU-PRINT-LRI-',
-                          'Imprimir LRAICMS::-MENU-PRINT-LRAICMS-']],
+                ['Arquivos &Digitais', [
+                    'Imprimir LRE::-MENU-PRINT-LRE-',
+                    'Imprimir LRS::-MENU-PRINT-LRS-',
+                    'Imprimir LRI::-MENU-PRINT-LRI-',
+                    'Imprimir LRAICMS::-MENU-PRINT-LRAICMS-',
+                    'Imprimir DANFEs::-MENU-PRINT-DANFE-'
+                ]],
                 ['A&IIM', ['Cria AIIM (gera número e AIIM2003)::-MENU-CREATE-AIIM-']],
                 ['A&juda', ['Abrir Pasta do Usuário::-MENU-USER-FOLDER-', 'Sobre::-MENU-ABOUT-']]
             ]
@@ -674,18 +785,24 @@ def menu_layout(tipo_menu: str):
                 ['&Arquivo', ['Criar Auditoria::-MENU-CREATE-AUDIT-',
                               'Abrir Auditoria::-MENU-OPEN-AUDIT-',
                               'Abrir Pasta da Auditoria::-MENU-AUDIT-FOLDER-',
+                              'Fechar Auditoria::-MENU-CLOSE-AUDIT',
                               'Sair::-MENU-EXIT-']],
-                ['&Editar', ['Propriedades::-MENU-PROPERTIES-', 'Cria Análise::-MENU-CREATE-ANALYSIS-', '---',
-                             'Prepara Base de Dados::-MENU-PREPARE-BD-', 'Importa Inidôneos::-MENU-INIDONEOS-',
+                ['&Editar', ['Propriedades::-MENU-PROPERTIES-',
+                             'Cria Análise::-MENU-CREATE-ANALYSIS-',
+                             'Cria Planilha a partir de SQL::-MENU-RUN-QUERY-', '---',
+                             'Importa Inidôneos::-MENU-INIDONEOS-',
                              'Importa GIAs::-MENU-GIAS-', 'Importa Cadesp::-MENU-CADESP-',
                              '---',
                              'Atualizar Dados da Fiscalizada::-MENU-UPDATE-OSF-',
                              'Abrir Planilha::-MENU-OPEN-SHEET-',
                              'Recarregar Planilha::-MENU-RELOAD-SHEET-']],
-                ['E&FD', ['Imprimir LRE::-MENU-PRINT-LRE-',
-                          'Imprimir LRS::-MENU-PRINT-LRS-',
-                          'Imprimir LRI::-MENU-PRINT-LRI-',
-                          'Imprimir LRAICMS::-MENU-PRINT-LRAICMS-']],
+                ['Arquivos &Digitais', [
+                    'Imprimir LRE::-MENU-PRINT-LRE-',
+                    'Imprimir LRS::-MENU-PRINT-LRS-',
+                    'Imprimir LRI::-MENU-PRINT-LRI-',
+                    'Imprimir LRAICMS::-MENU-PRINT-LRAICMS-',
+                    'Imprimir DANFEs::-MENU-PRINT-DANFE-'
+                ]],
                 ['A&IIM', aiim_submenu],
                 ['A&juda', ['Abrir Pasta do Usuário::-MENU-USER-FOLDER-', 'Sobre::-MENU-ABOUT-']]
             ]
@@ -804,6 +921,22 @@ def initialize_environment():
         GUIFunctions.close_splash()
 
 
+def generate_digital_receipt_notification():
+    numero = None
+    if not get_current_audit().is_contribuinte_ativo():
+        numero = GUIFunctions.popup_pega_texto('Digite o número completo da notificação modelo 4 a ser gerada '
+                                               '(ex: 3/2020 01.1.12345/21-5):', 'Número Notificação Modelo 4',
+                                               texto_padrao=get_current_audit().next_manual_notification())
+        if not numero:
+            return
+    result = WaitWindow.open_wait_window(Controller.send_notification_with_files_digital_receipt,
+                                         'Enviar Recibo', numero)
+    if numero and not isinstance(result, Exception):
+        GUIFunctions.popup_ok(f'Notificação modelo 04 criada na pasta '
+                              f'{GeneralFunctions.notification_path(numero, get_current_audit().notification_path())}')
+    refresh_menu()
+
+
 def window_event_handler():
     log_window: LogWindow = None
     # Event Loop to process "events" and get the "values" of the inputs
@@ -821,7 +954,7 @@ def window_event_handler():
             continue
         elif isinstance(w, AnalysisWizardWindow):
             w.handle_event(event, values)
-            if event == sg.WINDOW_CLOSED:
+            if event == sg.WINDOW_CLOSED or w.was_closed():
                 w.close()
                 refresh_analysis_tab()
             continue
@@ -844,7 +977,10 @@ def window_event_handler():
                                          history_setting_filename=str(GeneralFunctions.get_folders_history_json_path()),
                                          no_window=True)
             if folder:
-                create_audit(Path(folder))
+                try:
+                    create_audit(Path(folder))
+                except Exception as ec:
+                    GUIFunctions.popup_erro(str(ec), titulo='Falha na abertura da auditoria', exception=ec)
         elif event.endswith('-MENU-OPEN-AUDIT-'):
             folder = sg.popup_get_folder('Escolha a pasta da auditoria', 'Abrir auditoria',
                                          history=True,
@@ -853,8 +989,10 @@ def window_event_handler():
             if folder:
                 try:
                     open_audit(Path(folder))
-                except Exception as e:
-                    GUIFunctions.popup_erro(str(e), titulo='Falha na abertura da auditoria', exception=e)
+                except Exception as eo:
+                    GUIFunctions.popup_erro(str(eo), titulo='Falha na abertura da auditoria', exception=eo)
+        elif event.endswith('-MENU-CLOSE-AUDIT'):
+            open_audit(None)
         elif event == '-DATA-EXTRACTION-':
             grupos = [k[1:-10] for k, v in values.items() if k.endswith('-CHECKBOX-') and v]
             LogWindow(populate_database, 'Levantamento EFD e Launchpad', grupos, extracoes)
@@ -873,18 +1011,26 @@ def window_event_handler():
         elif event == '-NOTIFICATION-TAB-':
             if values[event] == '-PREVIEW-TAB-':
                 if len(values['-NOTIFICATION-CHOSEN-']) > 0:
-                    notification_prettyprint(
-                        values['-NOTIFICATION-CHOSEN-'][0].notificacao_titulo(values['-NOTIFICATION-EDIT-TITLE-']),
-                        values['-NOTIFICATION-CHOSEN-'][0].notificacao_corpo(values['-NOTIFICATION-EDIT-'])
-                    )
+                    result = WaitWindow.open_wait_window(notification_prettyprint, '')
+                    if isinstance(result, ValueError):
+                        GUIFunctions.popup_erro(str(result))
                 else:
                     window['-NOTIFICATION-PREVIEW-'].update('')
         elif event == '-NOTIFICATION-CHOSEN-':
             if len(values[event]) > 0:
-                notification_chosen(values[event][0],
-                                    values['-NOTIFICATION-EDIT-TITLE-'], values['-NOTIFICATION-EDIT-'])
+                verification_chosen_for_notification(values[event][0])
+                # ignora os valores presentes em values, pois a chamada anterior atualizou elementos
+                notification_chosen(values[event][0])
             else:
                 verification_chosen_for_notification(None)
+        elif event == '-NOTIFICATION-EDIT-TITLE-':
+            if len(values['-NOTIFICATION-CHOSEN-']) > 0 \
+                    and isinstance(values['-NOTIFICATION-CHOSEN-'][0], PossibleInfraction):
+                values['-NOTIFICATION-CHOSEN-'][0].reset_notificacao_titulo()
+        elif event == '-NOTIFICATION-EDIT-':
+            if len(values['-NOTIFICATION-CHOSEN-']) > 0 \
+                    and isinstance(values['-NOTIFICATION-CHOSEN-'][0], PossibleInfraction):
+                values['-NOTIFICATION-CHOSEN-'][0].reset_notificacao_corpo()
         elif event == '-NOTIFICATION-ATTACHMENTS-':
             notification_show_attachments(values['-NOTIFICATION-CHOSEN-'][0])
         elif event == '-NOTIFICATION-SEND-':
@@ -892,11 +1038,11 @@ def window_event_handler():
                               values['-NOTIFICATION-EDIT-TITLE-'],
                               values['-NOTIFICATION-EDIT-'])
         elif event == '-NOTIFICATION-MANUAL-SEND-':
-            notification_manual_send(values['-NOTIFICATION-CHOSEN-'][0])
+            notification_manual_send(values['-NOTIFICATION-CHOSEN-'][0], values['-NOTIFICATION-EDIT-'])
         elif event == '-INFRACTION-CHOSEN-':
             if len(values[event]) > 0:
                 aiim_item_chosen(values[event][0])
-        elif event == '-MENU-AIIM-CREATE-':
+        elif event.endswith('-MENU-CREATE-AIIM-'):
             aiims = WaitWindow.open_wait_window(Controller.get_aiims_for_osf, '')
             if aiims is not None:
                 if len(aiims) == 0:
@@ -952,9 +1098,8 @@ def window_event_handler():
                 aiim_item: AiimItem = values['-INFRACTION-CHOSEN-'][0]
                 Controller.update_aiim_item_notification_response(aiim_item, resposta)
                 aiim_item_chosen(aiim_item)
-            except ValueError:
-                GUIFunctions.popup_erro('Formato inválido para número de expediente Sem Papel '
-                                        '(deveria ser algo como SFP-EXP-<ano>/<numero>)')
+            except ValueError as ex:
+                GUIFunctions.popup_erro(str(ex))
         elif event == '-AIIM-REMOVE-ITEM-':
             if GUIFunctions.popup_sim_nao('Deseja realmente remover este item da lista de infrações e do AIIM?',
                                           titulo='Alerta'):
@@ -970,6 +1115,8 @@ def window_event_handler():
             __refresh_tabs(get_current_audit().path())
         elif event.endswith('-MENU-CREATE-ANALYSIS-'):
             AnalysisWizardWindow()
+        elif event.endswith('-MENU-RUN-QUERY-'):
+            run_autonomous_query()
         elif event.endswith('-MENU-OPEN-SHEET-'):
             subprocess.Popen(f"{GeneralFunctions.get_default_windows_app('.xlsx')} "
                              f'"{get_current_audit().get_sheet().planilha_path.absolute()}"')
@@ -986,6 +1133,8 @@ def window_event_handler():
             print_efd('lri')
         elif event.endswith('-MENU-PRINT-LRAICMS-'):
             print_efd('lraicms')
+        elif event.endswith('-MENU-PRINT-DANFE-'):
+            print_digital_doc(55)
         elif event.endswith('-MENU-AIIM-REPORTS-'):
             WaitWindow.open_wait_window(Controller.print_aiim_reports, 'Gerar Relatórios do AIIM')
         elif event.endswith('-MENU-AIIM-CUSTOM-REPORT-'):
@@ -995,7 +1144,7 @@ def window_event_handler():
         elif event.endswith('-MENU-AIIM-OPERATIONS-'):
             WaitWindow.open_wait_window(Controller.declare_operations_in_aiim, 'Cadastrar Operações no AIIM2003')
         elif event.endswith('-MENU-AIIM-PROOF-COVER-'):
-            texto = icon = GUIFunctions.app_icon('Informe o texto a ser colocado na capa:', 'Capa personalizada')
+            texto = GUIFunctions.popup_pega_texto('Informe o texto a ser colocado na capa:', 'Capa personalizada')
             if texto:
                 caminho = sg.popup_get_file('Escolha o local e nome da nova capa', 'Nova capa',
                                             initial_folder=get_current_audit().path(), save_as=True,
@@ -1005,8 +1154,7 @@ def window_event_handler():
                 if caminho:
                     WaitWindow.open_wait_window(Controller.generate_custom_report_cover, '', texto, Path(caminho))
         elif event.endswith('-MENU-AIIM-RECEIPT-'):
-            WaitWindow.open_wait_window(Controller.send_notification_with_files_digital_receipt, 'Enviar Recibo')
-            refresh_menu()
+            generate_digital_receipt_notification()
         elif event.endswith('-MENU-AIIM-EXPORT-'):
             WaitWindow.open_wait_window(Controller.export_aiim, 'Exportar AIIM')
         elif event.endswith('-MENU-AIIM-REOPEN-'):
@@ -1015,8 +1163,6 @@ def window_event_handler():
         elif event.endswith('-MENU-AIIM-UPLOAD-'):
             WaitWindow.open_wait_window(Controller.upload_aiim, 'Transmitir AIIM')
             refresh_menu()
-        elif event.endswith('-MENU-PREPARE-BD-'):
-            WaitWindow.open_wait_window(Controller.prepare_database, 'Preparar base de dados')
         elif event.endswith('-MENU-GIAS-'):
             caminho = sg.popup_get_file('Escolha o arquivo de GIAs mais recente', 'GIAs',
                                         initial_folder=str(Path.home()),

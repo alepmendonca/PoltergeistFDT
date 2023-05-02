@@ -10,10 +10,11 @@ import sys
 import threading
 import time
 import urllib
-import urllib.parse
 import zipfile
 from concurrent.futures import Future
+from multiprocessing import Process
 from os import path
+from typing import TypeVar
 from urllib.error import URLError
 from urllib.request import urlopen, install_opener
 from urllib.request import urlopen
@@ -27,6 +28,9 @@ import selenium
 from autoit import AutoItError
 from bs4 import BeautifulSoup
 from pathlib import Path
+
+from pepe.sistemas.pfe import GIARelatorio, GIASubRelatorio
+from pepe.sistemas.pgsf import PgsfSituacaoOSF
 from selenium import webdriver
 from selenium.webdriver.chromium.webdriver import ChromiumDriver
 from selenium.common.exceptions import StaleElementReferenceException, \
@@ -55,6 +59,7 @@ LAUNCHPAD_TIME_REPORT_MINUTES = 2
 
 proxy_srv = "proxyservidores.lbintra.fazenda.sp.gov.br"
 proxy_port = 8080
+launchpad_url = "https://teste:teste@srvbo-v42.intra.fazenda.sp.gov.br/BOE/BI"
 project_releases_url = "https://api.github.com/repos/alepmendonca/PoltergeistFDT/releases/latest"
 pgsf_url = "https://portal60.sede.fazenda.sp.gov.br/"
 nfe_consulta_url = "https://nfe.fazenda.sp.gov.br/ConsultaNFe/consulta/publica/ConsultarNFe.aspx#tabConsInut"
@@ -83,10 +88,12 @@ launchpad_report_options = {
         'Parametros': ['cnpj', 'inicio', 'fim', 'situacao', 'osf'],
         'Tipo': "Dados", 'Relatorios': ["CT-e"], 'Grupo': 'CTe'},
     "DACTE_versão_3.0": {
+        'ID': 2795177, 'Abas_IDs': [553],
         'Pesquisa': 'DACTE', 'Parametros': ['chaves'],
         'Tipo': "Relatórios", "Relatorios": ["DACTE Rodoviário MOC 3.00"],
         "Formato": "PDF", 'Grupo': 'Prova', 'Modelo': 57},
     "DANFE Unificado – Lista de Chaves de Acesso": {
+        'ID': 435320, 'Abas_IDs': [42934],
         'Pesquisa': 'DANFE', 'Parametros': ['chaves'],
         'Tipo': 'Relatórios', 'Relatorios': ['DANFE'],
         'Formato': "PDF", 'Grupo': 'Prova', 'Modelo': 55},
@@ -113,6 +120,7 @@ launchpad_report_options = {
         'Parametros': ['cnpj', 'inicioAAAAMM', 'fimAAAAMM'],
         'Tipo': "Dados", 'Relatorios': ['NFe SP', 'NFe UF'], 'Grupo': 'NFeEmit'},
     "NFe Escrituração EFD Lista de Chaves de Acesso Emitente": {
+        'ID': 658907, 'Abas_IDs': [5, 6],
         'Parametros': ['chaves', 'cnpj', 'inicioAAAAMM'],
         'Tipo': 'Relatorios',
         'Relatorios': ['EFD Destinatário'],
@@ -130,6 +138,7 @@ launchpad_report_options = {
         'Tipo': "Dados", 'Relatorios': ['NFe SP'],
         'Grupo': 'NFeEmitItens', 'Principal': True},
     "NFe_Emitente_OSF": {
+        'ID': 210366,
         'Parametros': ['cnpj', 'inicio', 'fim', 'situacao', 'osf'],
         'Tipo': "Dados", 'Relatorios': ["NFe SP"],
         'Grupo': 'NFeEmit', 'Principal': True},
@@ -149,12 +158,12 @@ launchpad_report_options = {
         'Tipo': "Dados", 'Relatorios': ['SAT CFe'],
         'Grupo': 'SATItens', 'Principal': True},
     "SN-Receita Bruta Declarada x Apurada": {
-        'Pesquisa': 'Bruta',
+        'Pesquisa': 'Bruta', 'ID': 444338,
         'Parametros': ['cnpjBase', 'inicioAAAAMM', 'fimAAAAMM'],
         'Tipo': 'Relatórios', 'Relatorios': [],
         'Formato': 'Excel (.xlsx)', 'Grupo': 'SN'},
     "SN-e-COMMERCE": {
-        'Pesquisa': 'commerce',
+        'Pesquisa': 'commerce', 'ID': 489152,
         'Parametros': ['cnpjBase', 'inicioAAAA', 'fimAAAA'],
         'Tipo': 'Dados', 'Relatorios': ['SISCOM-IF', 'SISCOM-IC', 'SISCOM-ARQS'],
         'Grupo': 'SN'},
@@ -221,7 +230,10 @@ def set_proxy():
         logger.info('Não está no ambiente interno Sefaz, não precisa definir proxy...')
 
 
-def get_efd_pva_version(pva_version: str = None) -> Path:
+last_progress = None
+
+
+def get_efd_pva_version(pva_version: str = None, log_function=GeneralFunctions.logger.info) -> Path:
     if pva_version is None:
         url = "http://www.sped.fazenda.gov.br/SpedFiscalServer/WSConsultasPVA/WSConsultasPVA.asmx"
         headers = {'content-type': 'text/xml'}
@@ -241,14 +253,24 @@ def get_efd_pva_version(pva_version: str = None) -> Path:
                    'escrituracao-fiscal-digital-efd/escrituracao-fiscal-digital-efd')
     bs = BeautifulSoup(html, 'html.parser')
     linhas = bs.find_all('a', {'class': 'external-link'})
+    global last_progress
+    last_progress = time.process_time()
+
+    def _progress(blocknum, bs, size):
+        now = time.process_time()
+        global last_progress
+        if now - last_progress > 0.05:
+            msg = f'Baixando versão {pva_version} do EFD PVA ICMS ({blocknum * bs / size:.2%})'
+            log_function(msg)
+            last_progress = now
+
     for tag in linhas:
         link = tag.attrs['href']
         if link.find(pva_version) > 0 and link.find('.exe') > 0:
             download_path = Path('tmp') / tag.text
-            logger.info(f'Baixando versão nova do EFD PVA ICMS: {pva_version}')
-            logger.debug(link)
-            urllib.request.urlretrieve(link, download_path)
-            logger.info('Encerrado download do EFD PVA ICMS')
+            log_function(f'Iniciando download de EFD PVA ICMS')
+            urllib.request.urlretrieve(link, download_path, _progress)
+            log_function('Encerrado download de EFD PVA ICMS')
             return download_path
     raise WebScraperException(f'Não localizei arquivo da versão {pva_version} pra baixar!')
 
@@ -371,10 +393,10 @@ def choose_right_client_certificate(parte_titulo: str, nome_procurado: str):
             break
 
 
-def set_password_for_certificate_in_browser(password: str):
+def set_password_for_certificate_in_browser(password: str, timeout=5):
     popup_senha = "[CLASS:#32770; TITLE:Introduzir PIN]"
     try:
-        autoit.win_wait(popup_senha, 5)
+        autoit.win_wait(popup_senha, timeout)
     except AutoItError:
         # acredita que já passaram o PIN no popup, segue o jogo
         logger.debug('Não localizou pop-up de certificado digital, confia que já preencheram a senha e desiste')
@@ -436,6 +458,67 @@ class WebScraperTimeoutException(WebScraperException):
     pass
 
 
+_T = TypeVar('T')
+
+
+class _PepeSingleton:
+    _instances = {}
+    _lock: threading.Lock = threading.Lock()
+    _login_cert = [pepe.Cadesp, pepe.ContaFiscalICMS, pepe.Pfe]
+
+    @classmethod
+    def get(cls, pepe_class: type[_T]) -> _T:
+        # versão thread safe do singleton
+        with cls._lock:
+            if pepe_class not in cls._instances or not cls._instances[pepe_class].autenticado():
+                instance = pepe_class()
+                logger.info(f"Autenticando no sistema {pepe_class.__name__}...")
+                try:
+                    if pepe_class == pepe.LaunchPad:
+                        instance.login_lpad(GeneralConfiguration.get().intranet_login,
+                                            GeneralConfiguration.get().intranet_pass)
+                    elif pepe_class == pepe.SpSemPapel:
+                        instance.login(GeneralConfiguration.get().sigadoc_login,
+                                       GeneralConfiguration.get().sigadoc_pass)
+                    elif pepe_class in cls._login_cert:
+                        t = GeneralFunctions.ThreadWithReturnValue(target=set_password_for_certificate_in_browser,
+                                                                   args=[GeneralConfiguration.get().certificado_pass,
+                                                                         10])
+                        t.start()
+                        instance.login_cert(GeneralConfiguration.get().certificado)
+                    else:
+                        instance.login(GeneralConfiguration.get().intranet_login,
+                                       GeneralConfiguration.get().intranet_pass)
+                except pepe.AuthenticationError as aerr:
+                    raise WebScraperException(f"Erro de autenticação no sistema {pepe_class}: {aerr}")
+                cls._instances[pepe_class] = instance
+        return cls._instances[pepe_class]
+
+
+def get_launchpad_report(report_name: str, report_id: int, sheets: list[str], data: list[str],
+                         download_path: Path, parameters: dict):
+    ws = _PepeSingleton.get(pepe.LaunchPad)
+    logger.info(f'Baixando relatório {report_name}, params {parameters}...')
+    ws.baixar_relatorio_ldap(report_id, str(download_path.absolute()), parameters,
+                             sheets if sheets else None,
+                             data if data else None,
+                             csv_column_separator=",",
+                             timeout_relatorio=int(LAUNCHPAD_MAX_TIME_WAIT_SECONDS / 60))
+    logger.info(f'Relatório {report_name} baixado, params {parameters}')
+
+
+def get_osfs_em_execucao() -> list[str]:
+    try:
+        pgsf = _PepeSingleton.get(pepe.Pgsf)
+        logger.info('Acessando PGSF para listar OSFs em execução...')
+        osfs = pgsf.listar_osfs(situacao=PgsfSituacaoOSF.SITUACAO_EM_EXEC)
+        return [f'{osf["osf"]} - {osf["ie"]} - {osf["razao_social"]} - {osf["forma_acionamento"]}'
+                for osf in osfs]
+    except Exception as e:
+        logger.exception("Erro ao listar OSFs no PGSF")
+        raise WebScraperException(f"Erro ao listar OSFs no PGSF: {e}")
+
+
 class SeleniumWebScraper:
 
     def __init__(self, download_path: Path = None, hidden=False):
@@ -476,71 +559,6 @@ class SeleniumWebScraper:
             # self.initialize_edge_driver(self.hidden)
             self.initialize_chrome_driver(self.hidden)
         return self.driver
-
-    def initialize_edge_driver(self, headless=False):
-        edge_path = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
-        edge_full_version = GeneralFunctions.get_edge_version()
-        edge_major_version = edge_full_version.split(".")[0]
-        (self.script_path / "driver").mkdir(exist_ok=True)
-        driver_zip_path = self.script_path / "driver" / ("edgedriver_" + edge_major_version + ".zip")
-
-        # baixa nova versão do chromedriver apenas se não baixou o zip da última versão
-        if not driver_zip_path.is_file():
-            # apaga chromedrivers antigos
-            for old_zip in (x for x in os.listdir(path.join(self.script_path, 'driver')) if
-                            x.startswith('edgedriver_') and x.endswith('zip')):
-                (self.script_path / 'driver' / old_zip).unlink()
-
-            driver_zip_url = (
-                    "https://msedgedriver.azureedge.net/"
-                    + edge_full_version
-                    + "/edgedriver_win32.zip"
-            )
-            urllib.request.urlretrieve(driver_zip_url, driver_zip_path)
-
-            with zipfile.ZipFile(driver_zip_path, "r") as f:
-                driver_exe_path = path.join(self.script_path, "driver")
-                f.extract("msedgedriver.exe", driver_exe_path)
-
-        # Webdriver setup
-        options = webdriver.edge.options.Options()
-        # options.add_argument("--log-level=3")  # minimal logging
-        # options.add_argument("--ignore-certificate-errors")
-        # options.add_argument("--kiosk-printing")
-        # apenas rola imprimir PDF em modo headless, o que nao eh muito bom pra debug...
-        if headless:
-            options.add_argument('--headless')
-            options.add_argument('--disable-gpu')
-            options.add_argument('--no-sandbox')
-        # options.add_experimental_option(
-        #    "prefs",
-        #    {
-        #        "download.default_directory": str(self.tmp_path),
-        #        "download.prompt_for_download": False,
-        #        "download.directory_upgrade": True,
-        # "plugins.always_open_pdf_externally": True,
-        # "credentials_enable_service": False,
-        # "profile.password_manager_enabled": False,
-        #            },
-        #        )  # removes DevTools msg
-        # options.add_experimental_option(
-        #    "excludeSwitches", ["enable-logging", "enable-automation"]
-        # )
-        # options.add_experimental_option("useAutomationExtension", False)
-        driver_path = path.join(self.script_path, "driver", "msedgedriver.exe")
-        self.driver = webdriver.Edge(driver_path, options=options)
-        self.driver.execute_script(
-            "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
-        )
-        self.driver.execute_cdp_cmd(
-            "Network.setUserAgentOverride",
-            {
-                "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                             "AppleWebKit/537.36 (KHTML, like Gecko) "
-                             "Edg/99.0.705.50"
-            },
-        )
-        self.driver.implicitly_wait(1)
 
     def initialize_chrome_driver(self, headless=False):
         chrome_path = r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"
@@ -699,69 +717,24 @@ class SeleniumWebScraper:
             except NoSuchElementException:
                 pass
 
-    def get_full_OSF_pepe(self, osf: str, filename='EmissaoOSF.pdf'):
-        # está dando erro de SSL ao tentar usar no PyInstaller
-        logger.info('Acessando PGSF para pegar OSF completa...')
+    def get_full_OSF(self, osf: str, filename='EmissaoOSF.pdf'):
         try:
-            pgsf = pepe.Pgsf(usar_proxy=False)
-            pgsf.login(GeneralConfiguration.get().intranet_login, GeneralConfiguration.get().intranet_pass)
-            idOSF = pgsf.obter_id_osf(osf)
-            full_osf_link = 'https://portal60.sede.fazenda.sp.gov.br/pgsf/EmissaoOSF.rp?IDOSF='
-            response = pgsf.session.get(full_osf_link + idOSF)
-
-            with (self.download_path / filename).open('wb') as o:
-                o.write(response.content)
+            pgsf = _PepeSingleton.get(pepe.Pgsf)
+            logger.info('Acessando PGSF para pegar OSF completa...')
+            with open(filename, mode='wb') as f:
+                f.write(pgsf.obter_pdf_osf(osf, completa=True))
             logger.warn('Realizado download da OSF completa!')
-        except KeyError:
-            raise WebScraperException(f'Não localizada OSF aberta com este número: {osf}')
         except Exception as e:
             logger.exception("Erro ao baixar PDF da OSF " + osf + " no PGSF")
             raise WebScraperException(f"Erro ao baixar PDF da OSF {osf} no PGSF: {e}")
 
-    def get_full_OSF(self, osf: str, filename: str):
-        logger.info('Acessando PGSF para pegar OSF completa...')
-        self.__pgsf_login()
+    def get_simple_OSF(self, osf: str, filename: str):
         try:
-            # Build main PGSF page link
-            self.__pgsf_go_to_submenu('Relato de Resultado')
-            logger.info('Login realizado com sucesso')
-
-            # Switch to inner frame
-            iframe = self.__get_driver().find_element(By.NAME, "PC_Z7_QDU336O10O8N102BULG8OF00O4000000_")
-            self.__get_driver().switch_to.frame(iframe)
-
-            logger.info(f'Buscando OSF {osf}...')
-            # Click on "Confirmar" if intermediate page appears
-            try:
-                img_confirmar = self.__get_driver().find_element(By.ID, "Confirmar")
-                img_confirmar.click()
-                time.sleep(2)
-            except NoSuchElementException:
-                pass
-
-            # Type OSF number
-            input_osf = self.__get_driver().find_element(By.ID, "numOsf")
-            input_osf.clear()
-            input_osf.send_keys(osf)
-
-            # Select "Todos" in status filter
-            select_situacao = Select(self.__get_driver().find_element(By.ID, "situacao"))
-            select_situacao.select_by_visible_text("Todos")
-
-            # Click on "Pesquisar"
-            self.__get_driver().find_element(By.ID, "Pesquisar").click()
-            time.sleep(1)
-
-            logger.info('Fazendo download da OSF completa...')
-            idOSF = self.__get_driver().find_element(By.NAME, "idOSF").get_attribute('value')
-            full_osf_link = 'https://portal60.sede.fazenda.sp.gov.br/pgsf/EmissaoOSF.rp?IDOSF='
-            # pelas configurações do driver, deveria fazer o download sozinho pra pasta de execução
-            self.__get_driver().get(full_osf_link + idOSF)
-
-            if filename:
-                move_downloaded_file(self.tmp_path, "EmissaoOSF.pdf", self.download_path / filename)
-            logger.warn('Realizado download da OSF completa!')
-
+            pgsf = _PepeSingleton.get(pepe.Pgsf)
+            logger.info('Acessando PGSF para pegar OSF do contribuinte...')
+            with open(filename, mode='wb') as f:
+                f.write(pgsf.obter_pdf_osf(osf, completa=False))
+            logger.warn('Realizado download da OSF do contribuinte!')
         except Exception as e:
             logger.exception("Erro ao baixar PDF da OSF " + osf + " no PGSF")
             raise WebScraperException(f"Erro ao baixar PDF da OSF {osf} no PGSF: {e}")
@@ -936,414 +909,118 @@ class SeleniumWebScraper:
             raise WebScraperException(f"Erro ao consultar inutilizações de NF-e do CNPJ {cnpj} "
                                       f"na consulta pública: {e}")
 
-    # Além de imprimir Cadesp, aproveita pra pegar os dados mais atuais de endereço e histórico de regime
     def get_full_cadesp(self, ie: str, filename: Path):
-        logger.info('Acessando Cadesp')
-        try:
-            self.__get_driver().get(cadesp_url)
-            # Select "Fazendário" as user type
-            select_tipo_usuario = Select(
-                self.__get_driver().find_element(
-                    By.ID,
-                    "ctl00_conteudoPaginaPlaceHolder_loginControl_TipoUsuarioDropDownList"
-                )
-            )
-            select_tipo_usuario.select_by_visible_text("Fazendário")
-
-            # Click on "Certificado Digital"
-            t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
-                                                       args=[self.__get_driver().title])
-            try:
-                input_certificado = self.__get_driver().find_element(
-                    By.NAME,
-                    "ctl00$conteudoPaginaPlaceHolder$loginControl$FederatedPassiveSignInCertificado$ctl04"
-                )
-                input_certificado.click()
-            except StaleElementReferenceException:
-                input_certificado = self.__get_driver().find_element(
-                    By.NAME,
-                    "ctl00$conteudoPaginaPlaceHolder$loginControl$FederatedPassiveSignInCertificado$ctl04"
-                )
-                input_certificado.click()
-            t.start()
-            t.join()
-
-            # Access "Consulta Cadastral" page by getting URL from page source code
-            cadastro_link = self.__get_driver().find_element(By.XPATH,
-                                                             "//a[contains(text(),'Cadastro')]"
-                                                             )
-            self.__get_driver().get(cadastro_link.get_attribute("href"))
-
-            logger.info('Iniciando download do Cadesp completo do contribuinte')
-            # Type IE and press Enter
-            input_identificacao = self.__get_driver().find_element(By.ID,
-                                                                   "ctl00_conteudoPaginaPlaceHolder_tcConsultaCompleta_TabPanel1_txtIdentificacao"
-                                                                   )
-            input_identificacao.clear()
-            input_identificacao.send_keys(ie + Keys.RETURN)
-
-            self.__get_driver().find_element(By.ID,
-                                             "ctl00_conteudoPaginaPlaceHolder_dlConsultaCompletaEstabelecimento_ctl01_linkButtonEstabelecimento"
-                                             ).click()
-
-            # Começa na aba Estabelecimento/Geral
-            dados_atuais = {'inicio_situacao': \
-                                self.__get_driver().find_element(
-                                    By.XPATH, "//td[contains(text(), 'Data Início da Situação:')]") \
-                                    .find_element(By.XPATH, "following-sibling::*").text
-                            }
-
-            # Click on Endereço/Contato tab
-            self.__get_driver().find_element(
-                By.ID, "ctl00_conteudoPaginaPlaceHolder_btnEnderecoContato").click()
-
-            # preenche dados do endereço atual no dicionario de output
-            dados_atuais.update({
-                'empresa': self.__get_driver().find_element(
-                    By.XPATH, "//td[contains(text(), 'Nome Empresarial:')]")
-                .find_element(By.XPATH, "following-sibling::*").text,
-                'situacao': self.__get_driver().find_element(
-                    By.XPATH, '//span[contains(text(), "Situa")]//parent::td').text[11:],
-                'inicio_inscricao': self.__get_driver().find_element(
-                    By.XPATH, '//span[contains(text(), "no Estado")]//parent::td').text[-10:],
-                'logradouro': self.__get_driver().find_element(By.XPATH,
-                                                               "//td[contains(text(), 'Logradouro:')]")
-                .find_element(By.XPATH, "following-sibling::*").text,
-                'numero': self.__get_driver().find_element(By.XPATH,
-                                                           "//td[contains(text(), 'N°:')]")
-                .find_element(By.XPATH, "following-sibling::*").text,
-                'complemento': self.__get_driver().find_element(By.XPATH,
-                                                                "//td[contains(text(), 'Complemento:')]")
-                .find_element(By.XPATH, "following-sibling::*").text,
-                'bairro': self.__get_driver().find_element(By.XPATH,
-                                                           "//td[contains(text(), 'Bairro:')]")
-                .find_element(By.XPATH, "following-sibling::*").text,
-                'cidade': self.__get_driver().find_element(By.XPATH,
-                                                           "//td[contains(text(), 'Município:')]")
-                .find_element(By.XPATH, "following-sibling::*").text,
-                'uf': self.__get_driver().find_element(By.XPATH,
-                                                       "//td[contains(text(), 'UF:')]")
-                .find_element(By.XPATH, "following-sibling::*").text,
-                'cep': self.__get_driver().find_element(By.XPATH,
-                                                        "//td[contains(text(), 'CEP:')]")
-                .find_element(By.XPATH, "following-sibling::*").text
-            })
-
-            # Click on Empresa/Geral tab
-            self.__get_driver().find_element(
-                By.ID, "ctl00_conteudoPaginaPlaceHolder_btnEmpresaGeral").click()
-
-            # Levanta dados de histórico de regime estadual e adiciona no output
-            self.__get_driver().find_element(
-                By.ID, "ctl00_conteudoPaginaPlaceHolder_dlEmpresaGeral_ctl01_btnHistoricoRegimeApuracao").click()
-            dados_atuais['historico_regime'] = []
-
-            elementos = self.__get_driver().find_elements(
-                By.XPATH, '//table[@id="ctl00_conteudoPaginaPlaceHolder_dlHistoricoRegimeApuracao"]/'
-                          'tbody/tr/td/table/tbody/tr/td[@class="dadoDetalhe"]')
-            num_historico = 0
-            while num_historico * 5 < len(elementos):
-                inicio = elementos[num_historico * 5].text
-                fim = elementos[num_historico * 5 + 1].text
-                regime = elementos[num_historico * 5 + 2].text
-                dados_atuais['historico_regime'].append([inicio, fim, regime])
-                num_historico += 1
-
-            self.__get_driver().find_element(
-                By.ID, "ctl00_conteudoPaginaPlaceHolder_btnVoltar").click()
-
-            # Manda imprimir extrato completo
-            self.__get_driver().find_element(By.ID,
-                                             "ctl00_conteudoPaginaPlaceHolder_btnImprimir"
-                                             ).click()
-            self.__get_driver().find_element(By.ID,
-                                             'ctl00_conteudoPaginaPlaceHolder_btnMarcar'
-                                             ).click()
-            time.sleep(1)
-            self.__get_driver().find_element(By.ID,
-                                             'ctl00_conteudoPaginaPlaceHolder_btnMenuImprimir'
-                                             ).click()
-            # TODO fazer funcionar a redução de periodo em relatorios launchpad quando dá pau
-            self.__save_as_pdf(filename)
-            return dados_atuais
-
-        except Exception as e:
-            if isinstance(e, IOError) and 'QPainter::begin(): Returned false' in str(e):
-                raise WebScraperException('Arquivo Cadesp.pdf está aberto, feche-o e tente novamente!')
-            else:
-                logger.exception("Erro ao baixar Cadesp da IE " + ie)
-                raise WebScraperException(f"Erro ao baixar Cadesp da IE {ie}: {e}")
+        cadesp = _PepeSingleton.get(pepe.Cadesp)
+        logger.info(f'Baixando no Cadesp extrato de {ie}...')
+        cadesp.baixar_pdf_estabelecimento(ie, str(filename.absolute()))
 
     def get_conta_fiscal(self, ie: str, ano_inicio: int, ano_fim: int, filename: Path):
         # caso o saldo do último mês do ano_fim seja credor, pega outros anos até ficar negativo
         tmp_files = []
         try:
-            logger.info("Acessando a Conta Fiscal")
-            self.__get_driver().get(pfe_url)
-
-            # Select "Fazendário" as user profile
-            radio_fazendario = self.__get_driver().find_element(By.ID, "ConteudoPagina_rdoListPerfil_2")
-            radio_fazendario.click()
-
-            # Click on "Certificado Digital"
-            t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
-                                                       args=[self.__get_driver().title])
-            try:
-                input_certificado = self.__get_driver().find_element(By.ID,
-                                                                     "ConteudoPagina_btn_Login_Certificado_WebForms")
-                input_certificado.click()
-            except StaleElementReferenceException:
-                input_certificado = self.__get_driver().find_element(By.ID,
-                                                                     "ConteudoPagina_btn_Login_Certificado_WebForms")
-                input_certificado.click()
-            t.start()
-            t.join()
-
-            self.__get_driver().find_element(By.LINK_TEXT, "Conta Fiscal do ICMS e Parcelamento").click()
-
-            self.__get_driver().find_element(By.ID, "MainContent_txtCriterioConsulta").send_keys(ie)
-
+            cf = _PepeSingleton.get(pepe.ContaFiscalICMS)
             ano = ano_inicio
             cf_credora = False
             while ano <= ano_fim or (ano <= datetime.date.today().year and cf_credora):
-                Select(self.__get_driver().find_element(By.ID, "MainContent_ddlReferencia")).select_by_visible_text(
-                    str(ano))
-                self.__get_driver().find_element(By.ID, "MainContent_chkrecolhimento").click()
-                self.__get_driver().find_element(By.ID, "MainContent_btnConsultar").click()
-                try:
-                    time.sleep(1)
-                    self.__get_driver().find_element(By.ID, "plus").click()
-                    if ano >= ano_fim:
-                        ultimo_mes = self.driver.find_elements(By.XPATH,
-                                                               "//span[contains(@id, "
-                                                               "'MainContent_rptContaFiscalMes_gdvResultadoDetalhe_')]")[
-                                         -1].get_attribute('id')[:53]
-                        if [e.text for e in self.driver.find_elements(By.XPATH,
-                                                                      "//span[contains(@id, '" + ultimo_mes + "')]")
-                            if e.text.find('SALDO CREDOR') >= 0]:
-                            cf_credora = True
-                except NoSuchElementException:
-                    # pode ser que o período não tenha informações. A confirmar
-                    erro = self.__get_driver().find_element(By.ID, "MainContent_lblMensagemDeErro").text
-                    if not erro.startswith("Contribuinte sem informações"):
-                        raise WebScraperException(erro)
-                    else:
-                        continue
-                time.sleep(1)
-                self.__get_driver().find_element(By.ID, "MainContent_lnkImprimeContaFiscal").click()
-
+                logger.info(f"Consultando Conta Fiscal de {ano}...")
+                html = cf.consulta_conta_fiscal_icms_declarado(ie=ie, referencia=ano, recolhimentos_especiais=True)
+                if ano >= ano_fim:
+                    soup = BeautifulSoup(html, features='lxml')
+                    meses_existentes_tags = soup.find_all("input", {
+                        "name": re.compile(
+                            r"ctl00\$MainContent\$rptContaFiscalMes\$ctl\d+\$gdvResultadoDetalhe\$ctl\d+\$hdfReferencia")
+                    })
+                    ultimo_mes = int(sorted(set([t['value'] for t in meses_existentes_tags]))[-1][:2])
+                    tag_id_ultimo_mes = \
+                        [t['id'] for t in meses_existentes_tags if
+                         t['value'] == f'{str(ultimo_mes).zfill(2)}{str(ano)[-2:]}'][0]
+                    id_ultimo_mes = re.search(r'.*_\d+_', tag_id_ultimo_mes).group(0)
+                    tags_texto_ultimo_mes = soup.find_all("span", {"id": re.compile(rf"{id_ultimo_mes}.*")})
+                    cf_credora = any([t.text.find('SALDO CREDOR') >= 0 for t in tags_texto_ultimo_mes])
                 novo_nome = self.tmp_path / f'Conta Fiscal {ano}.pdf'
-                move_downloaded_file(self.tmp_path, 'ListaImpressaoContaFiscalNovo.pdf', novo_nome)
+                logger.info(f"Gerando impressão da Conta Fiscal de {ano}...")
+                cf.imprime_conta_fiscal_icms_declarado(html, str(novo_nome.absolute()))
                 tmp_files.append(novo_nome)
                 ano += 1
             PDFExtractor.merge_pdfs(filename, tmp_files)
-
         except Exception as e:
             logger.exception("Erro ao baixar Conta Fiscal da IE " + ie)
             raise WebScraperException(f"Erro ao baixar Conta Fiscal da IE {ie}: {e}")
 
-    def get_gias_apuracao(self, ie: str, inicio: datetime.date, fim: datetime.date, evento: threading.Event) \
+    def get_gias_apuracao(self, ie: str, inicio: datetime.date, fim: datetime.date,
+                          evento: threading.Event | None = None,
+                          apenas_ultima_entregue=False) \
             -> list[dict]:
         try:
             logger.info("Acessando apuração de GIA")
-            self.__get_driver().get(pfe_url)
-
-            # Select "Fazendário" as user profile
-            radio_fazendario = self.__get_driver().find_element(By.ID, "ConteudoPagina_rdoListPerfil_2")
-            radio_fazendario.click()
-
-            # Click on "Certificado Digital"
-            t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
-                                                       args=[self.__get_driver().title])
-            try:
-                input_certificado = self.__get_driver().find_element(By.ID,
-                                                                     "ConteudoPagina_btn_Login_Certificado_WebForms")
-                t.start()
-                input_certificado.click()
-            except StaleElementReferenceException:
-                input_certificado = self.__get_driver().find_element(By.ID,
-                                                                     "ConteudoPagina_btn_Login_Certificado_WebForms")
-                t.start()
-                input_certificado.click()
-            t.join()
-
-            WebDriverWait(self.__get_driver(), 10).until(EC.visibility_of_element_located((By.LINK_TEXT, "Nova GIA")))
-            self.__get_driver().find_element(By.LINK_TEXT, "Nova GIA").click()
-            self.__get_driver().find_element(By.LINK_TEXT, "Consulta Completa").click()
-
-            logger.info(f"Consultando GIAs de {ie} entre {inicio} e {fim}")
-            self.__get_driver().find_element(By.ID, "ie").send_keys(ie)
-            Select(self.__get_driver().find_element(By.NAME, "refInicialMes")).select_by_value(
-                str(inicio.month))
-            Select(self.__get_driver().find_element(By.NAME, "refInicialAno")).select_by_value(
-                str(inicio.year))
-            Select(self.__get_driver().find_element(By.NAME, "refFinalMes")).select_by_value(
-                str(fim.month))
-            Select(self.__get_driver().find_element(By.NAME, "refFinalAno")).select_by_value(
-                str(fim.year))
-            self.__get_driver().find_element(By.NAME, "botao").click()
-
-            tabela = self.__get_driver().find_element(By.CLASS_NAME, 'RESULTADO-TABELA')
-            linhas = tabela.find_elements(By.CLASS_NAME, 'CORPO-TEXTO-FUNDO')
-            referencias = [linha.get_attribute('onclick') for linha in linhas if 'Recusada' not in linha.text]
+            pfe = _PepeSingleton.get(pepe.Pfe)
             dados_gias = []
-            for link in referencias:
-                if evento.is_set():
-                    return []
-                self.__get_driver().execute_script(link)
-                self.__get_driver().find_element(By.LINK_TEXT, "10 - Apuração do ICMS - Operações Próprias").click()
-                dic_referencia = {
-                    'referencia': self.__get_driver().find_element(
-                        By.XPATH, "/html/body/form/table[2]/tbody/tr[7]/td[2]/span").text,
-                    'tipo': self.__get_driver().find_element(
-                        By.XPATH, "/html/body/form/table[2]/tbody/tr[7]/td[1]/span").text,
-                    'entrega': self.__get_driver().find_element(
-                        By.XPATH, "/html/body/form/table[2]/tbody/tr[7]/td[7]/span").text,
-                    'saidas_debito': self.__get_driver().find_element(
-                        By.XPATH, '/html/body/form/table[3]/tbody/tr[2]/td[4]/span').text,
-                    'outros_debitos': self.__get_driver().find_element(
-                        By.XPATH, '/html/body/form/table[3]/tbody/tr[3]/td[4]/span').text,
-                    'estorno_credito': self.__get_driver().find_element(
-                        By.XPATH, '/html/body/form/table[3]/tbody/tr[4]/td[4]/span').text,
-                    'entradas_credito': self.__get_driver().find_element(
-                        By.XPATH, '/html/body/form/table[3]/tbody/tr[7]/td[4]/span').text,
-                    'outros_creditos': self.__get_driver().find_element(
-                        By.XPATH, '/html/body/form/table[3]/tbody/tr[8]/td[4]/span').text,
-                    'estorno_debito': self.__get_driver().find_element(
-                        By.XPATH, '/html/body/form/table[3]/tbody/tr[9]/td[4]/span').text,
-                    'saldo_credor_anterior': self.__get_driver().find_element(
-                        By.XPATH, '/html/body/form/table[3]/tbody/tr[11]/td[4]/span').text,
-                    'saldo_devedor': self.__get_driver().find_element(
-                        By.XPATH, '/html/body/form/table[3]/tbody/tr[14]/td[4]/span').text,
-                    'saldo_credor_a_transportar': self.__get_driver().find_element(
-                        By.XPATH, '/html/body/form/table[3]/tbody/tr[17]/td[4]/span').text,
-                }
-                dados_gias.append(dic_referencia)
-                self.__get_driver().back()
-                self.__get_driver().back()
-            return dados_gias
+            if evento.is_set():
+                return []
+            return pfe.listar_gias(ie, inicio, fim, incluir_recusadas=False,
+                                   apenas_ultima_entregue=apenas_ultima_entregue)
         except Exception as e:
             logger.exception("Erro ao coletar dados de apuração da GIA da IE " + ie)
             raise WebScraperException(f"Erro ao coletar dados de apuração da GIA da IE {ie}: {e}")
 
-    def __go_to_pfe_gias_entregues(self, ie: str, inicio: datetime.date, fim: datetime.date) -> str:
-        logger.info("Acessando apuração de GIA")
-        self.__get_driver().get(pfe_url)
-
-        # Select "Fazendário" as user profile
-        radio_fazendario = self.__get_driver().find_element(By.ID, "ConteudoPagina_rdoListPerfil_2")
-        radio_fazendario.click()
-
-        # Click on "Certificado Digital"
-        t = GeneralFunctions.ThreadWithReturnValue(target=self.__login_certificado_digital,
-                                                   args=[self.__get_driver().title])
-        try:
-            input_certificado = self.__get_driver().find_element(By.ID,
-                                                                 "ConteudoPagina_btn_Login_Certificado_WebForms")
-            t.start()
-            input_certificado.click()
-        except StaleElementReferenceException:
-            input_certificado = self.__get_driver().find_element(By.ID,
-                                                                 "ConteudoPagina_btn_Login_Certificado_WebForms")
-            t.start()
-            input_certificado.click()
-        t.join()
-
-        WebDriverWait(self.__get_driver(), 10).until(
-            EC.visibility_of_element_located((By.LINK_TEXT, "Nova GIA")))
-        home_url = self.__get_driver().current_url
-        self.__get_driver().find_element(By.LINK_TEXT, "Nova GIA").click()
-        self.__get_driver().find_element(By.LINK_TEXT, "Consulta Completa").click()
-
-        logger.info(f"Consultando GIAs da {ie}")
-        self.__get_driver().find_element(By.ID, "ie").send_keys(ie)
-        Select(self.__get_driver().find_element(By.NAME, "refInicialMes")).select_by_value(
-            str(inicio.month))
-        Select(self.__get_driver().find_element(By.NAME, "refInicialAno")).select_by_value(
-            str(inicio.year))
-        Select(self.__get_driver().find_element(By.NAME, "refFinalMes")).select_by_value(
-            str(fim.month))
-        Select(self.__get_driver().find_element(By.NAME, "refFinalAno")).select_by_value(
-            str(fim.year))
-        self.__get_driver().find_element(By.NAME, "botao").click()
-        return home_url
-
     def __print_gia_apuracao_subpage(self, ie: str, apuracoes: list[datetime.date],
-                                     detail_name: str, codes: list[str]) -> list[Path]:
-        home_url = None
+                                     relatorio: GIARelatorio, subrelatorios: list[GIASubRelatorio]) -> list[Path]:
         try:
-            home_url = self.__go_to_pfe_gias_entregues(ie, apuracoes[0], apuracoes[-1])
+            dados_gias = self.get_gias_apuracao(ie, apuracoes[0], apuracoes[-1],
+                                                apenas_ultima_entregue=True)
 
-            tabela = self.__get_driver().find_element(By.CLASS_NAME, 'RESULTADO-TABELA')
-            linhas = tabela.find_elements(By.CLASS_NAME, 'CORPO-TEXTO-FUNDO')
-            # apenas interessado nas referencias não recusadas
-            gias = [(linha.text[3:7] + linha.text[:2], linha.get_attribute('onclick'), int(linha.text[-8:]))
-                    for linha in linhas if 'Recusada' not in linha.text]
-            # ordena por protocolo mais recente
-            gias.sort(key=lambda tupla: tupla[2], reverse=True)
+            pfe = _PepeSingleton.get(pepe.Pfe)
+            referencias = [d.strftime('%m/%Y') for d in apuracoes]
             paths = {}
-            referencias = [d.strftime('%Y%m') for d in apuracoes]
-            for gia in gias:
-                if gia[0] not in referencias or gia[0] in paths:
-                    # apenas interessado na última referencia enviada
+            for gia in dados_gias:
+                if gia['referencia'] not in referencias:
                     continue
-                link = gia[1]
-                logger.info(f'Imprimindo GIA {detail_name} da referência {gia[0]}...')
-                self.__get_driver().execute_script(link)
-                time.sleep(1)
-                self.__get_driver().find_element(By.LINK_TEXT, "10 - Apuração do ICMS - Operações Próprias").click()
-                time.sleep(1)
-                paths[gia[0]] = [self.tmp_path / f'giaapuracao{gia[0]}.pdf']
-                self.__save_as_pdf(paths[gia[0]][0])
-                for code in codes:
-                    self.__get_driver().find_element(By.LINK_TEXT, code).click()
+                logger.info(f'Imprimindo GIA {relatorio.value} da referência {gia["referencia"]}...')
+
+                referencia = f'{gia["referencia"][3:]}{gia["referencia"[:2]]}'
+                path_apuracao = self.tmp_path / f'giaapuracao{referencia}.pdf'
+                pfe.baixar_pdf_gia(ie, gia['protocolo'], gia['controle'],
+                                   str(path_apuracao.absolute()), GIARelatorio.GIA_RELATORIO_APURACAO_PROPRIA)
+                paths[referencia] = [path_apuracao]
+                for subrelatorio in subrelatorios:
                     try:
-                        self.__get_driver().find_element(By.CLASS_NAME, 'RESULTADO-ERRO')
-                    except NoSuchElementException:
-                        # apenas adiciona a página de detalhe se ela tem conteúdo, sem erro
-                        pdf_file = self.tmp_path / f'giadetalhe{code}-{gia[0]}.pdf'
-                        self.__save_as_pdf(pdf_file)
-                        paths[gia[0]].append(pdf_file)
-                    self.__get_driver().back()
-                self.__get_driver().back()
-                self.__get_driver().back()
+                        pdf_file = self.tmp_path / f'giadetalhe{subrelatorio.value}-{referencia}.pdf'
+                        pfe.baixar_pdf_gia(ie, gia['protocolo'], gia['controle'],
+                                           str(path_apuracao.absolute()),
+                                           GIARelatorio.GIA_RELATORIO_APURACAO_PROPRIA,
+                                           subrelatorio)
+                        paths[referencia].append(pdf_file)
+                    except KeyError:
+                        # a página de detalhe não tem conteúdo, então desiste dela
+                        pass
             return [pdf for k in sorted(paths.keys()) for pdf in paths[k]]
         except Exception as e:
             logger.exception("Erro ao coletar dados de apuração da GIA da IE " + ie)
             raise WebScraperException(f"Erro ao coletar dados de apuração da GIA da IE {ie}: {e}")
-        finally:
-            # encerra sessão, caso alguém entre no PFE na mesma sessão do navegador
-            if home_url is not None:
-                self.__get_driver().get(home_url)
-                self.__get_driver().find_element(By.XPATH,
-                                                 '/html/body/div[2]/section/div/div/div/div[2]/div/div[2]/a[3]').click()
 
     def print_gia_entregas(self, ie: str, inicio: datetime.date, fim: datetime.date) -> list[Path]:
-        home_url = None
         try:
-            home_url = self.__go_to_pfe_gias_entregues(ie, inicio, fim)
             logger.info(f'Imprimindo extrato de GIAs entregues pela IE {ie}...')
+            # TODO resolver
             relatorio = self.tmp_path / 'giaentregas.pdf'
             self.__save_as_pdf(relatorio)
             return [relatorio]
         except Exception as e:
             logger.exception("Erro ao levantar GIAs da IE " + ie)
             raise WebScraperException(f"Erro ao levantar GIAs da IE {ie}: {e}")
-        finally:
-            # encerra sessão, caso alguém entre no PFE na mesma sessão do navegador
-            if home_url:
-                self.__get_driver().get(home_url)
-                self.__get_driver().find_element(By.XPATH,
-                                                 '/html/body/div[2]/section/div/div/div/div[2]/div/div[2]/a[3]').click()
 
     def print_gia_apuracao(self, ie: str, apuracoes: list[datetime.date]) -> list[Path]:
-        return self.__print_gia_apuracao_subpage(ie, apuracoes, 'Apuração', [])
+        return self.__print_gia_apuracao_subpage(ie, apuracoes, GIARelatorio.GIA_RELATORIO_APURACAO_PROPRIA, [])
 
     def print_gia_outros_debitos(self, ie: str, apuracoes: list[datetime.date]) -> list[Path]:
-        return self.__print_gia_apuracao_subpage(ie, apuracoes, 'Ajustes de Débitos', ['052', '053'])
+        return self.__print_gia_apuracao_subpage(ie, apuracoes, GIARelatorio.GIA_RELATORIO_APURACAO_PROPRIA,
+                                                 [GIASubRelatorio.GIA_RELATORIO_APURACAO_OUTROS_DEBITOS,
+                                                  GIASubRelatorio.GIA_RELATORIO_APURACAO_ESTORNO_CREDITO])
 
     def print_gia_outros_creditos(self, ie: str, apuracoes: list[datetime.date]) -> list[Path]:
-        return self.__print_gia_apuracao_subpage(ie, apuracoes, 'Outros Créditos', ['057', '058'])
+        return self.__print_gia_apuracao_subpage(ie, apuracoes, GIARelatorio.GIA_RELATORIO_APURACAO_PROPRIA,
+                                                 [GIASubRelatorio.GIA_RELATORIO_APURACAO_OUTROS_CREDITOS,
+                                                  GIASubRelatorio.GIA_RELATORIO_APURACAO_ESTORNO_DEBITO])
 
     # levanta dados pessoais do AFR via PGSF Produtividade
     def get_dados_afr(self, config):
@@ -1727,10 +1404,6 @@ class SeleniumWebScraper:
             self.__get_driver().back()
         return opcoes
 
-    def upload_files_to_tibco(self):
-        # endereco para criar novo AIIM no Tibco:
-        "https://ipe-workspace.intra.fazenda.sp.gov.br/TIBCOiPClnt/externalform.htm?startcasethroughurl=true&dateformat=dd%2FMM%2Fyy&decimalsymbol=%2C&groupingsymbol=.&apurl=https%3A%2F%2Fipe-workspace.intra.fazenda.sp.gov.br%2FTIBCOActProc%2FActionProcessor.aspx&action=%3C%3Fxml%20version%3D%221.0%22%20encoding%3D%22UTF-8%22%3F%3E%3Cap%3AAction%20xmlns%3Aap%3D%22http%3A%2F%2Ftibco.com%2Fbpm%2Factionprocessor%22%20xmlns%3Asso%3D%22http%3A%2F%2Ftibco.com%2Fbpm%2Fsso%2Ftypes%22%3E%3Cap%3AForm%3E%3Cap%3AStartCaseForm%20Id%3D%22_jsx_0_48_XML_ap%22%3E%3Csso%3AProcTag%3Eprod1%7CDEAT0010%7C2%7C1%3C%2Fsso%3AProcTag%3E%3Csso%3ADescription%2F%3E%3Csso%3ASubProcPrecedence%3EswPrecedenceR%3C%2Fsso%3ASubProcPrecedence%3E%3C%2Fap%3AStartCaseForm%3E%3C%2Fap%3AForm%3E%3C%2Fap%3AAction%3E"
-
     # apenas faz download de EFDs que tenham referencia entre inicio e fim,
     # além de apenas pegar a última remessa de cada referencia
     # retorna lista de todas as efds (originais e substitutas) e datas de entrega
@@ -1830,9 +1503,9 @@ class SeleniumWebScraper:
             except Exception:
                 pass  # se não apagar arquivos temporarios, deixa quieto
 
-    def get_launchpad_report(self, report_name: str, downloaded_file_name: str, evento: threading.Event,
-                             window: sg.Window, *parametros,
-                             relatorio_anterior: Future = None) -> Path:
+    def get_launchpad_report(self, report_name: str, downloaded_file_name: str, evento: threading.Event | None,
+                             window: sg.Window | None, parametros: list,
+                             relatorio_anterior: Future = None) -> Path | None:
         try:
             modo_exportacao = launchpad_report_options[report_name]
             if window:
@@ -1891,323 +1564,389 @@ class SeleniumWebScraper:
                     except concurrent.futures.CancelledError:
                         logger.debug(f'Desistiu de executar relatório {report_name},'
                                      f' pois execução de período anterior foi cancelada')
-                        return
+                        return None
                     except concurrent.futures.TimeoutError:
                         if evento.is_set():
                             if window:
                                 window.write_event_value('-DATA-EXTRACTION-STATUS-',
                                                          [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'STOP'])
-                            return
-
-            with self.launchpad_lock:
-                if not self.running_launchpad:
-                    logger.info('Acessando Launchpad...')
-
-                    try:
-                        self.__get_driver().get("https://teste:teste@srvbo-v42.intra.fazenda.sp.gov.br/BOE/BI")
-                    except WebDriverException as we:
-                        if we.msg.find('ERR_NAME_NOT_RESOLVED') >= 0:
-                            if window:
-                                window.write_event_value('-DATA-EXTRACTION-STATUS-',
-                                                         [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
-                            raise WebScraperException('Não foi possível acessar o site do Launchpad! '
-                                                      'Verifique se o computador está conectado na rede da Sefaz.')
-                    self.__get_driver().switch_to.frame("servletBridgeIframe")
-                    self.__get_driver().find_element(By.ID, "_id0:logon:USERNAME").send_keys(
-                        GeneralConfiguration.get().intranet_login)
-                    self.__get_driver().find_element(By.ID, "_id0:logon:PASSWORD").send_keys(
-                        GeneralConfiguration.get().intranet_pass)
-                    self.__get_driver().find_element(By.ID, "_id0:logon:logonButton").click()
-                    self.__get_driver().find_element(By.ID, "yui-gen1-button").click()
-                    self.running_launchpad = True
-
-                if evento.is_set():
-                    if window:
-                        window.write_event_value('-DATA-EXTRACTION-STATUS-',
-                                                 [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'STOP'])
-                    return None
-
-            while True:
-                self.launchpad_lock.acquire()
-                self.__get_driver().switch_to.default_content()
-                self.__get_driver().switch_to.frame("servletBridgeIframe")
-                abas = [tab.text for tab in self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
-                        if tab.text]
-                # verifica se está no limite de abas abertas (sempre tem 2 abas)
-                if len(abas) < LAUNCHPAD_MAX_CONCURRENT_REPORTS + 2:
-                    break
-                self.launchpad_lock.release()
-                time.sleep(LAUNCHPAD_TIME_WAIT_SECONDS)
-
-            try:
-                self.__get_driver().switch_to.default_content()
-                self.__get_driver().switch_to.frame("servletBridgeIframe")
-                logger.info(f"Solicitando relatório {report_name} no Launchpad, parâmetros {parametros}...")
-                self.__get_driver().find_element(By.LINK_TEXT, "Documentos").click()
-                self.__get_driver().find_element(By.ID, "infoviewSearchInput").clear()
-                pesquisa = modo_exportacao.get('Pesquisa', report_name)
-                self.__get_driver().find_element(By.ID, "infoviewSearchInput").send_keys(pesquisa)
-                self.__get_driver().find_element(By.ID, "searchButton").click()
-
-                # localiza relatório na pagina de pesquisa
-                # faz 3 tentativas, pois a atualizacao da pagina de pesquisa é por ajax
-                tentativas = 0
-                while tentativas < 3:
-                    try:
-                        self.__get_driver().switch_to.default_content()
-                        self.__get_driver().switch_to.frame("servletBridgeIframe")
-                        subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
-                                               self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
-                        self.__get_driver().switch_to.frame(subframe)
-                        ActionChains(self.__get_driver()) \
-                            .double_click(
-                            self.__get_driver().find_element(By.XPATH, f'//tr[@aria-label="{report_name}"]')) \
-                            .perform()
-                        logger.debug(f'Encontrei na pesquisa o link pra {report_name}, duplo click feito...')
-                        self.__get_driver().switch_to.parent_frame()
-                        aba_atual = \
-                            [tab.text for tab in self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
-                             if 'Active' in tab.get_attribute('class').split()][0]
-                        if aba_atual == 'Documentos':
-                            logger.debug('Não fez duplo clique, vamos tentar dando enter')
-                            subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
-                                                   self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
-                            self.__get_driver().switch_to.frame(subframe)
-                            elemento_buscado = self.__get_driver().find_element(By.XPATH,
-                                                                                f'//tr[@aria-label="{report_name}"]')
-                            elemento_buscado.click()
-                            elemento_buscado.send_keys(Keys.ENTER)
-                            time.sleep(1)
-                            self.__get_driver().switch_to.default_content()
-                            self.__get_driver().switch_to.frame("servletBridgeIframe")
-                            aba_atual = \
-                                [tab.text for tab in
-                                 self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
-                                 if 'Active' in tab.get_attribute('class').split()][0]
-                            if aba_atual == 'Documentos':
-                                logger.debug('Insiste em não sair da página de busca, vamos retentar depois')
-                                raise NoSuchElementException()
-                        else:
-                            break
-                    except NoSuchElementException:
-                        tentativas = tentativas + 1
-                        time.sleep(2)
-
-                if tentativas == 3:
-                    raise WebScraperException(f'Não consegui localizar na busca do Launchpad '
-                                              f'relatório de nome "{report_name}" - verifique se '
-                                              f'não há algum erro de digitação!')
-
-                # subframe é o frame da aba selecionada
-                self.__get_driver().switch_to.default_content()
-                self.__get_driver().switch_to.frame("servletBridgeIframe")
-                WebDriverWait(self.__get_driver(), 20).until(
-                    EC.invisibility_of_element_located((By.CLASS_NAME, "spinnerMask")))
-                WebDriverWait(self.__get_driver(), 20).until(
-                    EC.visibility_of_element_located((By.LINK_TEXT, report_name)))
-                self.__get_driver().find_element(By.LINK_TEXT, report_name).click()
-                subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
-                                       self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
-                self.__get_driver().switch_to.frame(subframe)
-                self.__get_driver().switch_to.frame(self.__get_driver().find_element(By.ID, "webiViewFrame"))
-                self.__get_driver().switch_to.frame(self.__get_driver().find_element(By.ID, "_iframeleftPaneW"))
-                i = 1
-                while i <= len(parametros):
-                    # estão usando listbox para alguns casos. vou ignorar por enquanto, pois está selecionada
-                    # uma opção padrão que atende (situação = 0)
-                    try:
-                        self.__get_driver().find_element(By.ID, f"PV{i}").clear()
-                        self.__get_driver().find_element(By.ID, f"PV{i}").send_keys(parametros[i - 1])
-                    except NoSuchElementException:
-                        pass
-                    i = i + 1
-                self.__get_driver().find_element(By.ID, "PV1").send_keys(Keys.ENTER)
-                if evento.is_set():
-                    if window:
-                        window.write_event_value('-DATA-EXTRACTION-STATUS-',
-                                                 [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'STOP'])
-                    self.launchpad_lock.release()
-                    return None
-                logger.info(f"Iniciada execução do relatório {report_name} no Launchpad. Aguardando resposta...")
-
-                # faz com que vá pra janela principal, para poder verificar depois se acabou
-                self.__get_driver().switch_to.default_content()
-                self.__get_driver().switch_to.frame("servletBridgeIframe")
-                self.launchpad_lock.release()
-            except Exception as e:
-                if window:
-                    window.write_event_value('-DATA-EXTRACTION-STATUS-',
-                                             [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
-                self.launchpad_lock.release()
-                raise e
-
-            # tempo máximo de espera para um relatório ficar pronto
-            tempo_maximo = time.time() + LAUNCHPAD_MAX_TIME_WAIT_SECONDS
-            ultimo_tempo_mostrado = 0
-            inicio_execucao = time.time()
-            try:
-                while True:
-                    # o botão que tem que procurar quando terminou a consulta
-                    self.launchpad_lock.acquire()
-                    try:
-                        # muda de aba no Launchpad pra aba da thread
-                        self.__get_driver().switch_to.default_content()
-                        self.__get_driver().switch_to.frame("servletBridgeIframe")
-                        self.__get_driver().find_element(By.LINK_TEXT, report_name).click()
-                        subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
-                                               self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
-                        self.__get_driver().switch_to.frame(subframe)
-                        self.__get_driver().switch_to.frame(self.__get_driver().find_element(By.ID, "webiViewFrame"))
-
-                        # verifica se ocorreu mensagem de erro
-                        try:
-                            msg = self.__get_driver().find_element(By.ID, 'dlg_txt_alertDlg').text
-                            if msg.find('não pode se conectar') >= 0 or msg.find('erro de banco de dados') >= 0:
-                                raise WebScraperException(f'Launchpad desconectou do servidor: {msg}')
-                            if msg.find('Controle Acesso OSF') >= 0:
-                                raise WebScraperException('OSF não liberada no Launchpad para download de relatório. '
-                                                          'Talvez entrou em execução hoje mesmo?')
-                        except NoSuchElementException:
-                            pass
-
-                        WebDriverWait(self.__get_driver(), 1).until(
-                            EC.invisibility_of_element_located((By.ID, "Btn_waitDlg_cancelButton")))
-                        # se chegou aqui, é porque o popup de espera de execução fechou sozinho!
-                        break
-                    except TimeoutException:
-                        # ainda não ficou pronto, dorme um tempo pra ver se resolve
-                        if tempo_maximo - time.time() > 0:
-                            # apenas faz print a cada LAUNCH_TIME_REPORT_MINUTES minutos
-                            minutos_decorridos = int((time.time() - inicio_execucao) / 60)
-                            if minutos_decorridos >= ultimo_tempo_mostrado + LAUNCHPAD_TIME_REPORT_MINUTES:
-                                ultimo_tempo_mostrado = minutos_decorridos
-                                logger.info(
-                                    f'Relatório {report_name} em execução, aguardando no máximo '
-                                    f'mais {int((tempo_maximo - time.time()) / 60)} minutos...')
-                        self.__get_driver().switch_to.default_content()
-                        self.__get_driver().switch_to.frame("servletBridgeIframe")
-                        self.launchpad_lock.release()
-                        if evento.is_set():
-                            if window:
-                                window.write_event_value('-DATA-EXTRACTION-STATUS-',
-                                                         [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'STOP'])
                             return None
-                        if time.time() > tempo_maximo:
-                            if window:
-                                window.write_event_value('-DATA-EXTRACTION-STATUS-',
-                                                         [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
-                            logger.warning(f'Relatório {report_name} NÃO FOI BAIXADO, '
-                                           f'talvez tenha ocorrido problema no Launchpad. Tente novamente mais tarde.')
-                            raise WebScraperTimeoutException(report_name)
-                        time.sleep(LAUNCHPAD_TIME_WAIT_SECONDS)
 
-                logger.info(f'Relatório {report_name} pronto, tentarei fazer download...')
+            if modo_exportacao.get('ID') is not None:
+                result = self.__get_launchpad_report_through_pepe(report_name, original_report_filename,
+                                                                  evento, window, parametros)
+            else:
+                result = self.__get_launchpad_report_through_selenium(report_name, evento, window, parametros)
 
-                # Nem sempre aparece uma mensagem de alerta ao encerrar o relatório
-                try:
-                    self.__get_driver().find_element(By.ID, "RealBtn_OK_BTN_alertDlg").click()
-                except NoSuchElementException:
-                    pass
-
-                # hora de exportar o resultado
-                self.__get_driver().find_element(By.XPATH, '//*[@title="Exportar"]/tbody/tr[1]/td[2]/div/div').click()
-                if modo_exportacao.get('Tipo', 'Dados') == 'Dados':
-                    self.__get_driver().find_element(By.ID, "check_radioData").click()
-                    checkAll = "check_SelectAllData"
-                else:
-                    checkAll = "check_SelectAllReport"
-                if len(modo_exportacao['Relatorios']) > 0:
-                    # Tira seleção de todos ds dados a baixar, e escolhe aqueles que interessam
-                    self.__get_driver().find_element(By.ID, checkAll).click()
-
-                dados_ticados = 0
-                for label in self.driver.find_elements(By.XPATH,
-                                                       '//table[@class="dlgContent"]/tbody/tr/td/nobr/label['
-                                                       'starts-with(@id, "label_")]'):
-                    if label.text in modo_exportacao['Relatorios']:
-                        self.__get_driver().find_element(By.ID, label.get_attribute("for")).click()
-                        dados_ticados += 1
-                if dados_ticados < len(modo_exportacao['Relatorios']):
-                    raise WebScraperException(
-                        f'Não foram encontradas nas opções de exportação do relatório {report_name}'
-                        f' todas as opções cadastradas para seleção. Verifique as opções no Launchpad!')
-
-                if modo_exportacao.get('Formato', None) is not None:
-                    Select(self.__get_driver().find_element(By.ID, "fileTypeList")) \
-                        .select_by_visible_text(modo_exportacao['Formato'])
-
-                self.__get_driver().find_element(By.ID, "Btn_OK_BTN_idExportDlg").click()
-
-                if downloaded_file_name:
-                    move_downloaded_file(self.tmp_path, original_report_filename,
-                                         self.download_path / downloaded_file_name,
-                                         30)
-                if 'inicio' in modo_exportacao['Parametros']:
-                    logger.warning(f'Relatório {report_name} '
-                                   f'(período {parametros[modo_exportacao["Parametros"].index("inicio")]} a '
-                                   f'{parametros[modo_exportacao["Parametros"].index("fim")]})'
-                                   f' baixado com sucesso!')
-                else:
-                    logger.warning(f'Relatório {report_name} baixado com sucesso!')
-                if window:
-                    window.write_event_value('-DATA-EXTRACTION-STATUS-',
-                                             [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'END'])
-                return self.download_path / downloaded_file_name
-            except WebScraperException as wse:
-                raise wse
-            except Exception as e:
-                if window:
-                    window.write_event_value('-DATA-EXTRACTION-STATUS-',
-                                             [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
-                logger.exception(f"Ocorreu um problema ao baixar relatório {report_name} no Launchpad")
-                raise WebScraperException(f"Ocorreu um problema ao baixar relatório {report_name} no Launchpad: {e}") \
-                    from e
-            finally:
-                if not self.launchpad_lock.locked():
-                    self.launchpad_lock.acquire()
-                self.__get_driver().switch_to.default_content()
-                self.__get_driver().switch_to.frame("servletBridgeIframe")
-                self.__get_driver().find_element(By.XPATH, f'//a[@title="{report_name}"]//parent::div/a[4]').click()
-                try:
-                    # caso apareça alerta de página não salva
-                    self.__get_driver().switch_to.alert.accept()
-                except NoAlertPresentException:
-                    pass
-                self.launchpad_lock.release()
+            if not result:
+                return None
+            if downloaded_file_name:
+                move_downloaded_file(self.tmp_path, original_report_filename,
+                                     self.download_path / downloaded_file_name,
+                                     30)
+            if 'inicio' in modo_exportacao['Parametros']:
+                logger.warning(f'Relatório {report_name} '
+                               f'(período {parametros[modo_exportacao["Parametros"].index("inicio")]} a '
+                               f'{parametros[modo_exportacao["Parametros"].index("fim")]})'
+                               f' baixado com sucesso!')
+            else:
+                logger.warning(f'Relatório {report_name} baixado com sucesso!')
+            if window:
+                window.write_event_value('-DATA-EXTRACTION-STATUS-',
+                                         [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'END'])
+            return self.download_path / downloaded_file_name
         except WebScraperException as wse:
             raise wse
         except Exception as e:
             logger.exception(f'Ocorreu um problema na execução de relatório {report_name} no Launchpad: {e}')
-            raise WebScraperException(f'Ocorreu um problema na execução de relatório {report_name} no Launchpad') \
+            raise WebScraperException(f'Erro inesperado na execução de relatório {report_name} no Launchpad: {e}') \
                 from e
 
-    def get_expediente_sem_papel(self, expediente: str):
+    def __get_launchpad_report_through_pepe(self, report_name: str, original_report_filename: str,
+                                            evento: threading.Event, window: sg.Window, parametros: list) -> bool:
+        modo_exportacao = launchpad_report_options[report_name]
         try:
-            logger.info(f'Acessando Sem Papel para baixar expediente {expediente}...')
-            self.__sigadoc_login()
+            logger.info('Acessando Launchpad...')
+            requests.get(launchpad_url)
+        except requests.exceptions.ConnectionError:
+            if window:
+                window.write_event_value('-DATA-EXTRACTION-STATUS-',
+                                         [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
+            raise WebScraperException('Não foi possível acessar o Launchpad! '
+                                      'Verifique se o computador está conectado na rede da Sefaz.')
+        # tempo máximo de espera para um relatório ficar pronto
+        tempo_maximo = time.time() + LAUNCHPAD_MAX_TIME_WAIT_SECONDS
+        ultimo_tempo_mostrado = 0
+        inicio_execucao = time.time()
+        p = Process(target=get_launchpad_report,
+                    name=f'LaunchPadPepe_{report_name}',
+                    daemon=True,
+                    args=(report_name,
+                          modo_exportacao["ID"],
+                          modo_exportacao.get("Abas", None),
+                          modo_exportacao.get("Relatorios", None),
+                          self.tmp_path / original_report_filename,
+                          dict(zip(list(range(0, len(parametros))), parametros))))
+        p.start()
+        while True:
+            p.join(LAUNCHPAD_TIME_WAIT_SECONDS)
+            if not p.is_alive():
+                if (self.tmp_path / original_report_filename).is_file():
+                    logger.info(f'Relatório {report_name} baixado!')
+                    return True
+                else:
+                    logger.warning(f'Relatório {report_name} NÃO FOI BAIXADO, '
+                                   f'talvez tenha ocorrido problema no Launchpad. Tente novamente mais tarde.')
+                    return False
+            else:
+                # ainda não ficou pronto, vamos ver se é pra desistir
+                if tempo_maximo - time.time() > 0:
+                    # apenas faz print a cada LAUNCH_TIME_REPORT_MINUTES minutos
+                    minutos_decorridos = int((time.time() - inicio_execucao) / 60)
+                    if minutos_decorridos >= ultimo_tempo_mostrado + LAUNCHPAD_TIME_REPORT_MINUTES:
+                        ultimo_tempo_mostrado = minutos_decorridos
+                        logger.info(
+                            f'Relatório {report_name} em execução, aguardando no máximo '
+                            f'mais {int((tempo_maximo - time.time()) / 60)} minutos...')
+                if evento and evento.is_set():
+                    if window:
+                        window.write_event_value('-DATA-EXTRACTION-STATUS-',
+                                                 [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'STOP'])
+                    p.terminate()
+                    return False
+                if time.time() > tempo_maximo:
+                    if window:
+                        window.write_event_value('-DATA-EXTRACTION-STATUS-',
+                                                 [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
+                    logger.warning(f'Relatório {report_name} NÃO FOI BAIXADO, '
+                                   f'talvez tenha ocorrido problema no Launchpad. Tente novamente mais tarde.')
+                    p.terminate()
+                    raise WebScraperTimeoutException(report_name)
 
-            expediente_limpo = re.sub(r'[^A-Z0-9]', '', expediente)
-            self.__get_driver().get(f"https://www.documentos.spsempapel.sp.gov.br/sigaex/app/arquivo/exibir?"
-                                    f"idVisualizacao=&iframe=false&arquivo={expediente_limpo}A.pdf&completo=1&"
-                                    f"sigla={expediente_limpo}A")
+    def __get_launchpad_report_through_selenium(self, report_name: str, evento: threading.Event,
+                                                window: sg.Window, parametros: list) -> bool:
+        modo_exportacao = launchpad_report_options[report_name]
+        with self.launchpad_lock:
+            if not self.running_launchpad:
+                logger.info('Acessando Launchpad...')
+
+                try:
+                    self.__get_driver().get(launchpad_url)
+                except WebDriverException as we:
+                    if we.msg.find('ERR_NAME_NOT_RESOLVED') >= 0:
+                        if window:
+                            window.write_event_value('-DATA-EXTRACTION-STATUS-',
+                                                     [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
+                        raise WebScraperException('Não foi possível acessar o site do Launchpad! '
+                                                  'Verifique se o computador está conectado na rede da Sefaz.')
+                self.__get_driver().switch_to.frame("servletBridgeIframe")
+                self.__get_driver().find_element(By.ID, "_id0:logon:USERNAME").send_keys(
+                    GeneralConfiguration.get().intranet_login)
+                self.__get_driver().find_element(By.ID, "_id0:logon:PASSWORD").send_keys(
+                    GeneralConfiguration.get().intranet_pass)
+                self.__get_driver().find_element(By.ID, "_id0:logon:logonButton").click()
+                self.__get_driver().find_element(By.ID, "yui-gen1-button").click()
+                self.running_launchpad = True
+
+            if evento.is_set():
+                if window:
+                    window.write_event_value('-DATA-EXTRACTION-STATUS-',
+                                             [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'STOP'])
+                return False
+
+        while True:
+            self.launchpad_lock.acquire()
+            self.__get_driver().switch_to.default_content()
+            self.__get_driver().switch_to.frame("servletBridgeIframe")
+            abas = [tab.text for tab in self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
+                    if tab.text]
+            # verifica se está no limite de abas abertas (sempre tem 2 abas)
+            if len(abas) < LAUNCHPAD_MAX_CONCURRENT_REPORTS + 2:
+                break
+            self.launchpad_lock.release()
+            time.sleep(LAUNCHPAD_TIME_WAIT_SECONDS)
+
+        try:
+            self.__get_driver().switch_to.default_content()
+            self.__get_driver().switch_to.frame("servletBridgeIframe")
+            logger.info(f"Solicitando relatório {report_name} no Launchpad, parâmetros {parametros}...")
+            self.__get_driver().find_element(By.LINK_TEXT, "Documentos").click()
+            self.__get_driver().find_element(By.ID, "infoviewSearchInput").clear()
+            pesquisa = modo_exportacao.get('Pesquisa', report_name)
+            self.__get_driver().find_element(By.ID, "infoviewSearchInput").send_keys(pesquisa)
+            self.__get_driver().find_element(By.ID, "searchButton").click()
+
+            # localiza relatório na pagina de pesquisa
+            # faz 3 tentativas, pois a atualizacao da pagina de pesquisa é por ajax
+            tentativas = 0
+            while tentativas < 3:
+                try:
+                    self.__get_driver().switch_to.default_content()
+                    self.__get_driver().switch_to.frame("servletBridgeIframe")
+                    subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
+                                           self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
+                    self.__get_driver().switch_to.frame(subframe)
+                    ActionChains(self.__get_driver()) \
+                        .double_click(
+                        self.__get_driver().find_element(By.XPATH, f'//tr[@aria-label="{report_name}"]')) \
+                        .perform()
+                    logger.debug(f'Encontrei na pesquisa o link pra {report_name}, duplo click feito...')
+                    self.__get_driver().switch_to.parent_frame()
+                    aba_atual = \
+                        [tab.text for tab in self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
+                         if 'Active' in tab.get_attribute('class').split()][0]
+                    if aba_atual == 'Documentos':
+                        logger.debug('Não fez duplo clique, vamos tentar dando enter')
+                        subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
+                                               self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
+                        self.__get_driver().switch_to.frame(subframe)
+                        elemento_buscado = self.__get_driver().find_element(By.XPATH,
+                                                                            f'//tr[@aria-label="{report_name}"]')
+                        elemento_buscado.click()
+                        elemento_buscado.send_keys(Keys.ENTER)
+                        time.sleep(1)
+                        self.__get_driver().switch_to.default_content()
+                        self.__get_driver().switch_to.frame("servletBridgeIframe")
+                        aba_atual = \
+                            [tab.text for tab in
+                             self.__get_driver().find_elements(By.CLASS_NAME, 'tabItemHolder')
+                             if 'Active' in tab.get_attribute('class').split()][0]
+                        if aba_atual == 'Documentos':
+                            logger.debug('Insiste em não sair da página de busca, vamos retentar depois')
+                            raise NoSuchElementException()
+                    else:
+                        break
+                except NoSuchElementException:
+                    tentativas = tentativas + 1
+                    time.sleep(2)
+
+            if tentativas == 3:
+                raise WebScraperException(f'Não consegui localizar na busca do Launchpad '
+                                          f'relatório de nome "{report_name}" - verifique se '
+                                          f'não há algum erro de digitação!')
+
+            # subframe é o frame da aba selecionada
+            self.__get_driver().switch_to.default_content()
+            self.__get_driver().switch_to.frame("servletBridgeIframe")
+            WebDriverWait(self.__get_driver(), 20).until(
+                EC.invisibility_of_element_located((By.CLASS_NAME, "spinnerMask")))
+            WebDriverWait(self.__get_driver(), 20).until(
+                EC.visibility_of_element_located((By.LINK_TEXT, report_name)))
+            self.__get_driver().find_element(By.LINK_TEXT, report_name).click()
+            subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
+                                   self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
+            self.__get_driver().switch_to.frame(subframe)
+            self.__get_driver().switch_to.frame(self.__get_driver().find_element(By.ID, "webiViewFrame"))
+            self.__get_driver().switch_to.frame(self.__get_driver().find_element(By.ID, "_iframeleftPaneW"))
+            i = 1
+            while i <= len(parametros):
+                # estão usando listbox para alguns casos. vou ignorar por enquanto, pois está selecionada
+                # uma opção padrão que atende (situação = 0)
+                try:
+                    self.__get_driver().find_element(By.ID, f"PV{i}").clear()
+                    self.__get_driver().find_element(By.ID, f"PV{i}").send_keys(parametros[i - 1])
+                except NoSuchElementException:
+                    pass
+                i = i + 1
+            self.__get_driver().find_element(By.ID, "PV1").send_keys(Keys.ENTER)
+            if evento.is_set():
+                if window:
+                    window.write_event_value('-DATA-EXTRACTION-STATUS-',
+                                             [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'STOP'])
+                self.launchpad_lock.release()
+                return False
+            logger.info(f"Iniciada execução do relatório {report_name} no Launchpad. Aguardando resposta...")
+
+            # faz com que vá pra janela principal, para poder verificar depois se acabou
+            self.__get_driver().switch_to.default_content()
+            self.__get_driver().switch_to.frame("servletBridgeIframe")
+            self.launchpad_lock.release()
+        except Exception as e:
+            if window:
+                window.write_event_value('-DATA-EXTRACTION-STATUS-',
+                                         [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
+            self.launchpad_lock.release()
+            raise e
+
+        # tempo máximo de espera para um relatório ficar pronto
+        tempo_maximo = time.time() + LAUNCHPAD_MAX_TIME_WAIT_SECONDS
+        ultimo_tempo_mostrado = 0
+        inicio_execucao = time.time()
+        try:
+            while True:
+                # o botão que tem que procurar quando terminou a consulta
+                self.launchpad_lock.acquire()
+                try:
+                    # muda de aba no Launchpad pra aba da thread
+                    self.__get_driver().switch_to.default_content()
+                    self.__get_driver().switch_to.frame("servletBridgeIframe")
+                    self.__get_driver().find_element(By.LINK_TEXT, report_name).click()
+                    subframe = list(filter(lambda f: f.rect['x'] > 0 and f.size['height'] > 0,
+                                           self.__get_driver().find_elements(By.TAG_NAME, "iframe")))[0]
+                    self.__get_driver().switch_to.frame(subframe)
+                    self.__get_driver().switch_to.frame(self.__get_driver().find_element(By.ID, "webiViewFrame"))
+
+                    # verifica se ocorreu mensagem de erro
+                    try:
+                        msg = self.__get_driver().find_element(By.ID, 'dlg_txt_alertDlg').text
+                        if msg.find('não pode se conectar') >= 0 or msg.find('erro de banco de dados') >= 0:
+                            raise WebScraperException(f'Launchpad desconectou do servidor: {msg}')
+                        if msg.find('Controle Acesso OSF') >= 0:
+                            raise WebScraperException('OSF não liberada no Launchpad para download de relatório. '
+                                                      'Talvez entrou em execução hoje mesmo?')
+                    except NoSuchElementException:
+                        pass
+
+                    WebDriverWait(self.__get_driver(), 1).until(
+                        EC.invisibility_of_element_located((By.ID, "Btn_waitDlg_cancelButton")))
+                    # se chegou aqui, é porque o popup de espera de execução fechou sozinho!
+                    break
+                except TimeoutException:
+                    # ainda não ficou pronto, dorme um tempo pra ver se resolve
+                    if tempo_maximo - time.time() > 0:
+                        # apenas faz print a cada LAUNCH_TIME_REPORT_MINUTES minutos
+                        minutos_decorridos = int((time.time() - inicio_execucao) / 60)
+                        if minutos_decorridos >= ultimo_tempo_mostrado + LAUNCHPAD_TIME_REPORT_MINUTES:
+                            ultimo_tempo_mostrado = minutos_decorridos
+                            logger.info(
+                                f'Relatório {report_name} em execução, aguardando no máximo '
+                                f'mais {int((tempo_maximo - time.time()) / 60)} minutos...')
+                    self.__get_driver().switch_to.default_content()
+                    self.__get_driver().switch_to.frame("servletBridgeIframe")
+                    self.launchpad_lock.release()
+                    if evento.is_set():
+                        if window:
+                            window.write_event_value('-DATA-EXTRACTION-STATUS-',
+                                                     [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'STOP'])
+                        return False
+                    if time.time() > tempo_maximo:
+                        if window:
+                            window.write_event_value('-DATA-EXTRACTION-STATUS-',
+                                                     [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
+                        logger.warning(f'Relatório {report_name} NÃO FOI BAIXADO, '
+                                       f'talvez tenha ocorrido problema no Launchpad. Tente novamente mais tarde.')
+                        raise WebScraperTimeoutException(report_name)
+                    time.sleep(LAUNCHPAD_TIME_WAIT_SECONDS)
+
+            logger.info(f'Relatório {report_name} pronto, tentarei fazer download...')
+
+            # Nem sempre aparece uma mensagem de alerta ao encerrar o relatório
             try:
-                WebDriverWait(self.__get_driver(), 30).until(EC.visibility_of_element_located((By.ID, "download")))
-            except TimeoutException:
-                raise WebScraperException(f'Demora excessiva para fazer download do expediente {expediente}')
+                self.__get_driver().find_element(By.ID, "RealBtn_OK_BTN_alertDlg").click()
+            except NoSuchElementException:
+                pass
 
-            self.driver.find_element(By.ID, 'download').click()
+            # hora de exportar o resultado
+            self.__get_driver().find_element(By.XPATH, '//*[@title="Exportar"]/tbody/tr[1]/td[2]/div/div').click()
+            if modo_exportacao.get('Tipo', 'Dados') == 'Dados':
+                self.__get_driver().find_element(By.ID, "check_radioData").click()
+                checkAll = "check_SelectAllData"
+            else:
+                checkAll = "check_SelectAllReport"
+            if len(modo_exportacao['Relatorios']) > 0:
+                # Tira seleção de todos ds dados a baixar, e escolhe aqueles que interessam
+                self.__get_driver().find_element(By.ID, checkAll).click()
+
+            dados_ticados = 0
+            for label in self.driver.find_elements(By.XPATH,
+                                                   '//table[@class="dlgContent"]/tbody/tr/td/nobr/label['
+                                                   'starts-with(@id, "label_")]'):
+                if label.text in modo_exportacao['Relatorios']:
+                    self.__get_driver().find_element(By.ID, label.get_attribute("for")).click()
+                    dados_ticados += 1
+            if dados_ticados < len(modo_exportacao['Relatorios']):
+                raise WebScraperException(
+                    f'Não foram encontradas nas opções de exportação do relatório {report_name}'
+                    f' todas as opções cadastradas para seleção. Verifique as opções no Launchpad!')
+
+            if modo_exportacao.get('Formato', None) is not None:
+                Select(self.__get_driver().find_element(By.ID, "fileTypeList")) \
+                    .select_by_visible_text(modo_exportacao['Formato'])
+
+            self.__get_driver().find_element(By.ID, "Btn_OK_BTN_idExportDlg").click()
+            return True
+        except WebScraperException as wse:
+            raise wse
+        except Exception as e:
+            if window:
+                window.write_event_value('-DATA-EXTRACTION-STATUS-',
+                                         [f"{modo_exportacao['Grupo']}-DOWNLOAD", 'FAILURE'])
+            logger.exception(f"Ocorreu um problema ao baixar relatório {report_name} no Launchpad")
+            raise WebScraperException(f"Ocorreu um problema ao baixar relatório {report_name} no Launchpad: {e}") \
+                from e
+        finally:
+            if not self.launchpad_lock.locked():
+                self.launchpad_lock.acquire()
+            self.__get_driver().switch_to.default_content()
+            self.__get_driver().switch_to.frame("servletBridgeIframe")
+            self.__get_driver().find_element(By.XPATH, f'//a[@title="{report_name}"]//parent::div/a[4]').click()
+            try:
+                # caso apareça alerta de página não salva
+                self.__get_driver().switch_to.alert.accept()
+            except NoAlertPresentException:
+                pass
+            self.launchpad_lock.release()
+
+    def get_expediente_sem_papel(self, expediente: str):
+        logger.info(f'Acessando Sem Papel para baixar expediente {expediente}...')
+        sp = _PepeSingleton.get(pepe.SpSemPapel)
+        try:
+            sp.login(GeneralConfiguration.get().sigadoc_login, GeneralConfiguration.get().sigadoc_pass)
+            expediente_limpo = re.sub(r'[^A-Z0-9]', '', expediente)
             file_name = self.download_path / f'{expediente_limpo}.pdf'
-            move_downloaded_file(self.tmp_path, f'{expediente_limpo}A.pdf', file_name, 30)
+            sp.baixar_pdf_completo(expediente, str(file_name.absolute()))
             logger.info(f'Expediente {expediente} baixado com sucesso!')
             return file_name
         except Exception as e:
             logger.exception(f'Ocorreu um problema no download do expediente {expediente} no Sem Papel')
             raise WebScraperException(f'Ocorreu um problema no download do expediente {expediente} no Sem Papel: {e}')
+        finally:
+            sp.logout()
 
     def print_efd_obrigatoriedade(self, cnpj: str, download_path: Path):
         logger.info('Baixando relatório de obrigatoriedade de EFD')
-        self.__get_driver.get(f'https://www.fazenda.sp.gov.br/sped/obrigados/obrigados.asp?CNPJLimpo={cnpj}'
-                              f'&Submit=Enviar')
+        self.__get_driver().get(f'https://www.fazenda.sp.gov.br/sped/obrigados/obrigados.asp?CNPJLimpo={cnpj}'
+                                f'&Submit=Enviar')
         self.__save_as_pdf(download_path)
 
     def print_efd_entregas(self, cnpj: str, inicio: datetime.date, fim: datetime.date, download_path: Path):

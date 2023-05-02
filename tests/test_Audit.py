@@ -99,7 +99,7 @@ class AuditTest(AuditTestSetup):
         self.assertTrue(item.has_aiim_item_number())
         self.assertEqual('IC/N/FIS/000002375/2022', item.notificacao)
         self.assertEqual(self._main_path / 'Notificações' / f'2022-2375 - {item.verificacao.name}',
-                          item.notification_path())
+                         item.notification_path())
         self.assertEqual(item.notification_path() / 'Resposta', item.notification_response_path())
         self.assertIsNone(item.notificacao_resposta)
         self.assertEqual('planilha', item.planilha)
@@ -117,7 +117,7 @@ class AuditTest(AuditTestSetup):
         self.assertFalse(item.has_aiim_item_number())
         self.assertEqual('IC/N/FIS/000002375/2022', item.notificacao)
         self.assertEqual(self._main_path / 'Notificações' / f'2022-2375 - {item.verificacao.name}',
-                          item.notification_path())
+                         item.notification_path())
         self.assertEqual(item.notification_path() / 'Resposta', item.notification_response_path())
         self.assertIsNone(item.notificacao_resposta)
         self.assertEqual('planilha', item.planilha)
@@ -136,7 +136,7 @@ class AuditTest(AuditTestSetup):
         with self.assertRaises(ValueError) as context:
             item.notificacao_resposta = 'Resposta 04'
             self.assertEqual('Número do expediente Sem Papel em resposta à notificação inválido: Notificação 04',
-                              context.exception)
+                             context.exception)
 
     def test_setter_errors(self):
         audit = Audit.get_current_audit()
@@ -209,6 +209,16 @@ class AuditTest(AuditTestSetup):
             self.assertEqual('Não existe verificação chamada bagacinha. '
                              'Altere manualmente o arquivo de configurações da auditoria.', context.exception)
 
+    def test_database_aud(self):
+        audit = Audit.get_current_audit()
+        self.assertNotEqual(audit.schema, 'dbo')
+        self.assertNotEqual(audit.inicio_auditoria, datetime.date(2021, 4, 1))
+        self.assertNotEqual(audit.fim_auditoria, datetime.date(2023, 6, 1))
+        audit.database = '3.00.000_648487899879_AUX_QUALQUER COISA_202104_202306'
+        self.assertEqual(audit.schema, 'dbo')
+        self.assertEqual(audit.inicio_auditoria, datetime.date(2021, 4, 1))
+        self.assertEqual(audit.fim_auditoria, datetime.date(2023, 6, 1))
+
     def test_notification_subs(self):
         audit = Audit.get_current_audit()
         item = audit.aiim_itens[0]
@@ -219,8 +229,9 @@ class AuditTest(AuditTestSetup):
         self.assertEqual('OSF 01.1.68489/17-6 - Teste',
                          item.notificacao_titulo('OSF <osf> - Teste'))
         item.clear_cache()
-        self.assertEqual('OSF 01.1.68489/17-6, documentos modelos 55 e 57 dos períodos de abril de 2019 e julho de 2020',
-                         item.notificacao_corpo('OSF <osf>, documentos <modelos> d<periodo>'))
+        self.assertEqual(
+            'OSF 01.1.68489/17-6, documentos modelos 55 e 57 dos períodos de abril de 2019 e julho de 2020',
+            item.notificacao_corpo('OSF <osf>, documentos <modelos> d<periodo>'))
         item.clear_cache()
         self.assertEqual('documentos do período de 2019 a 2020',
                          item.notificacao_corpo('documentos d<periodoAAAA>'))

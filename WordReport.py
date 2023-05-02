@@ -10,7 +10,9 @@ from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.shared import Pt, Cm
 
 import GeneralConfiguration
+import GeneralFunctions
 from GeneralFunctions import logger
+from MDBReader import AIIM2003MDBReader
 
 
 def _delete_paragraph(paragraph: Paragraph):
@@ -48,6 +50,7 @@ def _save_docx_as_pdf(docx_path: Path, pdf_path: Path):
         was_open = True
 
     try:
+        pdf_path.unlink(missing_ok=True)
         worddoc = word.Documents.Open(str(Path(docx_path).absolute()))
         worddoc.SaveAs(str(pdf_path.absolute()), FileFormat=17)
         worddoc.Close()
@@ -58,6 +61,66 @@ def _save_docx_as_pdf(docx_path: Path, pdf_path: Path):
             except:
                 pass
 
+
+def cria_notificacao_modelo_4(cnpj: str, ie: str, razao_social: str, endereco: str,
+                              corpo_notificacao: str, notification_number: str, path: Path):
+    model_docx = r'resources/Notificação Modelo 4.docx'
+    logger.info('Gerando notificação modelo 4...')
+    docx_path = Path(str(path.parent / path.stem) + '.docx')
+    doc = Document(model_docx)
+    doc.core_properties.title = 'Notificação Modelo 4'
+
+    afre_data = GeneralConfiguration.get()
+    doc.tables[0].rows[0].cells[2].paragraphs[3].runs[0].text = f'NOTIFICAÇÃO {notification_number}'
+    doc.tables[0].rows[2].cells[0].paragraphs[0].runs[0].text = afre_data.drt_sigla
+    doc.tables[0].rows[2].cells[1].paragraphs[0].runs[0].text = f'NF-{afre_data.nucleo_fiscal()}'
+    doc.tables[0].rows[2].cells[3].paragraphs[0].runs[0].text = f'EQUIPE {afre_data.equipe_fiscal}'
+    with AIIM2003MDBReader() as aiim2003:
+        funcional = int(re.sub(r'\D', '', afre_data.funcional))
+        endereco_drt, telefone_drt = aiim2003.get_afr_drt_address_and_phone(funcional)
+    doc.tables[0].rows[4].cells[0].paragraphs[0].runs[0].text = endereco_drt
+    doc.tables[0].rows[4].cells[4].paragraphs[0].runs[0].text = telefone_drt
+    doc.tables[1].rows[2].cells[0].paragraphs[0].runs[0].text = f'{razao_social}\n{endereco}'
+    doc.tables[1].rows[2].cells[1].paragraphs[0].runs[0].text = ie
+    doc.tables[1].rows[4].cells[1].paragraphs[0].runs[0].text = {cnpj}
+    # faz conversão de HTML
+    celula_corpo = doc.tables[2].rows[5].cells[0]
+    paragrafo_corpo = celula_corpo.paragraphs[0]
+    paragrafo_corpo.runs[0].text = ''
+    texto = corpo_notificacao.replace('<br>', '\n').replace('<p>', '\n').replace('</p>', '\n').\
+        replace('<ul>', '').replace('</ul>', '').replace('</li>', '\n')
+    linhas = texto.splitlines()
+    for idx in range(0, len(linhas)):
+        paragrafo = celula_corpo.add_paragraph('') if idx > 0 else paragrafo_corpo
+        paragrafo.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+        linha = linhas[idx]
+        while linha.find('<') >= 0:
+            if linha.find('<') > 0:
+                paragrafo.add_run(linha[:linha.index('<')])
+            comando = linha[linha.index('<'):linha.index('>')+1]
+            linha = linha[linha.index('>')+1:]
+            match comando:
+                case '<b>':
+                    paragrafo.add_run(linha[:linha.index('</b>')]).bold = True
+                    linha = linha[linha.index('</b>')+4:]
+                case '<i>':
+                    paragrafo.add_run(linha[:linha.index('</i>')]).italic = True
+                    linha = linha[linha.index('</i>') + 4:]
+                case '<li>':
+                    paragrafo.style = 'Bullet List'
+                case _:
+                    raise Exception(f'Não sei tratar o HTML corretamente! Existe uma tag que não sei tratar: {comando}')
+        if linha:
+            paragrafo.add_run(linha)
+    doc.tables[2].rows[10].cells[0].paragraphs[0].runs[0].text = f'{afre_data.drt_sigla}-' \
+                                                                 f'NF-{afre_data.nucleo_fiscal()}-' \
+                                                                 f'EQ-{afre_data.equipe_fiscal},' \
+                                                                 f' ______/______/_______ '
+    doc.tables[2].rows[-1].cells[0].paragraphs[1].runs[0].text = afre_data.nome
+    doc.tables[2].rows[-1].cells[0].paragraphs[2].runs[0].text = f'AFRE - IF {afre_data.funcional}'
+    docx_path.unlink(missing_ok=True)
+    doc.save(str(docx_path.absolute()))
+    _save_docx_as_pdf(docx_path, path)
 
 def cria_recibo_entrega_arquivos_digitais(cnpj: str, ie: str, razao_social: str, osf: str,
                                           hashes: list[dict], path: Path):
@@ -77,11 +140,11 @@ def cria_recibo_entrega_arquivos_digitais(cnpj: str, ie: str, razao_social: str,
             doc.add_paragraph()
             paragraph = doc.add_paragraph()
             paragraph.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-            run = paragraph.add_run(f'Notificação {dados["notification"]}')
+            run = paragraph.add_run(f'{dados["notification"]}')
             run.font.bold = True
             run.font.size = Pt(9)
 
-            table = doc.add_table(rows=len(dados['files'])+1, cols=4)
+            table = doc.add_table(rows=len(dados['files']) + 1, cols=4)
             table.autofit = False
             table.allow_autofit = False
             widths = (Cm(9.75), Cm(2), Cm(5.25), Cm(10.5))
@@ -111,7 +174,7 @@ def cria_recibo_entrega_arquivos_digitais(cnpj: str, ie: str, razao_social: str,
             run = paragraph.add_run('Assinatura SHA-256')
             run.font.bold = True
             run.font.size = Pt(9)
-            for i in range(1, len(dados['files'])+1):
+            for i in range(1, len(dados['files']) + 1):
                 table.rows[i].cells[0].text = dados['files'][i - 1]['file']
                 table.rows[i].cells[0].paragraphs[0].runs[0].font.size = Pt(8)
                 table.rows[i].cells[1].text = dados['files'][i - 1]['size']
@@ -279,7 +342,7 @@ class WordReport:
         bullet_provas_gerais = self.anexos_inseridos()[self.PROVAS_GERAIS_BULLET]
         _insert_bullets_before(self.report.paragraphs[bullet_provas_gerais], 'Provas Gerais, contendo:', conteudos)
         a_remover = []
-        for idx in range(bullet_provas_gerais+len(conteudos)+1, len(self.report.paragraphs)):
+        for idx in range(bullet_provas_gerais + len(conteudos) + 1, len(self.report.paragraphs)):
             if self.report.paragraphs[idx].text == '':
                 break
             a_remover.append(idx)

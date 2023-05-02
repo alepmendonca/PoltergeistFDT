@@ -5,6 +5,8 @@
       <excludeFolder url="file://$MODULE_DIR$/venv32" />
       <excludeFolder url="file://$MODULE_DIR$/venv" />
       <excludeFolder url="file://$MODULE_DIR$/tmp" />
+      <excludeFolder url="file://$MODULE_DIR$/venv10-64" />
+      <excludeFolder url="file://$MODULE_DIR$/venv11" />
     </content>
     <orderEntry type="jdk" jdkName="Python 3.10 (AIIMGenerator)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />

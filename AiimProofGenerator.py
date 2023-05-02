@@ -4,9 +4,12 @@ import re
 import threading
 from pathlib import Path
 
+import openpyxl
 import pandas as pd
 from pandas import Timestamp
 
+import Audit
+import Controller
 import ExcelDDFs
 import GeneralFunctions
 import PDFExtractor
@@ -34,10 +37,14 @@ def generate_general_proofs_file() -> list[str]:
     WordReport.cria_capa_para_anexo('PROVAS GERAIS', capa)
     arquivos = [capa]
     descricao_arquivos = ['Ordem de Serviço Fiscal assinada']
-    if (get_current_audit().path() / 'OSF Assinada.pdf').is_file():
-        arquivos.append(get_current_audit().path() / 'OSF Assinada.pdf')
+    if (get_current_audit().signed_osf_path()).is_file():
+        arquivos.append(get_current_audit().signed_osf_path())
     else:
         descricao_arquivos[0] += ' (ARQUIVO NÃO LOCALIZADO, JUNTAR MANUALMENTE)'
+    cadesp_file = Controller.get_updated_cadesp()
+    if cadesp_file.is_file():
+        descricao_arquivos.append('Extrato do Cadesp')
+        arquivos.append(cadesp_file)
     if get_current_audit().get_periodos_da_fiscalizacao(rpa=True):
         efds = GeneralFunctions.get_tmp_path() / 'efds.pdf'
         descricao_arquivos.append('Lista de arquivos digitais de Escrituração Fiscal Digital - EFD - '
@@ -56,16 +63,25 @@ def generate_general_proofs_file() -> list[str]:
         arquivos.append(get_current_audit().get_sheet().conta_fiscal_path())
         descricao_arquivos.append(texto)
     if get_current_audit().receipt_digital_files:
-        if not (get_current_audit().notification_path() / 'notif_recibo.pdf').is_file() or \
-                not (get_current_audit().notification_path() / 'Recibo de Entrega de Arquivos Digitais.pdf').is_file():
+        receipt_path = GeneralFunctions.notification_path(get_current_audit().receipt_digital_files,
+                                                          get_current_audit().notification_path())
+        if not GeneralFunctions.is_manual_notification(get_current_audit().receipt_digital_files) \
+                and (not (receipt_path / 'notif_recibo.pdf').is_file() or
+                     not (receipt_path / 'Recibo de Entrega de Arquivos Digitais.pdf').is_file()):
             logger.info('Baixando notificação de recibo de entrega de arquivos digitais...')
             with SeleniumWebScraper() as ws:
                 ws.get_notification(get_current_audit().receipt_digital_files,
-                                    get_current_audit().notification_path() / 'notif_recibo.pdf',
-                                    get_current_audit().notification_path(), only_after_received=False)
-        arquivos.append(get_current_audit().notification_path() / 'notif_recibo.pdf')
-        arquivos.append(get_current_audit().notification_path() / 'Recibo de Entrega de Arquivos Digitais.pdf')
-        descricao_arquivos.append(f'Notificação DEC {get_current_audit().receipt_digital_files}, contendo '
+                                    receipt_path / 'notif_recibo.pdf',
+                                    receipt_path / GeneralFunctions.notification_attachment_folder(),
+                                    only_after_received=False)
+        arquivos.append(receipt_path / 'notif_recibo.pdf')
+        arquivos.append(receipt_path / GeneralFunctions.notification_attachment_folder() /
+                        'Recibo de Entrega de Arquivos Digitais.pdf')
+        tipo_notificacao = "Modelo 04" \
+            if GeneralFunctions.is_manual_notification(get_current_audit().receipt_digital_files) \
+            else "DEC"
+        descricao_arquivos.append(f'Notificação {tipo_notificacao} '
+                                  f'{get_current_audit().receipt_digital_files}, contendo '
                                   f'recibo de entrega de arquivos digitais pelo contribuinte, em resposta '
                                   f'às notificações fiscais')
     logger.info('Juntando provas no arquivo Provas Gerais.pdf...')
@@ -77,34 +93,40 @@ def get_aiim_listing_from_sheet(item: AiimItem, ws: SeleniumWebScraper, pva: EFD
     if not item.planilha:
         return []
     logger.info('Gerando listagem inicial a partir da planilha...')
-    return [get_current_audit().get_sheet().imprime_planilha(item.planilha,
-                                                             ws.tmp_path / f'lista{item.item}.pdf')]
+    return_path = ws.tmp_path / f'lista{item.item}.pdf'
+    get_current_audit().get_sheet().imprime_planilha(item.planilha, return_path, item=item.item)
+    return [return_path]
 
 
 def get_aiim_detailed_listing_from_sheet(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVAReversed) -> list[Path]:
     if not item.planilha_detalhe:
         return []
     logger.info('Gerando listagem detalhada a partir da planilha...')
-    return [get_current_audit().get_sheet().imprime_planilha(item.planilha_detalhe,
-                                                             ws.tmp_path / f'lista_detalhe{item.item}.pdf',
-                                                             item=item.item)]
+    return_path = ws.tmp_path / f'lista_detalhe{item.item}.pdf'
+    get_current_audit().get_sheet().imprime_planilha(item.planilha_detalhe,
+                                                     return_path, item=item.item)
+    return [return_path]
 
 
 def get_notification_and_response(item: AiimItem, ws: SeleniumWebScraper) -> list[Path]:
     proofs = []
     if item.notificacao:
-        # junta notificação e anexos
-        notification_file = f'notificacao{item.notification_numeric_part()}.pdf'
-        notification_path = item.notification_path() / notification_file
-        notification_attachment_path = item.notification_path() / 'Anexos'
+        notification_attachment_path = item.notification_attachment_path()
         notification_attachment_path.mkdir(exist_ok=True)
-        if not notification_path.is_file():
-            logger.info(f'Baixando notificação {item.notificacao}...')
-            if not ws.get_notification(item.notificacao, notification_path, notification_attachment_path):
-                raise AiimProofException(
-                    f'Ainda não houve ciência (expressa ou tácita) da notificação {item.notificacao}, '
-                    f'deve-se aguardar para juntar no AIIM...')
-        proofs.append(notification_path)
+        # junta notificação e anexos
+        if GeneralFunctions.is_manual_notification(item.notificacao):
+            proofs.extend([item.notification_path() / f
+                           for f in next(os.walk(item.notification_path()), (None, None, []))[2]])
+        else:
+            notification_file = f'notificacao{item.notification_numeric_part()}.pdf'
+            notification_path = item.notification_path() / notification_file
+            if not notification_path.is_file():
+                logger.info(f'Baixando notificação {item.notificacao}...')
+                if not ws.get_notification(item.notificacao, notification_path, notification_attachment_path):
+                    raise AiimProofException(
+                        f'Ainda não houve ciência (expressa ou tácita) da notificação {item.notificacao}, '
+                        f'deve-se aguardar para juntar no AIIM...')
+            proofs.append(notification_path)
         proofs.extend([notification_attachment_path / f
                        for f in next(os.walk(notification_attachment_path), (None, None, []))[2]])
 
@@ -114,8 +136,7 @@ def get_notification_and_response(item: AiimItem, ws: SeleniumWebScraper) -> lis
             if not arquivo.is_file():
                 logger.info(f'Baixando resposta de notificação no expediente {item.notificacao_resposta}...')
                 download = ws.get_expediente_sem_papel(item.notificacao_resposta)
-                GeneralFunctions.move_downloaded_file(download, arquivo.name, arquivo, 10)
-            proofs.append(arquivo)
+                GeneralFunctions.move_downloaded_file(download.parent, download.name, arquivo, 10)
 
         # junta PDFs e impressao de arquivos Excel existentes na pasta Respostas e subpastas
         for (path, _, files) in os.walk(item.notification_response_path()):
@@ -362,5 +383,23 @@ def get_item_credit_sheet(item: AiimItem, ws: SeleniumWebScraper, pva: EFDPVARev
     if item.infracao.inciso != 'II':
         return []
     else:
-        # TODO gerar PDF com as 2 planilhas de "Glosa do Item x.xlsx"
-        return []
+        if item.planilha:
+            Audit.get_current_audit().get_sheet().get_ddf_from_sheet(item.planilha, item.infracao, item.item)
+            xls_path = ExcelDDFs.glosas_item_path(item.item)
+            tmp1 = GeneralFunctions.get_tmp_path() / f'glosa1-item{item.item}.pdf'
+            tmp2 = GeneralFunctions.get_tmp_path() / f'glosa2-item{item.item}.pdf'
+            wb = None
+            try:
+                wb = openpyxl.load_workbook(xls_path, data_only=True)
+                ws = wb['Subitens']
+                last_row = [cell for cell in ws['J'] if isinstance(cell.value, int)][-1].row
+                ExcelDDFs.print_workbook_as_pdf(xls_path, tmp1, 2, print_area=f'A1:T{last_row}')
+                ws = wb['Dados']
+                last_row = len([cell for cell in ws['H'] if cell.value])
+                ExcelDDFs.print_workbook_as_pdf(xls_path, tmp2, 1, print_area=f'A1:K{last_row}')
+            finally:
+                if wb is not None:
+                    wb.close()
+            return [tmp1, tmp2]
+        else:
+            return []

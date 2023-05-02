@@ -2,6 +2,9 @@
 Ferramenta automatizadora de verificações em auditorias fiscais na Sefaz-SP
 
 ### Novidades 
+- v0.5.1
+  - As importações de dados principais devem ser realizadas pelo AUD: primeiro realize a carga de dados e importação no banco de dados do AUD, depois inicie a auditoria no PoltergeistFDT
+  - Diversas consultas a sistemas agora são feitas sem abrir janela de navegador, pra ficar com mais cara de Poltergeist mesmo
 - v0.4.1
   - Mensagens de erro com botão "Copia Diagnóstico", para facilitar relatar erros desconhecidos: ao clicar neste botão, detalhes do erro serão copiados para a área de transferência
 - v0.3.1

@@ -5,6 +5,7 @@ import keyring
 from pathlib import Path
 import PySimpleGUI as sg
 import GeneralFunctions
+from MDBReader import AIIM2003MDBReader
 
 
 class Configuration:
@@ -54,6 +55,7 @@ class Configuration:
         self._efd_path = Path(self._dicionario['efd_path']) if self._dicionario.get('efd_path') else Path('efd-pva')
         self._efd_port = self._dicionario.get('efd_port', 3337)  # essa é a porta padrão do EFD PVA
         self.max_epat_attachment_size = 8
+        self.max_dec_attachment_size = 5
         self.cadesp_last_update = self._dicionario.get('cadesp_last_update', datetime.date(2000, 1, 1))
         self.inidoneos_last_update = self._dicionario.get('inidoneos_last_update', datetime.date(2000, 1, 1))
         self.gia_last_update = self._dicionario.get('gia_last_update', datetime.date(2000, 1, 1))
@@ -84,7 +86,7 @@ class Configuration:
 
     @property
     def postgres_pass(self) -> str:
-        return keyring.get_password(GeneralFunctions.get_project_name(), 'postgres')
+        return keyring.get_password(GeneralFunctions.get_project_name(), '')
 
     @postgres_pass.setter
     def postgres_pass(self, password: str):
@@ -137,7 +139,8 @@ class Configuration:
             else:
                 raise ValueError(f'Data para atualização de inidôneos inválida: {data}')
 
-    def inidoneos_date_from_file(self, arquivo: Path) -> datetime.date:
+    @staticmethod
+    def inidoneos_date_from_file(arquivo: Path) -> datetime.date:
         matches = re.search(r"Inid[oô]neos (\w+)[\s-](\d+)\.(rar|zip)", arquivo.name)
         if not matches or len(matches.groups()) < 3:
             raise ValueError('Nome de arquivo de inidôneos inválido - deve ter mês e ano no nome!')
@@ -165,7 +168,8 @@ class Configuration:
             else:
                 raise ValueError(f'Data para atualização de GIAs inválida: {data}')
 
-    def gia_date_from_file(self, arquivo: Path) -> datetime.date:
+    @staticmethod
+    def gia_date_from_file(arquivo: Path) -> datetime.date:
         matches = re.search(r"GIAs.*\s(\w+)[\s-](\d+)\.(rar|zip)", arquivo.name)
         if not matches or len(matches.groups()) < 3:
             raise ValueError('Nome de arquivo de GIAs inválido - deve ter mês e ano no nome!')
@@ -193,7 +197,8 @@ class Configuration:
             else:
                 raise ValueError(f'Data para atualização de Cadesp inválida: {data}')
 
-    def cadesp_date_from_file(self, arquivo: Path) -> datetime.date:
+    @staticmethod
+    def cadesp_date_from_file(arquivo: Path) -> datetime.date:
         matches = re.search(r"CadSefaz.*\s(\w+)[\s-](\d+)\.(rar|zip)", arquivo.name)
         if not matches or len(matches.groups()) < 3:
             raise ValueError('Nome de arquivo de Cadesp inválido - deve ter mês e ano no nome!')
@@ -335,8 +340,8 @@ def configuration_window():
                       expand_x=True)],
             [sg.Text("Usuário (padrão postgres):"), sg.Input(key='postgres_user', default_text=get().postgres_user,
                                                              expand_x=True)],
-            [sg.Text("Senha (AUD-Postgres postgres):"), sg.Input(key='postgres_pass', default_text=get().postgres_pass,
-                                                                 expand_x=True, password_char='*')],
+            [sg.Text("Senha (padrão sem senha):"), sg.Input(key='postgres_pass', default_text=get().postgres_pass,
+                                                            expand_x=True, password_char='*')],
         ], expand_x=True)],
         [sg.Frame(title='EFD PVA ICMS', layout=[
             [sg.Text("Pasta do EFD PVA ICMS:"), sg.Input(key='efd_path', default_text=get().efd_path,

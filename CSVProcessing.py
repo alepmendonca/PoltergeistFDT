@@ -24,8 +24,8 @@ class CSVProcessingWrongHeader(Exception):
     pass
 
 
-def import_report(relatorio_nome_inicio: str, files_path: Path, schema: str):
-    with SQLWriter(schema) as postgres:
+def import_report(relatorio_nome_inicio: str, files_path: Path, database: str, schema: str):
+    with SQLWriter(database=database, schema=schema) as postgres:
         # verifica se já fez importação no BD, antes de rodar tudo de novo
         relatorio = to_ascii(relatorio_nome_inicio)
         if getattr(sys.modules[__name__], f'__{relatorio}_already_did_import')(postgres):

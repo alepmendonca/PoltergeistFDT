@@ -1,0 +1,19 @@
+{
+  "verificacao": "Falta de LRI - Simples Nacional",
+  "funcao": {
+  	"nome": "periodo_sn_lri",
+  	"descricao": "Levanta os períodos de fiscalização em que o contribuinte esteve no regime Simples Nacional.\nResultado mostra os anos em que o contribuinte deveria apresentar LRI sem ser por EFD."
+  },
+  "infracoes": {
+    "Vj-LRI": {
+      "relato": "Deixou de exibir à autoridade fiscalizadora, no prazo cominado em notificação específica para tal fim, o Livro Fiscal de Registro de Inventário, referente a<periodoAAAA>, conforme se comprova pela notificação e demais documentos juntados no Anexo do item.",
+	  "relatorio_circunstanciado": "a despeito de não ser obrigado a realizar Escrituração Fiscal Digital (EFD), enquanto sob o regime tributário Simples Nacional, cabe ao contribuinte adotar o Livro Registro de Inventário. Deixou o contribuinte de cumprir a exigência n<periodoAAAA>, pois não apresentou o Livro Registro de Inventário no prazo definido em notificação específica para tal fim.",
+      "provas": [
+      ]
+    }
+  },
+  "notificacao": {
+    "titulo": "OSF <osf> - Livro Fiscal Registro de Inventário",
+    "corpo": "No âmbito da Ordem de Serviço Fiscal <osf>, fica o contribuinte acima identificado NOTIFICADO a apresentar o Livro Fiscal Registro de Inventário, referente a<periodoAAAA>.<br><p><b>PRAZO PARA ATENDIMENTO</b>: 10 (dez) dias, contados da ciência da notificação.<br><b>FORMA DE ATENDIMENTO</b>: Caso o livro fiscal seja físico, deve ser entregue na <delegacia>, aos cuidados do AFRE subscrevente, mediante agendamento pelo endereço eletrônico <email>; caso o livro fiscal esteja em formato eletrônico, definido na Portaria CAT 32/96, deve ser enviado ao endereço eletrônico <email>; caso o livro fiscal esteja em formato PDF, deve ser enviado por intermédio do SIPET - Sistema de Peticionamento Eletrônico, disciplinado pela Portaria CAT 83/20, que pode ser acessado através do endereço eletrônico https://www3.fazenda.sp.gov.br/sipet, utilizando a opção \"Comunicações\" -> \"Atendimento de notificação de fiscalização\".<br><b>BASE LEGAL</b>: Arts. 494 e 497 do RICMS (Aprovado pelo Decreto 45.490/00) c/c art. 63, II da Resolução CGSN 140/2018.</p>"
+  }
+}

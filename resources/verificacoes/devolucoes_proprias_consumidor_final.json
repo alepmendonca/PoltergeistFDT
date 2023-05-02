@@ -20,8 +20,8 @@
             ]
         },
         "provas": [
-            {"tipo": "creditos", "descricao": "Demonstrativo de créditos indevidos para análise de saldos para incidência de juros, utilizado para formação do DDF do item"},
             {"tipo": "listagem", "descricao": "Listagem de documentos fiscais de entrada de emissão própria com crédito indevido"},
+            {"tipo": "creditos", "descricao": "Demonstrativo de créditos indevidos para análise de saldos para incidência de juros, utilizado para formação do DDF do item"},
             {"tipo": "DFe", "descricao": "Transcrição de documentos fiscais eletrônicos"},
             {"tipo": "LRE", "descricao": "Transcrição de LRE, demonstrando a declaração do crédito indevido"}
         ]

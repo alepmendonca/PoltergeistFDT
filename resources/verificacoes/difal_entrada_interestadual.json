@@ -38,9 +38,9 @@
       "relato": "Creditou-se a maior indevidamente do imposto decorrente da aquisição de mercadorias com diferencial de alíquota, n<periodo>, no valor total de @CRO, conforme relação juntada no Anexo do item.",
       "relatorio_circunstanciado": "o contribuinte foi autuado por ter creditado-se a maior, em Livro Registro de Apuração do ICMS, o valor de imposto destacado em documento fiscal, referente ao diferencial de alíquota interestadual, conforme art. 117, II do RICMS/00.",
       "provas": [
-        {"tipo": "creditos", "descricao": "Demonstrativo de créditos indevidos para análise de saldos para incidência de juros, utilizado para formação do DDF do item"},
         {"tipo": "listagem", "descricao": "Listagem de referências em que foi feita a declaração a maior de créditos referentes ao diferencial de alíquota interestadual"},
         {"tipo": "listagem-detalhe", "descricao": "Listagem com as operações utilizadas para apurar os valores declarados a maior de créditos de diferencial de alíquota interestadual"},
+        {"tipo": "creditos", "descricao": "Demonstrativo de créditos indevidos para análise de saldos para incidência de juros, utilizado para formação do DDF do item"},
         {"tipo": "GIA-OutrosCreditos", "descricao": "Detalhamento de Outros Créditos em GIA, demonstrando os valores destacados a título de diferencial de alíquota interestadual"},
         {"tipo": "LRAICMS", "descricao": "Livro Registro de Apuração de ICMS, demonstrando os valores destacados a título de diferencial de alíquota interestadual"}
       ],
